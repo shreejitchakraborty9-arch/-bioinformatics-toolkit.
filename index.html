@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BioToolkit — Scientific Sequence Analysis Platform</title>
+  <meta name="description" content="BioToolkit: High-performance, research-grade platform for DNA, RNA, and protein analysis. Secure, private, and laboratory-standard bioinformatics tools."/>
+  <meta name="keywords" content="bioinformatics, scientific analysis, sequence analysis, researchers, DNA, protein, mapping" />
+  <meta property="og:title" content="BioToolkit — Research-Grade Sequence Analysis" />
+  <meta property="og:description" content="Scientific sequence analysis platform for professional researchers and bioinformaticians." />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#14b8a6" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230d1117'/><path d='M30 20 L70 20 M30 50 L70 50 M30 80 L70 80' stroke='%2358a6ff' stroke-width='8'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="css/style.css"/>
+  <script src="https://unpkg.com/dompurify@latest/dist/purify.min.js"></script>
+</head>
+<body>
+
+
+  <!-- Mobile Hamburger -->
+  <button class="hamburger-btn" id="hamburgerBtn" aria-label="Toggle menu">☰</button>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <!-- Browser Warning Banner -->
+  <div id="browserWarning" class="browser-warning hidden">
+    <div class="browser-warning-content">
+      <i data-lucide="alert-circle"></i>
+      <span>Some features (like Web Workers) may be missing. For the best experience, please use a modern browser like Chrome, Firefox, or Edge.</span>
+      <button id="closeBrowserWarning" class="banner-close">Dismiss</button>
+    </div>
+  </div>
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon-wrap">
+        <div class="logo-icon"><i data-lucide="dna"></i></div>
+      </div>
+      <div class="logo-text-group">
+        <span class="logo-name">BioToolkit</span>
+        <span class="logo-tag">Scientific Workspace</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav" id="sidebarNav">
+      <button class="nav-item active" data-tool="home" id="nav-home">
+        <span class="nav-icon"><i data-lucide="home"></i></span>
+        <span class="nav-label">Home</span>
+      </button>
+      <button class="nav-item" data-tool="dna" id="nav-dna">
+        <span class="nav-icon"><i data-lucide="microscope"></i></span>
+        <span class="nav-label">DNA · RNA Analyzer</span>
+      </button>
+      <button class="nav-item" data-tool="protein" id="nav-protein">
+        <span class="nav-icon"><i data-lucide="beaker"></i></span>
+        <span class="nav-label">Protein Analyzer</span>
+      </button>
+      <button class="nav-item" data-tool="alignment" id="nav-alignment">
+        <span class="nav-icon"><i data-lucide="link"></i></span>
+        <span class="nav-label">Sequence Alignment</span>
+      </button>
+      <button class="nav-item" data-tool="fasta" id="nav-fasta">
+        <span class="nav-icon"><i data-lucide="file-text"></i></span>
+        <span class="nav-label">FASTA Parser</span>
+      </button>
+      <button class="nav-item" data-tool="primer" id="nav-primer">
+        <span class="nav-icon"><i data-lucide="test-tubes"></i></span>
+        <span class="nav-label">Primer Design</span>
+      </button>
+      <button class="nav-item" data-tool="restriction" id="nav-restriction">
+        <span class="nav-icon"><i data-lucide="scissors"></i></span>
+        <span class="nav-label">Restriction Enzymes</span>
+      </button>
+      <button class="nav-item" data-tool="promoter" id="nav-promoter">
+        <span class="nav-icon"><i data-lucide="compass"></i></span>
+        <span class="nav-label">Promoter &amp; CDS</span>
+      </button>
+      <button class="nav-item" data-tool="sequence-search" id="nav-sequence-search">
+        <span class="nav-icon"><i data-lucide="search"></i></span>
+        <span class="nav-label">Sequence Search</span>
+      </button>
+      <button class="nav-item" data-tool="genome-viewer" id="nav-genome-viewer">
+        <span class="nav-icon"><i data-lucide="layers"></i></span>
+        <span class="nav-label">Genome Viewer</span>
+      </button>
+
+      <div class="sidebar-divider"></div>
+
+      <button class="nav-item" id="openSettingsBtn">
+        <span class="nav-icon"><i data-lucide="settings"></i></span>
+        <span class="nav-label">Settings</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span>Professional Edition</span>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <main class="main-content" id="mainContent">
+    
+    <header class="app-header">
+      <div class="header-left">
+        <div class="session-name" contenteditable="true">Untitled Analysis</div>
+        <span class="save-indicator">Saved to cloud</span>
+      </div>
+      <div class="header-right">
+        <button class="header-action"><i data-lucide="share-2"></i></button>
+        <div class="divider-v"></div>
+        <div class="user-profile">
+          <div class="avatar">JD</div>
+          <span>Lab PI</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- HOME PANEL -->
+    <section class="tool-panel active" id="panel-home">
+      <div class="hero-section">
+        <h1 class="hero-title">BioToolkit — Scientific Sequence Analysis Platform</h1>
+        <p class="hero-subtitle">
+          High-performance, research-grade tools for DNA, RNA, and protein analysis.
+        </p>
+      </div>
+        <div class="hero-stats">
+          <div class="stat-card">
+            <div class="stat-number">7</div>
+            <div class="stat-label">Core Tools</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">30+</div>
+            <div class="stat-label">Restriction Enzymes</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">100%</div>
+            <div class="stat-label">Privacy First</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tool-grid">
+        <div class="tool-card" data-tool="dna">
+          <div class="tool-card-icon"><i data-lucide="microscope"></i></div>
+          <h3>DNA · RNA Analyzer</h3>
+          <p>GC content, reverse complement, transcription, translation, and codon usage analysis.</p>
+          <div class="tool-card-tags"><span>GC%</span><span>Codons</span><span>Translation</span></div>
+        </div>
+        <div class="tool-card" data-tool="protein">
+          <div class="tool-card-icon"><i data-lucide="beaker"></i></div>
+          <h3>Protein Analyzer</h3>
+          <p>Molecular weight, amino acid composition, isoelectric point, and hydrophobicity.</p>
+          <div class="tool-card-tags"><span>MW</span><span>pI</span><span>Composition</span></div>
+        </div>
+        <div class="tool-card" data-tool="alignment">
+          <div class="tool-card-icon"><i data-lucide="link"></i></div>
+          <h3>Sequence Alignment</h3>
+          <p>Needleman-Wunsch global and Smith-Waterman local pairwise alignment with visual diff.</p>
+          <div class="tool-card-tags"><span>Global</span><span>Local</span><span>Visual Diff</span></div>
+        </div>
+        <div class="tool-card" data-tool="fasta">
+          <div class="tool-card-icon"><i data-lucide="file-text"></i></div>
+          <h3>FASTA Parser</h3>
+          <p>Drag-and-drop FASTA file parsing with per-sequence statistics and export.</p>
+          <div class="tool-card-tags"><span>Multi-seq</span><span>Drag &amp; Drop</span><span>Stats</span></div>
+        </div>
+        <div class="tool-card" data-tool="primer">
+          <div class="tool-card-icon"><i data-lucide="test-tubes"></i></div>
+          <h3>Primer Design</h3>
+          <p>Melting temperature, GC clamp, hairpin detection, and primer pair evaluation.</p>
+          <div class="tool-card-tags"><span>Tm</span><span>Hairpin</span><span>GC Clamp</span></div>
+        </div>
+        <div class="tool-card" data-tool="restriction">
+          <div class="tool-card-icon"><i data-lucide="scissors"></i></div>
+          <h3>Restriction Enzymes</h3>
+          <p>Find recognition sites for 30+ enzymes with cut positions and fragment sizes.</p>
+          <div class="tool-card-tags"><span>30+ Enzymes</span><span>Cut Sites</span><span>Fragments</span></div>
+        </div>
+        <div class="tool-card" data-tool="promoter">
+          <div class="tool-card-icon"><i data-lucide="compass"></i></div>
+          <h3>Promoter &amp; CDS Analyzer</h3>
+          <p>Detect ORFs, extract upstream promoter regions, and scan for cis-acting regulatory motifs.</p>
+          <div class="tool-card-tags"><span>CDS/ORF</span><span>Promoter</span><span>Cis-Elements</span></div>
+        </div>
+        <div class="tool-card" data-tool="sequence-search">
+          <div class="tool-card-icon"><i data-lucide="search"></i></div>
+          <h3>Sequence Search</h3>
+          <p>BLAST-like local alignment search against a mock genome database with E-value approximations.</p>
+          <div class="tool-card-tags"><span>Local Alignment</span><span>E-value</span><span>Detailed Hits</span></div>
+        </div>
+        <div class="tool-card" data-tool="genome-viewer">
+          <div class="tool-card-icon"><i data-lucide="layers"></i></div>
+          <h3>Genome Viewer</h3>
+          <p>Interactive HTML5 Canvas engine for visualizing sequences, CDS, promoters, and motifs in an IGV-style track layout.</p>
+          <div class="tool-card-tags"><span>Interactive</span><span>Multi-Track</span><span>Performance</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DNA/RNA PANEL -->
+    <section class="tool-panel" id="panel-dna">
+      <div class="workspace-grid">
+        <div class="workspace-center">
+          <div class="input-block">
+            <label class="input-label">Genomic / Transcript Input</label>
+            <div class="fetch-widget" data-target="dnaInput" data-meta="dnaInputMeta">
+              <div class="fetch-row">
+                <select class="fetch-db-select">
+                  <option value="ncbi">NCBI</option>
+                  <option value="ensembl">Ensembl</option>
+                  <option value="kegg">KEGG</option>
+                </select>
+                <input type="text" class="fetch-id-input" placeholder="Enter Accession (e.g. NM_007294)"/>
+                <button class="btn-fetch fetch-btn">Fetch Reference</button>
+              </div>
+            </div>
+            <textarea class="seq-input" id="dnaInput" placeholder="Enter DNA or RNA sequence..." rows="10"></textarea>
+            <div class="input-meta" id="dnaInputMeta">Length: 0 bp</div>
+          </div>
+          
+          <div class="btn-row">
+            <button id="dnaAnalyzeBtn" class="btn-primary">
+              <i data-lucide="zap"></i> Run Analysis
+            </button>
+            <div style="display:flex; align-items:center; gap:12px; margin-left:12px; font-size: 0.8rem;">
+              <label class="check-container">
+                <input type="checkbox" id="dnaReadThrough" checked>
+                Read Through Stop Codons
+              </label>
+            </div>
+            <button id="dnaSampleBtn" class="btn-secondary">Load Example Dataset</button>
+          </div>
+        </div>
+
+        <div class="workspace-results" id="dnaResults">
+          <div class="results-empty" id="dnaEmptyState">
+            <i data-lucide="activity"></i>
+            <span>No data loaded. Run analysis to view results.</span>
+          </div>
+
+          <div class="results-content hidden">
+            <div class="results-header">Reference Metrics</div>
+            <div class="result-stat-row" id="dnaStatRow"></div>
+            
+            <div class="result-tabs">
+              <button class="result-tab active" data-rtab="rc">RevComp</button>
+              <button class="result-tab" data-rtab="rna">RNA</button>
+              <button class="result-tab" data-rtab="protein">Translation</button>
+            </div>
+            
+            <div class="result-tab-content" id="dna-rc">
+              <div class="seq-display" id="rcDisplay"></div>
+            </div>
+            <div class="result-tab-content hidden" id="dna-rna">
+              <div class="seq-display" id="rnaDisplay"></div>
+            </div>
+            <div class="result-tab-content hidden" id="dna-protein">
+              <div id="proteinFrames"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROTEIN PANEL -->
+    <section class="tool-panel" id="panel-protein">
+      <div class="workspace-grid">
+        <div class="workspace-center">
+          <div class="input-block">
+            <label class="input-label">Protein Sequence Input</label>
+            <div class="fetch-widget" data-target="proteinInput" data-meta="proteinInputMeta">
+              <div class="fetch-row">
+                <select class="fetch-db-select">
+                  <option value="uniprot">UniProt</option>
+                  <option value="ncbiprotein">NCBI</option>
+                  <option value="kegg">KEGG</option>
+                </select>
+                <input type="text" class="fetch-id-input" placeholder="Accession (e.g. P04637)"/>
+                <button class="btn-fetch fetch-btn">Fetch Record</button>
+              </div>
+            </div>
+            <textarea class="seq-input" id="proteinInput" placeholder="Enter protein single-letter code..." rows="10"></textarea>
+            <div class="input-meta" id="proteinInputMeta">Length: 0 aa</div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-primary" id="proteinAnalyzeBtn">Compute Metrics</button>
+            <button class="btn-secondary" id="proteinSampleBtn">Load Example Dataset</button>
+          </div>
+        </div>
+
+        <div class="workspace-results" id="proteinResults">
+          <div class="results-empty" id="proteinEmptyState">
+            <i data-lucide="beaker"></i>
+            <span>No sequence analyzed. Load dataset to compute metrics.</span>
+          </div>
+          <div class="results-content hidden">
+            <div class="results-header">Physicochemical Profile</div>
+            <div class="result-stat-row" id="proteinStatRow"></div>
+            <div class="result-tabs">
+              <button class="result-tab active" data-rtab="aa-comp">Composition</button>
+              <button class="result-tab" data-rtab="hydro">Hydropathy</button>
+            </div>
+            <div class="result-tab-content" id="protein-aa-comp">
+              <canvas id="aaCanvas" width="300" height="200"></canvas>
+              <div class="aa-table-wrap" id="aaTableWrap"></div>
+            </div>
+            <div class="result-tab-content hidden" id="protein-hydro">
+              <canvas id="hydroCanvas" width="300" height="150"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ALIGNMENT PANEL -->
+    <section class="tool-panel" id="panel-alignment">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="link"></i></div>
+        <div>
+          <h2>Pairwise Sequence Alignment</h2>
+          <p class="panel-desc">Align two nucleotide or protein sequences using Needleman-Wunsch (global) or Smith-Waterman (local) dynamic programming algorithms.</p>
+        </div>
+      </div>
+      <div class="two-col-inputs">
+        <div class="input-block">
+          <label class="input-label">Sequence A</label>
+          <div class="fetch-widget fetch-widget-sm" data-target="seqA">
+            <div class="fetch-row">
+              <select class="fetch-db-select">
+                <option value="ncbi">NCBI Nucleotide</option>
+                <option value="ncbiprotein">NCBI Protein</option>
+                <option value="uniprot">UniProt</option>
+                <option value="ensembl">Ensembl</option>
+                <option value="kegg">KEGG Database</option>
+              </select>
+              <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294"/>
+              <button class="btn-fetch fetch-btn">Fetch</button>
+            </div>
+          </div>
+          <textarea class="seq-input" id="seqA" placeholder="ACGTACGTACGT..." rows="4"></textarea>
+        </div>
+        <div class="input-block">
+          <label class="input-label">Sequence B</label>
+          <div class="fetch-widget fetch-widget-sm" data-target="seqB">
+            <div class="fetch-row">
+              <select class="fetch-db-select">
+                <option value="ncbi">NCBI Nucleotide</option>
+                <option value="ncbiprotein">NCBI Protein</option>
+                <option value="uniprot">UniProt</option>
+                <option value="ensembl">Ensembl</option>
+                <option value="kegg">KEGG Database</option>
+              </select>
+              <input type="text" class="fetch-id-input" placeholder="e.g. P04637"/>
+              <button class="btn-fetch fetch-btn">Fetch</button>
+            </div>
+          </div>
+          <textarea class="seq-input" id="seqB" placeholder="ACGTCCGTACGT..." rows="4"></textarea>
+        </div>
+      </div>
+      <div class="align-options">
+        <div class="option-group">
+          <label class="input-label">Algorithm</label>
+          <div class="radio-group">
+            <label class="radio-label"><input type="radio" name="alignAlgo" value="global" checked/> Global (Needleman-Wunsch)</label>
+            <label class="radio-label"><input type="radio" name="alignAlgo" value="local"/> Local (Smith-Waterman)</label>
+          </div>
+        </div>
+        <div class="option-group">
+          <label class="input-label">Match Score</label>
+          <input type="number" class="num-input" id="matchScore" value="2" min="0" max="10"/>
+        </div>
+        <div class="option-group">
+          <label class="input-label">Mismatch Penalty</label>
+          <input type="number" class="num-input" id="mismatchScore" value="-1" max="0" min="-20"/>
+        </div>
+        <div class="option-group">
+          <label class="input-label">Gap Penalty</label>
+          <input type="number" class="num-input" id="gapScore" value="-2" max="0" min="-20"/>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" id="alignBtn">Align Sequences</button>
+        <button class="btn-secondary" id="alignSampleBtn">Load Sample</button>
+      </div>
+      <div class="results-area hidden" id="alignResults">
+        <div class="result-stat-row" id="alignStatRow"></div>
+        <div class="alignment-display" id="alignDisplay"></div>
+        <div class="align-legend">
+          <span class="match-legend">█ Match</span>
+          <span class="mismatch-legend">█ Mismatch</span>
+          <span class="gap-legend">█ Gap</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- FASTA PANEL -->
+    <section class="tool-panel" id="panel-fasta">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="file-text"></i></div>
+        <div>
+          <h2>FASTA File Parser</h2>
+          <p class="panel-desc">Parse single or multi-sequence FASTA files. View per-sequence statistics and export results.</p>
+        </div>
+      </div>
+      <div class="drop-zone" id="fastaDropZone">
+        <div class="drop-icon">📂</div>
+        <p class="drop-title">Drag & Drop your FASTA file here</p>
+        <p class="drop-sub">or</p>
+        <label class="btn-primary" for="fastaFileInput" style="cursor:pointer;">Browse File</label>
+        <input type="file" id="fastaFileInput" accept=".fasta,.fa,.fna,.faa,.txt" style="display:none"/>
+      </div>
+      <!-- Fetch widget: FASTA -->
+      <div class="fetch-widget" data-target="fastaText">
+        <div class="fetch-widget-label">🌐 Fetch sequence by ID</div>
+        <div class="fetch-row">
+          <select class="fetch-db-select">
+            <option value="ncbi">NCBI Nucleotide</option>
+            <option value="ncbiprotein">NCBI Protein</option>
+            <option value="ensembl">Ensembl</option>
+            <option value="kegg">KEGG Database</option>
+          </select>
+          <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294  (BRCA1)"/>
+          <button class="btn-fetch fetch-btn">Fetch</button>
+        </div>
+        <div class="fetch-hint">Fetched sequence will appear in the text box below ↓</div>
+      </div>
+      <div class="fasta-separator">— or paste FASTA text directly —</div>
+      <div class="input-block">
+        <textarea class="seq-input" id="fastaText" placeholder=">Seq1 Example sequence&#10;ATGGCTATCAAGCAGAAGTTTGATGCCATCAAGAAGCTGGAG&#10;>Seq2 Another sequence&#10;MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTK" rows="5"></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" id="fastaParse">Parse FASTA</button>
+        <button class="btn-secondary" id="fastaClear">Clear</button>
+        <button class="btn-secondary" id="fastaSample">Load Example Dataset</button>
+      </div>
+      <div class="results-area hidden" id="fastaResults">
+        <div class="results-empty" id="fastaEmptyState">
+          <i data-lucide="file-text"></i>
+          <span>No data loaded. Run analysis to view results.</span>
+        </div>
+        <div class="result-stat-row" id="fastaStatRow"></div>
+        <div id="fastaSequences"></div>
+      </div>
+    </section>
+
+    <!-- PRIMER PANEL -->
+    <section class="tool-panel" id="panel-primer">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="test-tubes"></i></div>
+        <div>
+          <h2>Primer Design &amp; Analysis</h2>
+          <p class="panel-desc">Evaluate PCR primers — compute melting temperature (Tm), GC content, check for hairpins, self-dimers, and GC clamp.</p>
+        </div>
+      </div>
+      <div class="two-col-inputs">
+        <div class="input-block">
+          <label class="input-label">Forward Primer (5'→3')</label>
+          <input type="text" class="seq-input-line" id="fwdPrimer" placeholder="GCTTAAGCGCTATCAAGCC"/>
+          <div class="input-meta" id="fwdMeta">Length: 0 nt</div>
+        </div>
+        <div class="input-block">
+          <label class="input-label">Reverse Primer (5'→3')</label>
+          <input type="text" class="seq-input-line" id="revPrimer" placeholder="TTCAGCTTGATGGCATCAAA"/>
+          <div class="input-meta" id="revMeta">Length: 0 nt</div>
+        </div>
+      </div>
+      <div class="align-options">
+            <div class="settings-grid">
+              <div class="input-block">
+                <label>Salt [Na+] (mM)</label>
+                <input type="number" id="saltConc" value="50" min="10" max="1000">
+              </div>
+              <div class="input-block">
+                <label>Primer Conc (nM)</label>
+                <input type="number" id="primerConc" value="200">
+              </div>
+              <div class="input-block">
+                <label>DMSO (%)</label>
+                <input type="number" id="dmsoConc" value="0" min="0" max="15">
+              </div>
+              <div class="input-block">
+                <label>Formamide (M)</label>
+                <input type="number" id="formamideConc" value="0" min="0" max="6" step="0.1">
+              </div>
+            </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" id="primerAnalyzeBtn">Analyze Primers</button>
+        <button class="btn-secondary" id="primerSampleBtn">Load Sample</button>
+      </div>
+      <div class="results-area hidden" id="primerResults">
+        <div class="primer-result-grid" id="primerResultGrid"></div>
+        <div class="primer-pair-results" id="primerPairResults"></div>
+      </div>
+    </section>
+
+    <!-- RESTRICTION ENZYME PANEL -->
+    <section class="tool-panel" id="panel-restriction">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="scissors"></i></div>
+        <div>
+          <h2>Restriction Enzyme Finder</h2>
+          <p class="panel-desc">Find recognition and cut sites for 200+ restriction enzymes in your DNA sequence.</p>
+        </div>
+      </div>
+      <div class="input-block">
+        <label class="input-label">Enter DNA Sequence</label>
+        <textarea class="seq-input" id="reInput" placeholder="Paste your DNA sequence here..." rows="4"></textarea>
+      </div>
+      <div class="re-enzyme-select">
+        <label class="input-label">Filter Enzymes</label>
+        <div class="enzyme-filter-row">
+          <button class="enzyme-filter-btn" data-filter="all">All</button>
+          <button class="enzyme-filter-btn active" data-filter="common">Common</button>
+          <button class="enzyme-filter-btn" data-filter="6-cutter">6-Cutters</button>
+          <button class="enzyme-filter-btn" data-filter="4-cutter">4-Cutters</button>
+          <button class="enzyme-filter-btn" data-filter="rare">Rare Cutters</button>
+          <button class="enzyme-filter-btn" data-filter="blunt">Blunt Cutters</button>
+          <button class="enzyme-filter-btn" data-filter="sticky">Sticky Ends</button>
+        </div>
+        <div class="enzyme-chips" id="enzymeChips"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" id="reAnalyzeBtn">Find Cut Sites</button>
+        <button class="btn-secondary" id="reSampleBtn">Load Sample</button>
+        <button class="btn-secondary" id="reSelectAll">Select All</button>
+        <button class="btn-secondary" id="reSelectNone">Deselect All</button>
+      </div>
+      <div class="results-area hidden" id="reResults">
+        <div class="result-stat-row" id="reStatRow"></div>
+        <div class="re-visual-wrap">
+          <label class="input-label">Sequence Map</label>
+          <div class="re-seq-map" id="reSeqMap"></div>
+        </div>
+        <div id="reTable"></div>
+      </div>
+    </section>
+
+    <!-- PROMOTER & CDS ANALYZER PANEL -->
+    <section class="tool-panel" id="panel-promoter">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="compass"></i></div>
+        <div>
+          <h2>Promoter &amp; CDS Analyzer</h2>
+          <p class="panel-desc">Detect all CDS / ORF regions, extract the upstream promoter sequence, and scan for cis-acting regulatory elements such as TATA Box, ABRE, G-Box, and more.</p>
+        </div>
+      </div>
+
+      <!-- Fetch widget: Promoter -->
+      <div class="fetch-widget" data-target="proInput" data-meta="proInputMeta">
+        <div class="fetch-widget-label">🌐 Fetch genomic sequence by ID</div>
+        <div class="fetch-row">
+          <select class="fetch-db-select">
+            <option value="ncbi">NCBI Genomic</option>
+            <option value="ensembl">Ensembl Genomic</option>
+            <option value="kegg">KEGG Genomic</option>
+          </select>
+          <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294  (BRCA1)"/>
+          <button class="btn-fetch fetch-btn">Fetch</button>
+        </div>
+        <div class="fetch-hint">Or paste your sequence below ↓</div>
+      </div>
+
+      <!-- Input -->
+      <div class="input-block">
+        <label class="input-label">Enter Genomic DNA Sequence (5'→3')</label>
+        <textarea class="seq-input" id="proInput" placeholder="Paste your DNA sequence here. The longest ORF will be used to anchor the promoter extraction..." rows="5"></textarea>
+        <div class="input-meta" id="proInputMeta">Length: 0 bp</div>
+      </div>
+
+      <!-- Options row -->
+      <div class="align-options" style="margin-bottom:20px;">
+        <div class="option-group">
+          <label class="input-label">Upstream Region (bp)</label>
+          <input type="number" class="num-input" id="proUpstream" value="1000" min="50" max="5000"/>
+          <div class="input-meta">Bases upstream of first CDS start to extract as promoter</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-primary" id="proAnalyzeBtn">🔍 Analyze</button>
+        <button class="btn-secondary" id="proClearBtn">Clear</button>
+        <button class="btn-secondary" id="proSampleBtn">Load Sample</button>
+      </div>
+
+      <!-- Results -->
+      <div class="results-area hidden" id="proResults">
+
+        <!-- Stat cards -->
+        <div class="result-stat-row" id="proStatRow"></div>
+
+        <!-- Result tabs -->
+        <div class="result-tabs">
+          <button class="result-tab pro-tab active" data-ptab="cds">CDS / ORF Regions</button>
+          <button class="result-tab pro-tab" data-ptab="promoter">Promoter Sequence</button>
+          <button class="result-tab pro-tab" data-ptab="cis">Cis-Acting Elements</button>
+        </div>
+
+        <!-- Tab: CDS Table -->
+        <div class="pro-tab-content" id="pro-cds">
+          <div id="proCDSTable"></div>
+        </div>
+
+        <!-- Tab: Promoter Sequence Viewer -->
+        <div class="pro-tab-content hidden" id="pro-promoter">
+          <div class="pro-seq-meta" id="proSeqRange"></div>
+          <div class="pro-seq-viewer" id="proSeqViewer"></div>
+          <div class="pro-cis-legend" id="proCisLegend"></div>
+          <button class="copy-btn" data-target="proSeqViewer">Copy Plain Text</button>
+          <button class="copy-btn" id="proExportBtn" style="margin-left:8px;">Export .txt</button>
+        </div>
+
+        <!-- Tab: Cis-Elements Table -->
+        <div class="pro-tab-content hidden" id="pro-cis">
+          <div id="proCisTable"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SEQUENCE SEARCH PANEL -->
+    <section class="tool-panel" id="panel-sequence-search">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="search"></i></div>
+        <div>
+          <h2>Sequence Search (BLAST-like)</h2>
+          <p class="panel-desc">Align your query sequence locally against our example genome database using the Smith-Waterman algorithm.</p>
+        </div>
+      </div>
+      <div class="input-block">
+        <label class="input-label">Query Sequence (DNA)</label>
+        <textarea class="seq-input" id="blastInput" placeholder="Paste your query sequence... (min 15bp)" rows="4" style="font-family:var(--mono);"></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" id="blastAnalyzeBtn">Search Database</button>
+        <button class="btn-secondary" id="blastSampleBtn">Load E. coli query</button>
+        <button class="btn-secondary" id="blastClearBtn">Clear</button>
+      </div>
+
+      <div class="results-area hidden" id="blastResults">
+        <div class="result-stat-row" id="blastStatRow"></div>
+        <h3 style="margin:24px 0 12px;font-size:1.1rem;color:var(--text-primary);border-bottom:1px solid var(--border-color);padding-bottom:8px;">Significant Hits</h3>
+        <div id="blastTableWrap"></div>
+        <div id="blastAlignments"></div>
+      </div>
+    </section>
+
+    <!-- GENOME VIEWER PANEL -->
+    <section class="tool-panel" id="panel-genome-viewer">
+      <div class="panel-header" style="justify-content: space-between;">
+        <div style="display:flex;align-items:center;">
+          <div class="panel-icon"><i data-lucide="layers"></i></div>
+          <div>
+            <h2>Genome Viewer (IGV-style)</h2>
+            <p class="panel-desc">Interactive, high-performance HTML5 Canvas viewer for annotated sequence tracks.</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="analysis-toolbar" style="margin-bottom:16px;">
+        <div class="toolbar-stats">
+          <span class="stat-badge">Zoom:</span>
+          <button class="btn-secondary" onclick="setZoom('1bp')" style="padding:4px 8px;font-size:0.8rem;">1 bp</button>
+          <button class="btn-secondary" onclick="setZoom('10bp')" style="padding:4px 8px;font-size:0.8rem;">10 bp</button>
+          <button class="btn-secondary" onclick="setZoom('100bp')" style="padding:4px 8px;font-size:0.8rem;">100 bp</button>
+          <button class="btn-secondary" onclick="setZoom('1000bp')" style="padding:4px 8px;font-size:0.8rem;">1000 bp</button>
+        </div>
+        <div class="toolbar-actions">
+           <button class="btn-primary" id="gvLoadDemoBtn" style="padding:6px 12px;font-size:0.85rem;">Load Demo Annotation</button>
+        </div>
+      </div>
+
+      <div style="width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-base); cursor: grab; position: relative;">
+         <!-- Tooltip container dynamically created by JS, this wrapper binds the canvas -->
+         <canvas id="genomeCanvas" style="display:block;width:100%;"></canvas>
+      </div>
+      <p style="margin-top:12px;font-size:0.85rem;color:var(--text-muted);text-align:center;">
+         <i data-lucide="info" style="width:14px;height:14px;vertical-align:middle;display:inline-block;"></i> Click and drag to pan horizontally. Click on an ORF or Motif to see details.
+      </p>
+    </section>
+
+    <!-- SCIENTIFIC REFERENCES FOOTER -->
+    <section class="tool-panel" id="panel-references" style="margin-top:24px; border:1px solid var(--border-color); background:rgba(17, 24, 39, 0.6);">
+      <div class="panel-header" style="margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border-color);">
+        <div class="panel-icon" style="background:var(--slate); color:var(--text-primary);"><i data-lucide="book-open"></i></div>
+        <div>
+          <h2 style="font-size:1.1rem; color:var(--text-primary);">Scientific Methods &amp; References</h2>
+          <p class="panel-desc" style="font-size:0.85rem;">BioKit algorithms are based on peer-reviewed scientific methods.</p>
+        </div>
+      </div>
+      <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.6;">
+        <ul style="padding-left:1.5rem; margin-bottom:0;">
+          <li style="margin-bottom:8px;"><strong>Accurate Tm (Melting Temperature):</strong> Calculated using the Nearest-Neighbor thermodynamic model with SantaLucia enthalpy/entropy values and Owczarzy salt corrections.<br/><span style="color:var(--text-muted); font-style:italic;">SantaLucia, J. Jr. (1998) "A unified view of polymer, dumbbell, and oligonucleotide DNA nearest-neighbor thermodynamics." PNAS 95, 1460-1465.</span></li>
+          <li style="margin-bottom:8px;"><strong>Protein Hydrophobicity (GRAVY):</strong> Calculated using the Kyte-Doolittle scale via sliding window averaging.<br/><span style="color:var(--text-muted); font-style:italic;">Kyte, J., &amp; Doolittle, R. F. (1982) "A simple method for displaying the hydropathic character of a protein." J Mol Biol, 157(1), 105-132.</span></li>
+          <li style="margin-bottom:8px;"><strong>Codon Translation:</strong> Utilizes the Standard NCBI Genetic Code (Transl_table 1).</li>
+          <li style="margin-bottom:0;"><strong>Molecular Weight:</strong> Calculated using average elemental isotopic residue masses (minus H2O condensation per peptide/phosphodiester bond).</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- SETTINGS MODAL -->
+  <div class="settings-overlay" id="settingsOverlay">
+    <div class="settings-content">
+      <div class="settings-header">
+        <h2 class="settings-title">API Settings</h2>
+        <button class="settings-close" id="closeSettingsBtn"><i data-lucide="x"></i></button>
+      </div>
+      <div class="settings-section">
+        <label>NCBI API Key (Optional)</label>
+        <input type="text" class="seq-input" id="ncbiApiKey" placeholder="Entrez API Key..." style="margin-bottom:8px;"/>
+        <p class="panel-desc" style="font-size:0.75rem;">Providing an API key increases your rate limit to 10 requests per second. <a href="https://ncbiinsights.ncbi.nlm.nih.gov/2017/11/02/new-api-keys-for-the-e-utilities/" target="_blank" style="color:var(--teal);">Get a key here.</a></p>
+      </div>
+      <div class="settings-section">
+        <label>Ensembl Rate Limit</label>
+        <p class="panel-desc" style="font-size:0.75rem;">BioKit automatically enforces a 1-second delay between requests to comply with Ensembl and NCBI guidelines.</p>
+      </div>
+      <button class="btn-primary" id="saveSettingsBtn" style="width:100%;">Save &amp; Close</button>
+    </div>
+  </div>
+
+  <!-- Shortcut Help Modal (Loophole #16) -->
+  <div id="shortcutModal" class="settings-overlay hidden">
+    <div class="settings-card">
+      <div class="settings-header">
+        <h2>Keyboard Shortcuts</h2>
+        <button class="settings-close" onclick="document.getElementById('shortcutModal').classList.add('hidden')">&times;</button>
+      </div>
+      <div class="settings-body">
+        <div class="shortcut-list">
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> <span>Run current analysis</span></div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Z</kbd> <span>Undo last change</span></div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Y</kbd> <span>Redo last change</span></div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>D</kbd> <span>Download results</span></div>
+          <div class="shortcut-item"><kbd>Esc</kbd> <span>Close modals / Cancel</span></div>
+          <div class="shortcut-item"><kbd>?</kbd> <span>Toggle this help</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/restriction-enzyme-db.js"></script>
+  <script src="js/science-algorithms.js"></script>
+  <script src="js/fetch-api.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/seq-analyzer.js"></script>
+  <script src="js/protein.js"></script>
+  <script src="js/alignment.js"></script>
+  <script src="js/fasta.js"></script>
+  <script src="js/primer.js"></script>
+  <script src="js/restriction.js"></script>
+  <script src="js/promoter.js"></script>
+  <script src="js/example-genomes.js"></script>
+  <script src="js/sequence-search.js"></script>
+  <script src="js/genome-viewer.js"></script>
+
+  <footer class="app-footer">
+    <div class="footer-content">
+      <div class="footer-left">© BioToolkit</div>
+      <div class="footer-right">For Research Use Only. Laboratory Standard.</div>
+    </div>
+  </footer>
+
+  <!-- Mobile Hamburger & Theme Toggle -->
+  <script>
+  (function(){
+    const hamburger = document.getElementById('hamburgerBtn');
+    const sidebar   = document.getElementById('sidebar');
+    const backdrop  = document.getElementById('sidebarBackdrop');
+
+    if (hamburger && sidebar) {
+      hamburger.addEventListener('click', () => {
+        sidebar.classList.toggle('open');
+        backdrop.classList.toggle('visible');
+      });
+      backdrop.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('visible');
+      });
+      // Close sidebar when nav item clicked on mobile
+      sidebar.querySelectorAll('.nav-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (window.innerWidth <= 680) {
+            sidebar.classList.remove('open');
+            backdrop.classList.remove('visible');
+          }
+        });
+      });
+    }
+  })();
+  </script>
+</body>
+</html>

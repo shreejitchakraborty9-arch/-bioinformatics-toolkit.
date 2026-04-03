@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: biotoolkit-mvp
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 8 --timeout 120"
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: NCBI_API_KEY
+        sync: false   # Set this in the Render dashboard — never commit the key
+      - key: ALLOWED_ORIGIN
+        sync: false   # Set to your Render domain e.g. https://biotoolkit-mvp.onrender.com
