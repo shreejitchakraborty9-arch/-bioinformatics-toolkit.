@@ -126,12 +126,12 @@
 
     let allowed = /^[ATGCNU]+$/;
     let label = 'DNA/RNA';
-    let limit = 100000;
-
     if (type === 'protein') {
       allowed = /^[ACDEFGHIKLMNPQRSTVWY\*]+$/;
       label = 'Protein';
-      limit = 50000;
+      limit = 5000000; // 5MB
+    } else {
+      limit = 10000000; // 10MB
     }
 
     const invalidChars = [];

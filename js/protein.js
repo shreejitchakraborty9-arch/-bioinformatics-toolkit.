@@ -31,59 +31,6 @@
     F: 'Aromatic', W: 'Aromatic', Y: 'Aromatic'
   };
 
-  // pKa values for isoelectric point calculation (from Lehninger)
-  const PKA = {
-    N_term: 9.69, C_term: 2.34,
-    D: 3.65, E: 4.25, C: 8.18, Y: 10.07,
-    H: 6.00, K: 10.53, R: 12.48
-  };
-
-  // Kyte-Doolittle scale
-  const KD_SCALE = {
-    R:-4.5,K:-3.9,N:-3.5,D:-3.5,Q:-3.5,E:-3.5,H:-3.2,P:-1.6,
-    Y:-1.3,W:-0.9,S:-0.8,T:-0.7,G:-0.4,A:1.8,M:1.9,C:2.5,
-    F:2.8,L:3.8,V:4.2,I:4.5
-  };
-
-  // ── Isoelectric Point (pI) ────────────────────────────
-  function calculatePI(seq) {
-    // Count charged residues
-    const counts = {};
-    for (const aa of seq) {
-      counts[aa] = (counts[aa] || 0) + 1;
-    }
-
-    function chargeAtPH(pH) {
-      let charge = 0;
-      // N-terminus (positive)
-      charge += 1 / (1 + Math.pow(10, pH - PKA.N_term));
-      // C-terminus (negative)
-      charge -= 1 / (1 + Math.pow(10, PKA.C_term - pH));
-      // Positive residues: K, R, H
-      ['K', 'R', 'H'].forEach(aa => {
-        if (counts[aa]) {
-          charge += counts[aa] / (1 + Math.pow(10, pH - PKA[aa]));
-        }
-      });
-      // Negative residues: D, E, C, Y
-      ['D', 'E', 'C', 'Y'].forEach(aa => {
-        if (counts[aa]) {
-          charge -= counts[aa] / (1 + Math.pow(10, PKA[aa] - pH));
-        }
-      });
-      return charge;
-    }
-
-    // Binary search for pI
-    let lo = 0, hi = 14;
-    for (let i = 0; i < 100; i++) {
-      const mid = (lo + hi) / 2;
-      if (chargeAtPH(mid) > 0) lo = mid;
-      else hi = mid;
-    }
-    return ((lo + hi) / 2).toFixed(2);
-  }
-
   // ── AA Composition ────────────────────────────────────
   function getAAComposition(seq) {
     const comp = {};
@@ -112,8 +59,8 @@
     window.withLoading('panel-protein', () => {
       const hydro = BioMath.calculateHydrophobicity(seq);
       const mw = BioMath.calculateProtein_MW(seq);
-      const pI = calculatePI(seq);
-      const extMatch = BioMath.calculateExtinctionCoefficient(seq, 'protein'); // Optional if implemented for protein, here we do DNA only for now, but protein uses Y,W,C.
+      const pI = BioMath.calculatePI(seq);
+      const extMatch = BioMath.calculateExtinctionCoefficient(seq, 'protein'); 
       
       const aliphatic = BioMath.calculateAliphaticIndex(seq);
       const instability = BioMath.calculateInstabilityIndex(seq);
@@ -231,7 +178,8 @@
     for (let i = 0; i <= seq.length - windowSize; i++) {
       let sum = 0;
       for (let j = i; j < i + windowSize; j++) {
-        sum += KD_SCALE[seq[j]] || 0;
+        const val = BioKit.core.BioMath.KD_SCALE ? BioKit.core.BioMath.KD_SCALE[seq[j]] : KD_SCALE[seq[j]];
+        sum += val || 0;
       }
       values.push(sum / windowSize);
     }

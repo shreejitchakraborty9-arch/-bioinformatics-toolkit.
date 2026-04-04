@@ -260,6 +260,23 @@
     return ((bp - bpStart) / (bpEnd - bpStart)) * cw;
   }
 
+  // Binary search to find the first index of an array where item.pos/start >= bpStart
+  function findFirstVisibleIndex(arr, startKey, minBp) {
+    let low = 0, high = arr.length - 1;
+    let res = arr.length;
+    while (low <= high) {
+      let mid = (low + high) >> 1;
+      if (arr[mid][startKey] >= minBp) {
+          res = mid;
+          high = mid - 1;
+      } else {
+          low = mid + 1;
+      }
+    }
+    // Step back once to catch items that might span into the view from the left
+    return Math.max(0, res - 1);
+  }
+
   function drawRuler(cw) {
     ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, 0, cw, HEADER_HEIGHT);
@@ -358,10 +375,15 @@
 
     // Draw ORFs as distinct colored arrows
     const bpWidth = bpEnd - bpStart;
+    
+    // Sort if not already sorted (should be sorted by results logic)
+    cdsData.sort((a, b) => a.start - b.start);
+    
+    const firstIdx = findFirstVisibleIndex(cdsData, 'start', bpStart);
 
-    cdsData.forEach((cds, idx) => {
-       // Skip if completely out of view
-       if (cds.end < bpStart || cds.start > bpEnd) return;
+    for (let i = firstIdx; i < cdsData.length; i++) {
+       const cds = cdsData[i];
+       if (cds.start > bpEnd) break; // Finished visible range
        
        const x1 = Math.max(0, xForBp(cds.start, cw));
        let x2 = Math.min(cw, xForBp(cds.end, cw));
@@ -370,7 +392,7 @@
        
        // Cycle colors for diff frames
        const colors = ['#14b8a6', '#8b5cf6', '#ec4899'];
-       ctx.fillStyle = colors[idx % 3];
+       ctx.fillStyle = colors[i % 3];
        
        const y = t.y + 10;
        const h = 20;
@@ -399,7 +421,7 @@
            ctx.textBaseline = 'middle';
            ctx.fillText(`ORF ${cds.frame}`, x1 + 5, y + h/2);
        }
-    });
+    }
   }
 
   function drawPromoterTrack(cw) {
@@ -432,23 +454,25 @@
     const t = TRACKS.find(t => t.id === 'motif');
     drawTrackBackground(t, cw);
 
-    motifData.forEach(m => {
-       const mEnd = m.position + m.matched.length;
-       if (mEnd < bpStart || m.position > bpEnd) return;
+    motifData.sort((a, b) => a.position - b.position);
+    const firstIdx = findFirstVisibleIndex(motifData, 'position', bpStart);
+
+    for (let i = firstIdx; i < motifData.length; i++) {
+       const m = motifData[i];
+       if (m.position > bpEnd) break;
        
+       const mEnd = m.position + m.matched.length;
        const x1 = Math.max(0, xForBp(m.position, cw));
        const x2 = Math.min(cw, xForBp(mEnd, cw));
        let w = x2 - x1;
        if (w < 2) w = 2; // min visible
        
        ctx.fillStyle = '#22d3ee'; // cyan
-       
-       // Match css classes from promoter tool if we wanted exact color, but cyan is good for generic motif
        if (m.name.includes("TATA")) ctx.fillStyle = '#ef4444';
        if (m.name.includes("CAAT")) ctx.fillStyle = '#3b82f6';
        
        ctx.fillRect(x1, t.y + 5, w, TRACK_HEIGHT - 10);
-    });
+    }
   }
 
   // Initialize on load

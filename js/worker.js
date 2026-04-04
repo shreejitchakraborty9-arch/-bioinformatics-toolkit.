@@ -17,6 +17,9 @@ self.onmessage = function (e) {
       case 'SEQ_SEARCH':
         runSequenceSearch(payload, taskId);
         break;
+      case 'RESTRICTION_SEARCH':
+        runRestrictionSearch(payload, taskId);
+        break;
       default:
         throw new Error(`Unknown task type: ${type}`);
     }
@@ -24,6 +27,40 @@ self.onmessage = function (e) {
     self.postMessage({ type: 'ERROR', taskId, message: err.message, stack: err.stack });
   }
 };
+
+// ── BLOSUM62 Substitution Matrix (Standard) ──────────────────────
+const BLOSUM62 = {
+  'A': { 'A': 4, 'R': -1, 'N': -2, 'D': -2, 'C': 0, 'Q': -1, 'E': -1, 'G': 0, 'H': -2, 'I': -1, 'L': -1, 'K': -1, 'M': -1, 'F': -2, 'P': -1, 'S': 1, 'T': 0, 'W': -3, 'Y': -2, 'V': 0, 'B': -2, 'Z': -1, 'X': 0, '*': -4 },
+  'R': { 'A': -1, 'R': 5, 'N': 0, 'D': -2, 'C': -3, 'Q': 1, 'E': 0, 'G': -2, 'H': 0, 'I': -3, 'L': -2, 'K': 2, 'M': -1, 'F': -3, 'P': -2, 'S': -1, 'T': -1, 'W': -3, 'Y': -2, 'V': -3, 'B': -1, 'Z': 0, 'X': -1, '*': -4 },
+  'N': { 'A': -2, 'R': 0, 'N': 6, 'D': 1, 'C': -3, 'Q': 0, 'E': 0, 'G': 0, 'H': 1, 'I': -3, 'L': -3, 'K': 0, 'M': -2, 'F': -3, 'P': -2, 'S': 1, 'T': 0, 'W': -4, 'Y': -2, 'V': -3, 'B': 3, 'Z': 0, 'X': -1, '*': -4 },
+  'D': { 'A': -2, 'R': -2, 'N': 1, 'D': 6, 'C': -3, 'Q': 0, 'E': 2, 'G': -1, 'H': -1, 'I': -3, 'L': -4, 'K': -1, 'M': -3, 'F': -3, 'P': -1, 'S': 0, 'T': -1, 'W': -4, 'Y': -3, 'V': -3, 'B': 4, 'Z': 1, 'X': -1, '*': -4 },
+  'C': { 'A': 0, 'R': -3, 'N': -3, 'D': -3, 'C': 9, 'Q': -3, 'E': -4, 'G': -3, 'H': -3, 'I': -1, 'L': -1, 'K': -3, 'M': -1, 'F': -2, 'P': -3, 'S': -1, 'T': -1, 'W': -2, 'Y': -2, 'V': -1, 'B': -3, 'Z': -3, 'X': -2, '*': -4 },
+  'Q': { 'A': -1, 'R': 1, 'N': 0, 'D': 0, 'C': -3, 'Q': 5, 'E': 2, 'G': -2, 'H': 0, 'I': -3, 'L': -2, 'K': 1, 'M': 0, 'F': -3, 'P': -1, 'S': 0, 'T': -1, 'W': -2, 'Y': -1, 'V': -2, 'B': 0, 'Z': 3, 'X': -1, '*': -4 },
+  'E': { 'A': -1, 'R': 0, 'N': 0, 'D': 2, 'C': -4, 'Q': 2, 'E': 5, 'G': -2, 'H': 0, 'I': -3, 'L': -3, 'K': 1, 'M': -2, 'F': -3, 'P': -1, 'S': 0, 'T': -1, 'W': -3, 'Y': -2, 'V': -2, 'B': 1, 'Z': 4, 'X': -1, '*': -4 },
+  'G': { 'A': 0, 'R': -2, 'N': 0, 'D': -1, 'C': -3, 'Q': -2, 'E': -2, 'G': 6, 'H': -2, 'I': -4, 'L': -4, 'K': -2, 'M': -3, 'F': -3, 'P': -2, 'S': 0, 'T': -2, 'W': -2, 'Y': -3, 'V': -3, 'B': -1, 'Z': -2, 'X': -1, '*': -4 },
+  'H': { 'A': -2, 'R': 0, 'N': 1, 'D': -1, 'C': -3, 'Q': 0, 'E': 0, 'G': -2, 'H': 8, 'I': -3, 'L': -3, 'K': -1, 'M': -2, 'F': -1, 'P': -2, 'S': -1, 'T': -2, 'W': -2, 'Y': 2, 'V': -3, 'B': 0, 'Z': 0, 'X': -1, '*': -4 },
+  'I': { 'A': -1, 'R': -3, 'N': -3, 'D': -3, 'C': -1, 'Q': -3, 'E': -3, 'G': -4, 'H': -3, 'I': 4, 'L': 2, 'K': -3, 'M': 1, 'F': 0, 'P': -3, 'S': -1, 'T': -1, 'W': -3, 'Y': -1, 'V': 3, 'B': -3, 'Z': -3, 'X': -1, '*': -4 },
+  'L': { 'A': -1, 'R': -2, 'N': -3, 'D': -4, 'C': -1, 'Q': -2, 'E': -3, 'G': -4, 'H': -3, 'I': 2, 'L': 4, 'K': -2, 'M': 2, 'F': 0, 'P': -3, 'S': -2, 'T': -1, 'W': -2, 'Y': -1, 'V': 1, 'B': -4, 'Z': -3, 'X': -1, '*': -4 },
+  'K': { 'A': -1, 'R': 2, 'N': 0, 'D': -1, 'C': -3, 'Q': 1, 'E': 1, 'G': -2, 'H': -1, 'I': -3, 'L': -2, 'K': 5, 'M': -1, 'F': -3, 'P': -1, 'S': 0, 'T': -1, 'W': -3, 'Y': -2, 'V': -2, 'B': 0, 'Z': 1, 'X': -1, '*': -4 },
+  'M': { 'A': -1, 'R': -1, 'N': -2, 'D': -3, 'C': -1, 'Q': 0, 'E': -2, 'G': -3, 'H': -2, 'I': 1, 'L': 2, 'K': -1, 'M': 5, 'F': 0, 'P': -2, 'S': -1, 'T': -1, 'W': -1, 'Y': -1, 'V': 1, 'B': -3, 'Z': -1, 'X': -1, '*': -4 },
+  'F': { 'A': -2, 'R': -3, 'N': -3, 'D': -3, 'C': -2, 'Q': -3, 'E': -3, 'G': -3, 'H': -1, 'I': 0, 'L': 0, 'K': -3, 'M': 0, 'F': 6, 'P': -4, 'S': -2, 'T': -2, 'W': 1, 'Y': 3, 'V': -1, 'B': -3, 'Z': -3, 'X': -1, '*': -4 },
+  'P': { 'A': -1, 'R': -2, 'N': -2, 'D': -1, 'C': -3, 'Q': -1, 'E': -1, 'G': -2, 'H': -2, 'I': -3, 'L': -3, 'K': -1, 'M': -2, 'F': -4, 'P': 7, 'S': -1, 'T': -1, 'W': -4, 'Y': -3, 'V': -2, 'B': -2, 'Z': -1, 'X': -1, '*': -4 },
+  'S': { 'A': 1, 'R': -1, 'N': 1, 'D': 0, 'C': -1, 'Q': 0, 'E': 0, 'G': 0, 'H': -1, 'I': -1, 'L': -2, 'K': 0, 'M': -1, 'F': -2, 'P': -1, 'S': 4, 'T': 1, 'W': -3, 'Y': -2, 'V': -2, 'B': 0, 'Z': 0, 'X': 0, '*': -4 },
+  'T': { 'A': 0, 'R': -1, 'N': 0, 'D': -1, 'C': -1, 'Q': -1, 'E': -1, 'G': -2, 'H': -2, 'I': -1, 'L': -1, 'K': -1, 'M': -1, 'F': -2, 'P': -1, 'S': 1, 'T': 5, 'W': -2, 'Y': -2, 'V': 0, 'B': -1, 'Z': -1, 'X': 0, '*': -4 },
+  'W': { 'A': -3, 'R': -3, 'N': -4, 'D': -4, 'C': -2, 'Q': -2, 'E': -3, 'G': -2, 'H': -2, 'I': -3, 'L': -2, 'K': -3, 'M': -1, 'F': 1, 'P': -4, 'S': -3, 'T': -2, 'W': 11, 'Y': 2, 'V': -3, 'B': -4, 'Z': -3, 'X': -2, '*': -4 },
+  'Y': { 'A': -2, 'R': -2, 'N': -2, 'D': -3, 'C': -2, 'Q': -1, 'E': -2, 'G': -3, 'H': 2, 'I': -1, 'L': -1, 'K': -2, 'M': -1, 'F': 3, 'P': -3, 'S': -2, 'T': -2, 'W': 2, 'Y': 7, 'V': -1, 'B': -3, 'Z': -2, 'X': -1, '*': -4 },
+  'V': { 'A': 0, 'R': -3, 'N': -3, 'D': -3, 'C': -1, 'Q': -2, 'E': -2, 'G': -3, 'H': -3, 'I': 3, 'L': 1, 'K': -2, 'M': 1, 'F': -1, 'P': -2, 'S': -2, 'T': 0, 'W': -3, 'Y': -1, 'V': 4, 'B': -3, 'Z': -2, 'X': -1, '*': -4 },
+  'B': { 'A': -2, 'R': -1, 'N': 3, 'D': 4, 'C': -3, 'Q': 0, 'E': 1, 'G': -1, 'H': 0, 'I': -3, 'L': -4, 'K': 0, 'M': -3, 'F': -3, 'P': -2, 'S': 0, 'T': -1, 'W': -4, 'Y': -3, 'V': -3, 'B': 4, 'Z': 1, 'X': -1, '*': -4 },
+  'Z': { 'A': -1, 'R': 0, 'N': 0, 'D': 1, 'C': -3, 'Q': 3, 'E': 4, 'G': -2, 'H': 0, 'I': -3, 'L': -3, 'K': 1, 'M': -1, 'F': -3, 'P': -1, 'S': 0, 'T': -1, 'W': -3, 'Y': -2, 'V': -2, 'B': 1, 'Z': 4, 'X': -1, '*': -4 },
+  'X': { 'A': 0, 'R': -1, 'N': -1, 'D': -1, 'C': -2, 'Q': -1, 'E': -1, 'G': -1, 'H': -1, 'I': -1, 'L': -1, 'K': -1, 'M': -1, 'F': -1, 'P': -1, 'S': 0, 'T': 0, 'W': -2, 'Y': -1, 'V': -1, 'B': -1, 'Z': -1, 'X': -1, '*': -4 },
+  '*': { 'A': -4, 'R': -4, 'N': -4, 'D': -4, 'C': -4, 'Q': -4, 'E': -4, 'G': -4, 'H': -4, 'I': -4, 'L': -4, 'K': -4, 'M': -4, 'F': -4, 'P': -4, 'S': -4, 'T': -4, 'W': -4, 'Y': -4, 'V': -4, 'B': -4, 'Z': -4, 'X': -4, '*': 1 }
+};
+
+function getScore(a, b, match, mismatch, isProtein) {
+  if (!isProtein) return a === b ? match : mismatch;
+  const row = BLOSUM62[a] || BLOSUM62['X'];
+  return row[b] || row['X'] || mismatch;
+}
 
 // ── Needleman-Wunsch Global Alignment (Gotoh Affine Gaps) ─────────
 async function runNeedlemanWunsch(data, taskId) {
@@ -50,10 +87,12 @@ async function runNeedlemanWunsch(data, taskId) {
   }
 
   const CHUNK_SIZE = 400;
+  const isProtein = data.type === 'protein';
+
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       const idx = i * (n + 1) + j;
-      const diag = H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch);
+      const diag = H[(i - 1) * (n + 1) + (j - 1)] + getScore(a[i - 1], b[j - 1], match, mismatch, isProtein);
       
       const eOpen = H[i * (n + 1) + (j - 1)] + gapOpen + gapExt;
       const eExt  = E[i * (n + 1) + (j - 1)] + gapExt;
@@ -80,7 +119,8 @@ async function runNeedlemanWunsch(data, taskId) {
 
     if (state === 'H') {
       const current = H[i * (n + 1) + j];
-      if (i > 0 && j > 0 && Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch))) < 1e-4) {
+      const matchScore = getScore(a[i - 1], b[j - 1], match, mismatch, isProtein);
+      if (i > 0 && j > 0 && Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + matchScore)) < 1e-4) {
         alnA = a[i - 1] + alnA; alnB = b[j - 1] + alnB;
         mid = (a[i - 1] === b[j - 1] ? '|' : '·') + mid;
         i--; j--;
@@ -121,11 +161,13 @@ async function runSmithWaterman(data, taskId) {
   const F = new Float32Array((m + 1) * (n + 1));
   let maxScore = 0, maxI = 0, maxJ = 0;
 
+  const isProtein = data.type === 'protein';
+
   const CHUNK_SIZE = 400;
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       const idx = i * (n + 1) + j;
-      const diag = H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch);
+      const diag = H[(i - 1) * (n + 1) + (j - 1)] + getScore(a[i - 1], b[j - 1], match, mismatch, isProtein);
       
       const eOpen = H[i * (n + 1) + (j - 1)] + gapOpen + gapExt;
       const eExt  = E[i * (n + 1) + (j - 1)] + gapExt;
@@ -153,7 +195,8 @@ async function runSmithWaterman(data, taskId) {
   while (i > 0 && j > 0 && H[i * (n + 1) + j] > 0) {
     if (state === 'H') {
       const current = H[i * (n + 1) + j];
-      if (Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch))) < 1e-4) {
+      const matchScore = getScore(a[i - 1], b[j - 1], match, mismatch, isProtein);
+      if (Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + matchScore)) < 1e-4) {
         alnA = a[i - 1] + alnA; alnB = b[j - 1] + alnB;
         mid = (a[i - 1] === b[j - 1] ? '|' : '·') + mid;
         i--; j--;
@@ -280,4 +323,56 @@ function hasSeedMatch(query, subject, wordSize = 7) {
   for (let i = 0; i <= query.length - wordSize; i++) kmerSet.add(query.substring(i, i + wordSize));
   for (let i = 0; i <= subject.length - wordSize; i++) if (kmerSet.has(subject.substring(i, i + wordSize))) return true;
   return false;
+}
+
+// ── Restriction Mapping (Optimized for scale) ───────────────
+async function runRestrictionSearch(data, taskId) {
+  const { seq, enzymes } = data;
+  const results = [];
+  const seqLen = seq.length;
+  
+  // Pre-calculate Reverse Complement once
+  const comp = { 'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'U': 'A', 'N': 'N' };
+  const rcSeq = seq.split('').reverse().map(b => comp[b] || b).join('');
+
+  const IUPAC_MAP = { 'R': '[AG]', 'Y': '[CT]', 'S': '[GC]', 'W': '[AT]', 'K': '[GT]', 'M': '[AC]', 'B': '[CGT]', 'D': '[AGT]', 'H': '[ACT]', 'V': '[ACG]', 'N': '[ATGC]' };
+
+  for (let i = 0; i < enzymes.length; i++) {
+    const enz = enzymes[i];
+    let regexStr = '';
+    for (const char of enz.site.toUpperCase()) { regexStr += IUPAC_MAP[char] || char; }
+    const regex = new RegExp(regexStr, 'g');
+
+    // Forward
+    let match;
+    while ((match = regex.exec(seq)) !== null) {
+      results.push({ name: enz.name, site: enz.site, strand: '+', pos: match.index + 1, cut: match.index + (enz.cut || 0) + 1 });
+      regex.lastIndex = match.index + 1;
+    }
+
+    // Reverse
+    regex.lastIndex = 0;
+    while ((match = regex.exec(rcSeq)) !== null) {
+      const fwdIndex = seqLen - match.index - enz.site.length;
+      const fwdCut = seqLen - (match.index + (enz.cut || 0));
+      results.push({ name: enz.name, site: enz.site, strand: '-', pos: fwdIndex + 1, cut: fwdCut });
+      regex.lastIndex = match.index + 1;
+    }
+
+    if (i % 20 === 0) {
+      self.postMessage({ type: 'PROGRESS', taskId, progress: i / enzymes.length });
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  // Deduplicate and Sort
+  const seen = new Set();
+  const unique = [];
+  results.forEach(r => {
+    const key = `${r.name}-${Math.min(r.pos, r.cut)}-${Math.max(r.pos, r.cut)}`;
+    if (!seen.has(key)) { seen.add(key); unique.push(r); }
+  });
+  
+  unique.sort((a, b) => a.pos - b.pos);
+  self.postMessage({ type: 'RESULT', taskId, result: unique });
 }

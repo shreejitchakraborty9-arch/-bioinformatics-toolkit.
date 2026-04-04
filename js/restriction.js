@@ -10,27 +10,14 @@
     'H': '[ACT]', 'V': '[ACG]', 'N': '[ATGC]'
   };
 
-  function expandIUPAC(site) {
-    let regexStr = '';
-    for (const char of site.toUpperCase()) {
-      regexStr += IUPAC_REGEX[char] || char;
-    }
-    return new RegExp(regexStr, 'g');
-  }
-
-  function reverseComplement(seq) {
-    const comp = { A: 'T', T: 'A', G: 'C', C: 'G', U: 'A' };
-    return seq.split('').reverse().map(b => comp[b] || b).join('');
-  }
-
   window.BioKit.tools.restriction = {
     run: function() {
       const toolId = 'panel-restriction';
       const raw = document.getElementById('reInput').value;
-      const validation = window.BioKit.utils.validateSequence(raw, 'dna');
+      const validation = window.validateSequence(raw, 'dna');
 
       if (!validation.valid) {
-        window.BioKit.utils.showToast(validation.msg);
+        window.showToast(validation.msg);
         return;
       }
 
@@ -38,13 +25,15 @@
       const selectedEnzymes = this.getSelectedEnzymes();
       
       if (selectedEnzymes.length === 0) {
-        window.BioKit.utils.showToast('Please select at least one enzyme.');
+        window.showToast('Please select at least one enzyme.');
         return;
       }
 
-      window.withLoading(toolId, () => {
-        const results = this.findSites(seq, selectedEnzymes);
+      window.withLoading(toolId, (results) => {
         this.displayResults(seq, results);
+      }, seq.length, {
+        type: 'RESTRICTION_SEARCH',
+        payload: { seq, enzymes: selectedEnzymes }
       });
     },
 
@@ -52,68 +41,6 @@
       const chips = document.querySelectorAll('.enzyme-chip.selected');
       const allEnzymes = window.BioKit.data.RESTRICTION_ENZYMES || window.RESTRICTION_ENZYMES || [];
       return Array.from(chips).map(c => allEnzymes.find(e => e.name === c.dataset.enzyme)).filter(Boolean);
-    },
-
-    findSites: function(seq, enzymes) {
-      const results = [];
-      const rcSeq = reverseComplement(seq);
-      const seqLen = seq.length;
-
-      enzymes.forEach(enzyme => {
-        const regex = expandIUPAC(enzyme.site);
-        
-        // Search forward strand
-        let match;
-        // Reset lastIndex because we use the same regex object if we cached it (we don't here, but good practice)
-        regex.lastIndex = 0; 
-        while ((match = regex.exec(seq)) !== null) {
-          results.push({
-            name: enzyme.name,
-            site: enzyme.site,
-            strand: '+',
-            pos: match.index + 1,
-            cut: match.index + (enzyme.cut || 0) + 1
-          });
-          // Move index forward by 1 manually to allow overlapping sites
-          regex.lastIndex = match.index + 1;
-        }
-
-        // Search reverse strand
-        regex.lastIndex = 0;
-        while ((match = regex.exec(rcSeq)) !== null) {
-          // A match at index `i` on the reverse complement corresponds to 
-          // position `seqLen - i - match_length` on the forward strand.
-          // Because restriction enzyme cuts are usually described relative to the 5' end of the standard sequence,
-          // we convert the position.
-          const fwdIndex = seqLen - match.index - enzyme.site.length;
-          
-          // Calculate cut specifically on the reverse strand
-          // If cut is +2 from 5' end of RC, on Fwd it's from the 3' end.
-          const fwdCut = seqLen - (match.index + (enzyme.cut || 0));
-
-          results.push({
-            name: enzyme.name,
-            site: enzyme.site,
-            strand: '-',
-            pos: fwdIndex + 1,
-            cut: fwdCut
-          });
-          regex.lastIndex = match.index + 1;
-        }
-      });
-      
-      // Deduplicate overlapping palindromic sites (where + and - find the exact same cut)
-      const uniqueResults = [];
-      const seen = new Set();
-      results.forEach(r => {
-        const key = `${r.name}-${Math.min(r.pos, r.cut)}-${Math.max(r.pos, r.cut)}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          uniqueResults.push(r);
-        }
-      });
-
-      return uniqueResults.sort((a, b) => a.pos - b.pos);
     },
 
     calculateFragments: function(seqLength, results) {

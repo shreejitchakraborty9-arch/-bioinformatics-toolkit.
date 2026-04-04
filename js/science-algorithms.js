@@ -438,7 +438,54 @@
   };
 
   // ==========================================================
-  // 5. Standard Codon Translation
+  // 5. Isoelectric Point (pI) Solver
+  // ==========================================================
+  const BJELLQVIST_PKA = {
+    'N-term': 7.5, 'C-term': 3.55,
+    'D': 4.05, 'E': 4.45, 'C': 9.0, 'Y': 10.0,
+    'H': 5.98, 'K': 10.0, 'R': 12.0
+  };
+
+  BioMath.calculatePI = function(seq) {
+    if (!seq || seq.length === 0) return 7.0;
+    const s = seq.toUpperCase();
+    
+    // Count titratable groups
+    const counts = { D:0, E:0, C:0, Y:0, H:0, K:0, R:0 };
+    for (const aa of s) {
+      if (counts[aa] !== undefined) counts[aa]++;
+    }
+
+    const netCharge = (pH) => {
+      let charge = 0;
+      // Basic groups (Positive when pH < pKa)
+      charge += 1 / (1 + Math.pow(10, pH - BJELLQVIST_PKA['N-term']));
+      charge += counts['K'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['K']));
+      charge += counts['R'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['R']));
+      charge += counts['H'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['H']));
+      
+      // Acidic groups (Negative when pH > pKa)
+      charge -= 1 / (1 + Math.pow(10, BJELLQVIST_PKA['C-term'] - pH));
+      charge -= counts['D'] / (1 + Math.pow(10, BJELLQVIST_PKA['D'] - pH));
+      charge -= counts['E'] / (1 + Math.pow(10, BJELLQVIST_PKA['E'] - pH));
+      charge -= counts['C'] / (1 + Math.pow(10, BJELLQVIST_PKA['C'] - pH));
+      charge -= counts['Y'] / (1 + Math.pow(10, BJELLQVIST_PKA['Y'] - pH));
+      
+      return charge;
+    };
+
+    // Iterative binary search for pH where netCharge ≈ 0
+    let low = 0, high = 14, pI = 7;
+    for (let i = 0; i < 20; i++) {
+        pI = (low + high) / 2;
+        if (netCharge(pI) > 0) low = pI;
+        else high = pI;
+    }
+    return pI.toFixed(2);
+  };
+
+  // ==========================================================
+  // 6. Standard Codon Translation
   // ==========================================================
   // ── Standard & Alternative Genetic Codes ─────────────────
   const GENETIC_CODES = {
