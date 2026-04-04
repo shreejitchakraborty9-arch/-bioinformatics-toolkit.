@@ -280,6 +280,15 @@
       // Individual bases (for subtracting overlaps)
       const IND_EC = { 'A': 15400, 'C': 7300, 'G': 11700, 'T': 8700, 'U': 10000 };
 
+      // Protein specific extinction (Wetlaufer / Pace model)
+      if (type === 'protein') {
+          const counts = { 'W': 0, 'Y': 0, 'C': 0 };
+          for (const aa of seq.toUpperCase()) {
+              if (counts[aa] !== undefined) counts[aa]++;
+          }
+          return (counts['W'] * 5500) + (counts['Y'] * 1490) + (counts['C'] * 125);
+      }
+
       for (let i = 0; i < s.length - 1; i++) {
           const pair = s.substring(i, i+2);
           if (NN_EC[pair]) e += NN_EC[pair];
@@ -288,6 +297,37 @@
           if (IND_EC[s[i]]) e -= IND_EC[s[i]];
       }
       return e;
+  };
+
+  /**
+   * K-mer pre-filter for Smith-Waterman (Larger Scale search optimization)
+   * Returns true if sequences share at least one k-mer of length k.
+   */
+  BioMath.hasKmerMatch = function(seq1, seq2, k = 6) {
+      if (seq1.length < k || seq2.length < k) return true; // Fallback to full DP for short seqs
+      const set = new Set();
+      for (let i = 0; i <= seq1.length - k; i++) {
+        set.add(seq1.substring(i, i + k));
+      }
+      for (let i = 0; i <= seq2.length - k; i++) {
+        if (set.has(seq2.substring(i, i + k))) return true;
+      }
+      return false;
+  };
+
+  BioMath.calculateA260_A280 = function(seq) {
+      if (!seq || seq.length === 0) return 1.8;
+      const s = seq.toUpperCase();
+      // Bases extinction at 260 and 280 (L/(mol·cm))
+      const e260 = { 'A': 15300, 'C': 7400, 'G': 11800, 'T': 9300, 'U': 10200 };
+      const e280 = { 'A': 2500,  'C': 1500, 'G': 5800,  'T': 1500, 'U': 2800  };
+      
+      let sum260 = 0, sum280 = 0;
+      for (const char of s) {
+        sum260 += e260[char] || 0;
+        sum280 += e280[char] || 0;
+      }
+      return (sum280 === 0) ? 1.8 : (sum260 / sum280).toFixed(2);
   };
 
   BioMath.calculateProtein_MW = function(seq) {

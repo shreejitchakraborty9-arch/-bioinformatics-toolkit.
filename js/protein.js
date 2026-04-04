@@ -125,8 +125,8 @@
         { val: seq.length.toLocaleString(), label: 'Length (aa)' },
         { val: mw + ' kDa', label: 'Mol. Weight' },
         { val: pI, label: 'Isoelectric Pt' },
+        { val: extMatch.toLocaleString(), label: 'Ext. Coeff (M⁻¹cm⁻¹)' },
         { val: hydro, label: 'GRAVY Index' },
-        { val: aliphatic, label: 'Aliphatic Index' },
         { val: instability + instabLabel, label: 'Instability Index' }
       ]);
 

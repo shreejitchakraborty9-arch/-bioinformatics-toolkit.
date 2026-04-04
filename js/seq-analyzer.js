@@ -58,13 +58,14 @@
       const ss_mw = BioMath.calculateDNA_MW(seq, false, { saltForm: saltForm });
       const ds_mw = BioMath.calculateDNA_MW(seq, true, { saltForm: saltForm });
       const ext = BioMath.calculateExtinctionCoefficient(seq);
+      const ratio = BioMath.calculateA260_A280(seq);
 
       // Stat cards
       window.buildStatCards('dnaStatRow', [
         { val: seq.length.toLocaleString(), label: 'Length (bp)' },
         { val: gc + '%', label: 'GC Content' },
         { val: tmRes.tm + '°C', label: 'Melting Temp' },
-        { val: ext.toLocaleString(), label: 'Ext. Coeff (L/mol·cm)' },
+        { val: ratio, label: 'A260/A280 Ratio' },
         { val: ss_mw + ' kDa', label: 'ssDNA MW' },
         { val: ds_mw + ' kDa', label: 'dsDNA MW' }
       ]);
