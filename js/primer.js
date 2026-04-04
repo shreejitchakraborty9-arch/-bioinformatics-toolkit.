@@ -6,13 +6,10 @@
   'use strict';
 
   // ── Helpers ────────────────────────────────────────────────
-  function calcTm(seq, saltMM, primerNM) {
+  function calcTm(seq, options) {
     const BioMath = window.BioKit && window.BioKit.core && window.BioKit.core.BioMath;
     if (BioMath) {
-      return BioMath.calculateTmNN(seq, {
-        naConc_mM: saltMM,
-        oligoConc_nM: primerNM
-      });
+      return BioMath.calculateTmNN(seq, options);
     }
     return { tm: "0.0", confidence: "", warning: null };
   }
@@ -112,10 +109,22 @@
 
   function analyze() {
     try {
-      const fwd = cleanSeq(fwdInput.value);
-      const rev = cleanSeq(revInput.value);
-      const salt = parseFloat(document.getElementById('saltConc').value) || 50;
-      const conc = parseFloat(document.getElementById('primerConc').value) || 200;
+      const na = parseFloat(document.getElementById('saltConc').value) || 50;
+      const k = parseFloat(document.getElementById('kConc').value) || 0;
+      const mg = parseFloat(document.getElementById('mgConc').value) || 1.5;
+      const dntp = parseFloat(document.getElementById('dntpConc').value) || 0.8;
+      const conc = parseFloat(document.getElementById('primerConc').value) || 250;
+      const dmso = parseFloat(document.getElementById('dmsoConc').value) || 0;
+      const formamide = parseFloat(document.getElementById('formamideConc').value) || 0;
+
+      const options = {
+        naConc_mM: na + k,
+        mgConc_mM: mg,
+        dntpConc_mM: dntp,
+        oligoConc_nM: conc,
+        dmso_pct: dmso,
+        formamide_m: formamide
+      };
 
       if (!fwd && !rev) { showToast('⚠ Enter at least one primer'); return; }
 
@@ -135,7 +144,7 @@
       window.withLoading('panel-primer', () => {
         grid.textContent = ''; 
         primers.forEach(({ label, seq }) => {
-          const tmRes = calcTm(seq, salt, conc);
+          const tmRes = calcTm(seq, options);
           const tm = tmRes.tm;
           const gc = gcPct(seq);
           const len = seq.length;
@@ -170,8 +179,8 @@
 
         const pairEl = document.getElementById('primerPairResults');
         if (primers.length === 2) {
-          const tm1Res = calcTm(primers[0].seq, salt, conc);
-          const tm2Res = calcTm(primers[1].seq, salt, conc);
+          const tm1Res = calcTm(primers[0].seq, options);
+          const tm2Res = calcTm(primers[1].seq, options);
           const diff = tmDiff(tm1Res.tm, tm2Res.tm);
           const diffOk = parseFloat(diff) <= 5;
 

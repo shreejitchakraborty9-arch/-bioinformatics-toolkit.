@@ -110,59 +110,93 @@
   });
 
   // ── ORF Finder ────────────────────────────────────────
+  function getReverseComplement(seq) {
+    const comp = { 'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C', 'N': 'N' };
+    return seq.split('').reverse().map(b => comp[b] || 'N').join('');
+  }
+
   function findORFs(seq, minLength = 30) {
     const orfs = [];
     const BioMath = window.BioKit.core.BioMath;
+    const rcSeq = getReverseComplement(seq);
 
-    // Check all 3 forward frames
-    for (let frame = 0; frame < 3; frame++) {
-      let inORF = false;
-      let orfStart = -1;
+    function scanStrand(strandSeq, isRev) {
+      for (let frame = 0; frame < 3; frame++) {
+        let inORF = false;
+        let orfStart = -1;
 
-      for (let i = frame; i <= seq.length - 3; i += 3) {
-        const codon = seq.substring(i, i + 3);
+        for (let i = frame; i <= strandSeq.length - 3; i += 3) {
+          const codon = strandSeq.substring(i, i + 3);
 
-        if (!inORF && codon === 'ATG') {
-          inORF = true;
-          orfStart = i;
+          if (!inORF && codon === 'ATG') {
+            inORF = true;
+            orfStart = i;
+          }
+
+          if (inORF && (codon === 'TAA' || codon === 'TAG' || codon === 'TGA')) {
+            const length = i + 3 - orfStart;
+            if (length >= minLength) {
+              const orfSeq = strandSeq.substring(orfStart, i + 3);
+              const protein = BioMath ? BioMath.translateDNA(orfSeq) : '';
+              
+              let actualStart, actualEnd;
+              if (isRev) {
+                // Reverse strand logic: 
+                // orfStart is 0-indexed on the rcSeq.
+                // It ends at i + 2 on rcSeq.
+                // Map to 1-indexed forward strand:
+                actualEnd = seq.length - orfStart;
+                actualStart = seq.length - (i + 2);
+              } else {
+                actualStart = orfStart + 1;
+                actualEnd = i + 3;
+              }
+
+              orfs.push({
+                frame: isRev ? -(frame + 1) : (frame + 1),
+                start: actualStart,
+                end: actualEnd,
+                length: length,
+                protein: protein,
+                proteinLength: Math.floor(length / 3)
+              });
+            }
+            inORF = false;
+          }
         }
 
-        if (inORF && (codon === 'TAA' || codon === 'TAG' || codon === 'TGA')) {
-          const length = i + 3 - orfStart;
+        // Handle unterminated ORF at end
+        if (inORF) {
+          const length = strandSeq.length - orfStart;
           if (length >= minLength) {
-            const orfSeq = seq.substring(orfStart, i + 3);
+            const orfSeq = strandSeq.substring(orfStart);
             const protein = BioMath ? BioMath.translateDNA(orfSeq) : '';
+            
+            let actualStart, actualEnd;
+            if (isRev) {
+              actualEnd = seq.length - orfStart;
+              actualStart = 1;
+            } else {
+              actualStart = orfStart + 1;
+              actualEnd = seq.length;
+            }
+
             orfs.push({
-              frame: frame + 1,
-              start: orfStart + 1,         // 1-indexed
-              end: i + 3,
+              frame: isRev ? -(frame + 1) : (frame + 1),
+              start: actualStart,
+              end: actualEnd,
               length: length,
               protein: protein,
-              proteinLength: Math.floor(length / 3)
+              proteinLength: Math.floor(length / 3),
+              partial: true
             });
           }
-          inORF = false;
-        }
-      }
-
-      // Handle unterminated ORF at end
-      if (inORF) {
-        const length = seq.length - orfStart;
-        if (length >= minLength) {
-          const orfSeq = seq.substring(orfStart);
-          const protein = BioMath ? BioMath.translateDNA(orfSeq) : '';
-          orfs.push({
-            frame: frame + 1,
-            start: orfStart + 1,
-            end: seq.length,
-            length: length,
-            protein: protein,
-            proteinLength: Math.floor(length / 3),
-            partial: true
-          });
         }
       }
     }
+
+    scanStrand(seq, false); // +1, +2, +3
+    scanStrand(rcSeq, true); // -1, -2, -3
 
     return orfs.sort((a, b) => b.length - a.length);
   }
@@ -170,7 +204,31 @@
   // ── Cis-Element Scanner ───────────────────────────────
   function scanCisElements(seq) {
     const found = [];
+    const BioMath = window.BioKit.core.BioMath;
+
+    // Use PWM engine for high-precision motifs
+    if (BioMath && BioMath.scoreSequenceWithPWM && BioMath.PWM_DATABASE) {
+      Object.entries(BioMath.PWM_DATABASE).forEach(([name, pwm]) => {
+        const hits = BioMath.scoreSequenceWithPWM(seq, pwm, 0.8);
+        const elInfo = CIS_ELEMENTS.find(e => e.name === name);
+        hits.forEach(hit => {
+          found.push({
+            name: name,
+            position: hit.pos,
+            matched: hit.matched,
+            cssClass: elInfo ? elInfo.cssClass : 'motif-slate',
+            desc: elInfo ? elInfo.desc : 'PWM detected consensus',
+            score: (hit.score * 100).toFixed(1) + '%'
+          });
+        });
+      });
+    }
+
+    // Fallback/Legacy Regex scanning for elements without PWMs
     CIS_ELEMENTS.forEach(el => {
+      // Don't duplicate if already handled by PWM
+      if (BioMath && BioMath.PWM_DATABASE && BioMath.PWM_DATABASE[el.name]) return;
+
       const re = new RegExp(el.regex.source, 'g');
       let match;
       while ((match = re.exec(seq)) !== null) {
@@ -179,10 +237,12 @@
           position: match.index + 1,
           matched: match[0],
           cssClass: el.cssClass,
-          desc: el.desc
+          desc: el.desc,
+          score: '100% (Exact)'
         });
       }
     });
+
     return found.sort((a, b) => a.position - b.position);
   }
 
@@ -295,13 +355,14 @@
     }
 
     let html = `<table class="data-table"><thead><tr>
-      <th>Element</th><th>Position</th><th>Sequence</th><th>Description</th>
+      <th>Element</th><th>Position</th><th>Sequence</th><th>Confidence/Score</th><th>Description</th>
     </tr></thead><tbody>`;
     motifs.forEach(m => {
       html += `<tr>
         <td><span class="motif-badge ${m.cssClass}">${window.escapeHTML(m.name)}</span></td>
         <td>${m.position}</td>
         <td style="font-family:var(--mono);color:var(--teal)">${window.escapeHTML(m.matched)}</td>
+        <td style="font-weight: 500;">${window.escapeHTML(m.score || '—')}</td>
         <td style="color:var(--text-muted)">${window.escapeHTML(m.desc)}</td>
       </tr>`;
     });
@@ -323,7 +384,7 @@
     </tr></thead><tbody>`;
     orfs.forEach(o => {
       html += `<tr>
-        <td>+${o.frame}</td>
+        <td>${o.frame > 0 ? '+' : ''}${o.frame}</td>
         <td>${o.start}</td>
         <td>${o.end}</td>
         <td>${o.length}</td>

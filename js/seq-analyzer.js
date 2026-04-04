@@ -9,10 +9,14 @@
   window.BioKit = window.BioKit || { utils: {}, core: {}, tools: {}, data: {} };
 
   // ── Helpers ─────────────────────────────────────────────
-  const complement = { A: 'T', T: 'A', G: 'C', C: 'G', U: 'A' };
+  const complement = { 
+    A: 'T', T: 'A', G: 'C', C: 'G', U: 'A',
+    R: 'Y', Y: 'R', S: 'S', W: 'W', K: 'M', M: 'K',
+    B: 'V', V: 'B', D: 'H', H: 'D', N: 'N'
+  };
 
   function reverseComplement(seq) {
-    return seq.split('').reverse().map(b => complement[b] || 'N').join('');
+    return seq.toUpperCase().split('').reverse().map(b => complement[b] || 'N').join('');
   }
 
   function transcribe(seq) {
@@ -46,12 +50,13 @@
     const seq = validation.clean;
     const BioMath = window.BioKit.core.BioMath;
     const readThrough = document.getElementById('dnaReadThrough')?.checked !== false;
+    const saltForm = document.getElementById('dnaSaltForm')?.value || 'Na';
 
     window.withLoading('panel-dna', () => {
       const gc = BioMath.calculateGC(seq);
       const tmRes = BioMath.calculateTmNN(seq);
-      const ss_mw = BioMath.calculateDNA_MW(seq, false);
-      const ds_mw = BioMath.calculateDNA_MW(seq, true);
+      const ss_mw = BioMath.calculateDNA_MW(seq, false, { saltForm: saltForm });
+      const ds_mw = BioMath.calculateDNA_MW(seq, true, { saltForm: saltForm });
       const ext = BioMath.calculateExtinctionCoefficient(seq);
 
       // Stat cards

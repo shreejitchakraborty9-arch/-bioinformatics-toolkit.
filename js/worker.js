@@ -25,72 +25,119 @@ self.onmessage = function (e) {
   }
 };
 
-// ── Needleman-Wunsch Global Alignment ───────────────────────
+// ── Needleman-Wunsch Global Alignment (Gotoh Affine Gaps) ─────────
 async function runNeedlemanWunsch(data, taskId) {
   const { a, b, match, mismatch, gap } = data;
+  const gapOpen = gap;
+  const gapExt = data.gapExtend !== undefined ? data.gapExtend : (gap / 2); // Default affine extension
   const m = a.length, n = b.length;
   
-  // Memory optimization: TypedArrays
-  // H matrix: (m+1) * (n+1)
-  const H = new Int32Array((m + 1) * (n + 1));
+  const H = new Float32Array((m + 1) * (n + 1));
+  const E = new Float32Array((m + 1) * (n + 1));
+  const F = new Float32Array((m + 1) * (n + 1));
+  const MIN = -1e9;
 
-  // Initialization
-  for (let i = 0; i <= m; i++) H[i * (n + 1)] = i * gap;
-  for (let j = 0; j <= n; j++) H[j] = j * gap;
+  H[0] = 0; E[0] = MIN; F[0] = MIN;
+  for (let i = 1; i <= m; i++) {
+    H[i * (n + 1)] = gapOpen + i * gapExt;
+    E[i * (n + 1)] = MIN;
+    F[i * (n + 1)] = MIN;
+  }
+  for (let j = 1; j <= n; j++) {
+    H[j] = gapOpen + j * gapExt;
+    E[j] = MIN;
+    F[j] = MIN;
+  }
 
-  // Computation in chunks
-  const CHUNK_SIZE = 500;
+  const CHUNK_SIZE = 400;
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
+      const idx = i * (n + 1) + j;
       const diag = H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch);
-      const up = H[(i - 1) * (n + 1) + j] + gap;
-      const left = H[i * (n + 1) + (j - 1)] + gap;
-      H[i * (n + 1) + j] = Math.max(diag, up, left);
+      
+      const eOpen = H[i * (n + 1) + (j - 1)] + gapOpen + gapExt;
+      const eExt  = E[i * (n + 1) + (j - 1)] + gapExt;
+      E[idx] = Math.max(eOpen, eExt);
+      
+      const fOpen = H[(i - 1) * (n + 1) + j] + gapOpen + gapExt;
+      const fExt  = F[(i - 1) * (n + 1) + j] + gapExt;
+      F[idx] = Math.max(fOpen, fExt);
+      
+      H[idx] = Math.max(diag, E[idx], F[idx]);
     }
 
-    // Yield back to event loop every CHUNK_SIZE rows
     if (i % CHUNK_SIZE === 0) {
       self.postMessage({ type: 'PROGRESS', taskId, progress: (i / m) * 0.9 });
       await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
 
-  // Traceback
   let i = m, j = n, alnA = '', alnB = '', mid = '';
+  let state = 'H';
   while (i > 0 || j > 0) {
-    const current = H[i * (n + 1) + j];
-    if (i > 0 && j > 0 && current === H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch)) {
-      alnA = a[i - 1] + alnA; alnB = b[j - 1] + alnB;
-      mid = (a[i - 1] === b[j - 1] ? '|' : '·') + mid;
-      i--; j--;
-    } else if (i > 0 && current === H[(i - 1) * (n + 1) + j] + gap) {
-      alnA = a[i - 1] + alnA; alnB = '-' + alnB; mid = ' ' + mid; i--;
-    } else {
-      alnA = '-' + alnA; alnB = b[j - 1] + alnB; mid = ' ' + mid; j--;
+    if (i === 0) state = 'E';
+    else if (j === 0) state = 'F';
+
+    if (state === 'H') {
+      const current = H[i * (n + 1) + j];
+      if (i > 0 && j > 0 && Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch))) < 1e-4) {
+        alnA = a[i - 1] + alnA; alnB = b[j - 1] + alnB;
+        mid = (a[i - 1] === b[j - 1] ? '|' : '·') + mid;
+        i--; j--;
+      } else if (j > 0 && Math.abs(current - E[i * (n + 1) + j]) < 1e-4) {
+        state = 'E';
+      } else {
+        state = 'F';
+      }
+    } else if (state === 'E') {
+      alnA = '-' + alnA; alnB = b[j - 1] + alnB; mid = ' ' + mid;
+      if (j > 1 && Math.abs(E[i * (n + 1) + j] - (E[i * (n + 1) + (j - 1)] + gapExt)) < 1e-4) {
+        j--;
+      } else {
+        j--; state = 'H';
+      }
+    } else if (state === 'F') {
+      alnA = a[i - 1] + alnA; alnB = '-' + alnB; mid = ' ' + mid;
+      if (i > 1 && Math.abs(F[i * (n + 1) + j] - (F[(i - 1) * (n + 1) + j] + gapExt)) < 1e-4) {
+        i--;
+      } else {
+        i--; state = 'H';
+      }
     }
   }
 
-  const result = { alnA, alnB, mid, score: H[m * (n + 1) + n] };
-  
-  // Cleanup
-  self.postMessage({ type: 'RESULT', taskId, result });
+  self.postMessage({ type: 'RESULT', taskId, result: { alnA, alnB, mid, score: H[m * (n + 1) + n] } });
 }
 
-// ── Smith-Waterman Local Alignment ──────────────────────────
+// ── Smith-Waterman Local Alignment (Gotoh Affine Gaps) ────────────
 async function runSmithWaterman(data, taskId) {
   const { a, b, match, mismatch, gap } = data;
+  const gapOpen = gap;
+  const gapExt = data.gapExtend !== undefined ? data.gapExtend : (gap / 2); // Default affine extension
   const m = a.length, n = b.length;
-  const H = new Int32Array((m + 1) * (n + 1));
+  
+  const H = new Float32Array((m + 1) * (n + 1));
+  const E = new Float32Array((m + 1) * (n + 1));
+  const F = new Float32Array((m + 1) * (n + 1));
   let maxScore = 0, maxI = 0, maxJ = 0;
 
-  const CHUNK_SIZE = 500;
+  const CHUNK_SIZE = 400;
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
+      const idx = i * (n + 1) + j;
       const diag = H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch);
-      const up = H[(i - 1) * (n + 1) + j] + gap;
-      const left = H[i * (n + 1) + (j - 1)] + gap;
-      const score = Math.max(0, diag, up, left);
-      H[i * (n + 1) + j] = score;
+      
+      const eOpen = H[i * (n + 1) + (j - 1)] + gapOpen + gapExt;
+      const eExt  = E[i * (n + 1) + (j - 1)] + gapExt;
+      E[idx] = Math.max(0, eOpen, eExt);
+      
+      const fOpen = H[(i - 1) * (n + 1) + j] + gapOpen + gapExt;
+      const fExt  = F[(i - 1) * (n + 1) + j] + gapExt;
+      F[idx] = Math.max(0, fOpen, fExt);
+      
+      const score = Math.max(0, diag, E[idx], F[idx]);
+      H[idx] = score;
+
       if (score > maxScore) { maxScore = score; maxI = i; maxJ = j; }
     }
 
@@ -100,23 +147,39 @@ async function runSmithWaterman(data, taskId) {
     }
   }
 
-  // Traceback from max
   let i = maxI, j = maxJ, alnA = '', alnB = '', mid = '';
+  let state = 'H';
+
   while (i > 0 && j > 0 && H[i * (n + 1) + j] > 0) {
-    const current = H[i * (n + 1) + j];
-    if (current === H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch)) {
-      alnA = a[i - 1] + alnA; alnB = b[j - 1] + alnB;
-      mid = (a[i - 1] === b[j - 1] ? '|' : '·') + mid;
-      i--; j--;
-    } else if (current === H[(i - 1) * (n + 1) + j] + gap) {
-      alnA = a[i - 1] + alnA; alnB = '-' + alnB; mid = ' ' + mid; i--;
-    } else {
-      alnA = '-' + alnA; alnB = b[j - 1] + alnB; mid = ' ' + mid; j--;
+    if (state === 'H') {
+      const current = H[i * (n + 1) + j];
+      if (Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + (a[i - 1] === b[j - 1] ? match : mismatch))) < 1e-4) {
+        alnA = a[i - 1] + alnA; alnB = b[j - 1] + alnB;
+        mid = (a[i - 1] === b[j - 1] ? '|' : '·') + mid;
+        i--; j--;
+      } else if (Math.abs(current - E[i * (n + 1) + j]) < 1e-4) {
+        state = 'E';
+      } else {
+        state = 'F';
+      }
+    } else if (state === 'E') {
+      alnA = '-' + alnA; alnB = b[j - 1] + alnB; mid = ' ' + mid;
+      if (j > 1 && Math.abs(E[i * (n + 1) + j] - (E[i * (n + 1) + (j - 1)] + gapExt)) < 1e-4) {
+        j--;
+      } else {
+        j--; state = 'H';
+      }
+    } else if (state === 'F') {
+      alnA = a[i - 1] + alnA; alnB = '-' + alnB; mid = ' ' + mid;
+      if (i > 1 && Math.abs(F[i * (n + 1) + j] - (F[(i - 1) * (n + 1) + j] + gapExt)) < 1e-4) {
+        i--;
+      } else {
+        i--; state = 'H';
+      }
     }
   }
 
-  const result = { alnA, alnB, mid, score: maxScore };
-  self.postMessage({ type: 'RESULT', taskId, result });
+  self.postMessage({ type: 'RESULT', taskId, result: { alnA, alnB, mid, score: maxScore } });
 }
 
 // ── Sequence Search Tool ────────────────────────────────────
@@ -190,12 +253,21 @@ function alignSW_Internal(query, subject, matchScore, mismatchScore, gapScore) {
     }
   }
 
-  const K = 0.1, lambda = 0.3;
-  const eValueRaw = K * qLen * sLen * Math.exp(-lambda * maxScore);
-  const eValue = eValueRaw < 1e-180 ? 0 : eValueRaw;
+  const dbSize = 30000000; // Simulated database size (30MB)
+  const effS = Math.max(1, sLen); 
+  const effQ = Math.max(1, qLen);
+  
+  // Approximate Karlin-Altschul parameters for matched/mismatched scores
+  // Real values require evaluating the Gumbel extreme value distribution
+  const lambda = Math.log(mismatchScore / (matchScore + mismatchScore)) / -matchScore || 0.317;
+  const K = 0.13; // Typical for DNA alignment space
+
+  const expectedAligns = K * effS * effQ * Math.exp(-lambda * maxScore);
+  const bitScore = (lambda * maxScore - Math.log(K)) / Math.LN2;
+  const eValue = expectedAligns * (dbSize / effS);
 
   return {
-    score: maxScore, eValue, matches, alnLen,
+    score: maxScore, eValue: eValue < 1e-180 ? 0 : eValue, bitScore: bitScore, matches, alnLen,
     identity: alnLen > 0 ? ((matches / alnLen) * 100).toFixed(1) : "0.0",
     queryAln: alignQ, midAln: matchStr, subjAln: alignS,
     qStart: i + 1, qEnd: maxI, sStart: j + 1, sEnd: maxJ

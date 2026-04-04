@@ -14,18 +14,94 @@
   window.BioKit = window.BioKit || { utils: {}, core: {}, tools: {}, data: {} };
   window.BioKit.core.BioMath = window.BioKit.core.BioMath || {};
   const BioMath = window.BioKit.core.BioMath;
+
+  // ==========================================================
+  // 0. PWM (Position Weight Matrix) Engine
+  // ==========================================================
+  BioMath.scoreSequenceWithPWM = function(seq, pwm, threshold = 0.8) {
+      const L = pwm.length;
+      const res = [];
+      const bases = { 'A': 0, 'C': 1, 'G': 2, 'T': 3 };
+
+      for (let i = 0; i <= seq.length - L; i++) {
+          let score = 0;
+          let minScore = 0;
+          let maxScore = 0;
+
+          for (let j = 0; j < L; j++) {
+              const base = seq[i + j];
+              const bIdx = bases[base];
+              
+              // Calculate specific score relative to min/max possible for normalization
+              const posWeights = pwm[j];
+              const currentWeight = bIdx !== undefined ? posWeights[bIdx] : -10; // Penalty for N
+              score += currentWeight;
+              
+              minScore += Math.min(...posWeights);
+              maxScore += Math.max(...posWeights);
+          }
+
+          // Normalize score to 0.0 - 1.0 (RelScore)
+          const normalized = (score - minScore) / (maxScore - minScore);
+          if (normalized >= threshold) {
+              res.push({ pos: i + 1, score: normalized, matched: seq.substring(i, i + L) });
+          }
+      }
+      return res;
+  };
+
+  // Common TFBS PWMs (Log-Odds format)
+  // Rows: A, C, G, T
+  BioMath.PWM_DATABASE = {
+      'TATA-box': [
+          [ -10, -10, -10,  10 ], // T
+          [  10, -10, -10, -10 ], // A
+          [ -10, -10, -10,  10 ], // T
+          [  10, -10, -10, -10 ], // A
+          [  10, -10, -10,  10 ], // A/T
+          [  10, -10, -10, -10 ], // A
+          [  10, -10, -10,  10 ], // A/T
+          [  10, -10, -10, -10 ]  // A
+      ],
+      'G-box': [
+          [ -10,  10, -10, -10 ], // C
+          [  10, -10, -10, -10 ], // A
+          [ -10,  10, -10, -10 ], // C
+          [ -10, -10,  10, -10 ], // G
+          [ -10, -10, -10,  10 ], // T
+          [ -10, -10,  10, -10 ]  // G
+      ],
+      'ABRE': [
+          [  10, -10, -10, -10 ], // A
+          [ -10,  10, -10, -10 ], // C
+          [ -10, -10,  10, -10 ], // G
+          [ -10, -10, -10,  10 ], // T
+          [ -10, -10,  10, -10 ], // G
+          [ -10, -10,  10,  10 ]  // G/T
+      ]
+  };
   
   // ==========================================================
   // 1. Accurate GC Calculation
   // ==========================================================
   BioMath.calculateGC = function(sequence) {
       if (!sequence) return 0;
-      const clean = sequence.toUpperCase().replace(/[^ATGCNU]/g, '');
-      const validSeq = clean.replace(/N/g, '');
-      if (validSeq.length === 0) return 0;
-      const gcMatch = validSeq.match(/[GC]/g);
-      const gcCount = gcMatch ? gcMatch.length : 0;
-      return ((gcCount / validSeq.length) * 100).toFixed(1);
+      const s = sequence.toUpperCase().replace(/[^ATGCNRYMKSWHBVD]/g, '');
+      if (s.length === 0) return 0;
+      
+      let gcSum = 0;
+      const gcContrib = {
+          'G': 1, 'C': 1, 'S': 1,
+          'A': 0, 'T': 0, 'W': 0,
+          'R': 0.5, 'Y': 0.5, 'K': 0.5, 'M': 0.5, 'N': 0.5,
+          'B': 0.6667, 'V': 0.6667,
+          'D': 0.3333, 'H': 0.3333
+      };
+      
+      for (let i = 0; i < s.length; i++) {
+          gcSum += gcContrib[s[i]];
+      }
+      return ((gcSum / s.length) * 100).toFixed(1);
   };
 
   // ==========================================================
@@ -72,6 +148,8 @@
     const {
       oligoConc_nM = 250,
       naConc_mM = 50,
+      mgConc_mM = 1.5,
+      dntpConc_mM = 0.8,
       dmso_pct = 0,
       formamide_m = 0
     } = options;
@@ -79,9 +157,13 @@
     const seq = primerSeq.toUpperCase().replace(/U/g, 'T').replace(/[^ATGCRYWSKMBDHVN]/g, '');
     if (seq.length < 2) return { tm: 0, warning: 'Sequence too short' };
 
-    // Salt validation
+    // Buffer validation and Equivalent Na+ calculation (von Ahsen 2001 / Owczarzy 2008)
     const salt = Math.min(1000, Math.max(10, naConc_mM));
-    const na_M = salt / 1000;
+    let eqNa_mM = salt;
+    if (mgConc_mM > dntpConc_mM) {
+        eqNa_mM += 120 * Math.sqrt(mgConc_mM - dntpConc_mM);
+    }
+    const na_M = eqNa_mM / 1000;
 
     let dH = 0, dS = 0;
 
@@ -147,35 +229,36 @@
   // ==========================================================
   // 3. Molecular Weight (MW) & Extinction Coefficient
   // ==========================================================
-  BioMath.calculateDNA_MW = function(seq, isDoubleStranded = true) {
+  BioMath.calculateDNA_MW = function(seq, isDoubleStranded = true, options = {}) {
       if (!seq) return 0;
       const s = seq.toUpperCase();
-      const A = (s.match(/A/g)||[]).length;
-      const T = (s.match(/T/g)||[]).length;
-      const C = (s.match(/C/g)||[]).length;
-      const G = (s.match(/G/g)||[]).length;
-      const U = (s.match(/U/g)||[]).length; // Handle RNA if mixed
+      const { saltForm = 'Na' } = options; // 'Na', 'K', 'Free'
       
-      if (A+T+C+G+U === 0) return 0;
-      
-      // Exact average molecular weights for ssDNA nucleotide monophosphates (sodium salt)
-      // dAMP: 313.2, dCMP: 289.2, dGMP: 329.2, dTMP: 304.2, UMP: 306.2
-      // - 61.96 for terminal water removal on the polymer chain
-      const ss_mw = (A * 313.21) + (T * 304.2) + (C * 289.18) + (G * 329.21) + (U * 306.2) - 61.96;
-      
-      if (!isDoubleStranded) {
-        return (ss_mw / 1000).toFixed(2); // kDa
-      }
+      const monoisotopic = {
+          'A': 313.21, 'T': 304.20, 'C': 289.18, 'G': 329.21, 'U': 306.20,
+          'R': 321.21, 'Y': 296.69, 'S': 309.20, 'W': 308.71,
+          'K': 316.71, 'M': 301.20, 'B': 307.53, 'D': 315.54,
+          'H': 302.20, 'V': 310.53, 'N': 308.95
+      };
 
-      // dsDNA MW calculation
-      // For dsDNA, we add the complementary strand.
-      // A pairs with T (313.21 + 304.2)
-      // C pairs with G (289.18 + 329.21)
-      const ds_mw = (A * (313.21 + 304.2)) + 
-                    (T * (304.2 + 313.21)) + 
-                    (C * (289.18 + 329.21)) + 
-                    (G * (329.21 + 289.18)) - (2 * 61.96); // Two strands
-      return (ds_mw / 2000).toFixed(2); // Divide by 2 because A/T count both strands, sum is 2x actual dsDNA length, so 2000 for kDa
+      let ss_mw = 0;
+      let validLen = 0;
+      for (let i = 0; i < s.length; i++) {
+          if (monoisotopic[s[i]]) {
+              ss_mw += monoisotopic[s[i]];
+              validLen++;
+          }
+      }
+      
+      if (validLen === 0) return 0;
+      
+      let saltAdj = 0;
+      if (saltForm === 'Free') saltAdj = -21.99; // Remove Na, add H
+      else if (saltForm === 'K') saltAdj = 17.10; // Swap Na (22.99) for K (39.1)
+      
+      ss_mw += (validLen * saltAdj) - 61.96; // Adjust salt and terminal water
+      
+      return (isDoubleStranded ? (ss_mw * 2) / 1000 : ss_mw / 1000).toFixed(2);
   };
 
   BioMath.calculateExtinctionCoefficient = function(seq, type='dna') {
