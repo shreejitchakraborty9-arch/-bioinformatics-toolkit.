@@ -260,41 +260,69 @@
     }
 
     const seq = validation.clean;
+    const upstreamLen = parseInt(document.getElementById('proUpstream').value) || 1000;
 
     window.withLoading('panel-promoter', () => {
       const motifs = scanCisElements(seq);
       const orfs = findORFs(seq);
-      displayResults(seq, motifs, orfs);
+      displayResults(seq, motifs, orfs, upstreamLen);
     }, seq.length);
   }
 
   // ── Display ───────────────────────────────────────────
-  function displayResults(seq, motifs, orfs) {
+  function displayResults(seq, motifs, orfs, upstreamLen) {
     const container = document.getElementById('proResults');
     if (!container) return;
     container.classList.remove('hidden');
+
+    // Identify Anchor ORF (Longest)
+    const anchor = orfs.length > 0 ? orfs[0] : null;
 
     // Stats
     window.buildStatCards('proStatRow', [
       { val: seq.length.toLocaleString(), label: 'Length (bp)' },
       { val: motifs.length, label: 'Cis-Elements' },
       { val: orfs.length, label: 'ORFs Found' },
-      { val: orfs.length > 0 ? orfs[0].proteinLength + ' aa' : '—', label: 'Largest ORF' },
+      { val: anchor ? anchor.proteinLength + ' aa' : '—', label: 'Largest ORF' },
     ]);
 
-    // Highlighted sequence viewer
-    renderHighlightedSequence(seq, motifs);
-
-    // Cis-element legend
-    renderLegend(motifs);
-
-    // Cis-element table
-    renderMotifTable(motifs);
-
-    // ORF table
+    // Populate CDS/ORF Regions Table
     renderORFTable(orfs);
 
-    // Feed genome viewer if available
+    // Populate Cis-Elements Table & Legend
+    renderMotifTable(motifs);
+    renderLegend(motifs);
+
+    // Handle Primary Anchor Extraction (CDS, Promoter, Protein)
+    if (anchor) {
+      // 1. Extract CDS
+      const cdsSeq = seq.substring(anchor.start - 1, anchor.end);
+      document.getElementById('proCDSSeqRange').textContent = `CDS [${anchor.start} ... ${anchor.end}] · ${anchor.length} bp · Frame ${anchor.frame > 0 ? '+' : ''}${anchor.frame}`;
+      renderPlainSequence(cdsSeq, 'proCDSSeqViewer');
+
+      // 2. Extract Protein
+      document.getElementById('proProteinSeqRange').textContent = `Translation Product · ${anchor.proteinLength} aa`;
+      renderPlainSequence(anchor.protein, 'proProteinSeqViewer', true);
+
+      // 3. Extract Promoter (Upstream)
+      const proStart = Math.max(1, anchor.start - upstreamLen);
+      const proEnd = anchor.start - 1;
+      const promoterSeq = seq.substring(proStart - 1, proEnd);
+      
+      const proMotifs = motifs.filter(m => m.position >= proStart && m.position <= proEnd)
+                             .map(m => ({ ...m, position: m.position - (proStart - 1) }));
+
+      document.getElementById('proSeqRange').textContent = `Promoter Region [${proStart} ... ${proEnd}] · ${promoterSeq.length} bp`;
+      renderHighlightedSequence(promoterSeq, proMotifs, 'proSeqViewer');
+    } else {
+      ['proCDSSeqViewer', 'proProteinSeqViewer', 'proSeqViewer'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<p style="color:var(--text-muted)">No suitable ORF found to anchor sequence extraction.</p>';
+      });
+      document.querySelectorAll('.pro-seq-meta').forEach(el => el.textContent = '—');
+    }
+
+    // Feed genome viewer
     if (window.loadGenomeData) {
       const cdsData = orfs.map(o => ({
         start: o.start - 1, end: o.end, frame: o.frame, length: o.length
@@ -306,8 +334,14 @@
     }
   }
 
-  function renderHighlightedSequence(seq, motifs) {
-    const viewer = document.getElementById('proSeqViewer');
+  function renderPlainSequence(seq, viewerId, isProtein = false) {
+    const viewer = document.getElementById(viewerId);
+    if (!viewer || !seq) return;
+    viewer.innerHTML = `<div class="seq-display" style="font-family:var(--mono); line-height:1.6; word-break:break-all; color:${isProtein ? 'var(--violet)' : 'var(--teal)'}">${window.escapeHTML(seq)}</div>`;
+  }
+
+  function renderHighlightedSequence(seq, motifs, viewerId) {
+    const viewer = document.getElementById(viewerId);
     if (!viewer) return;
 
     // Build highlight map

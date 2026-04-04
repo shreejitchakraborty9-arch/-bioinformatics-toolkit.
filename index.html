@@ -637,8 +637,19 @@
 
       <!-- Input -->
       <div class="input-block">
-        <label class="input-label">Enter Genomic DNA Sequence (5'→3')</label>
-        <textarea class="seq-input" id="proInput" placeholder="Paste your DNA sequence here. The longest ORF will be used to anchor the promoter extraction..." rows="5"></textarea>
+        <label class="input-label">Genomic Sequence / Gene ID</label>
+        <div class="fetch-widget" data-target="proInput" data-meta="proInputMeta">
+          <div class="fetch-row">
+            <select class="fetch-db-select">
+              <option value="ncbi">NCBI Nucleotide</option>
+              <option value="ensembl">Ensembl</option>
+              <option value="kegg">KEGG</option>
+            </select>
+            <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294 (BRCA1)"/>
+            <button class="btn-fetch fetch-btn">Fetch Genomic</button>
+          </div>
+        </div>
+        <textarea class="seq-input" id="proInput" placeholder="Paste your DNA sequence here. The largest ORF will be used to anchor the promoter extraction..." rows="5"></textarea>
         <div class="input-meta" id="proInputMeta">Length: 0 bp</div>
       </div>
 
@@ -665,18 +676,34 @@
 
         <!-- Result tabs -->
         <div class="result-tabs">
-          <button class="result-tab pro-tab active" data-ptab="cds">CDS / ORF Regions</button>
-          <button class="result-tab pro-tab" data-ptab="promoter">Promoter Sequence</button>
-          <button class="result-tab pro-tab" data-ptab="cis">Cis-Acting Elements</button>
+          <button class="result-tab pro-tab active" data-rtab="cds">CDS / ORF Regions</button>
+          <button class="result-tab pro-tab" data-rtab="cds-seq">CDS Sequence</button>
+          <button class="result-tab pro-tab" data-rtab="protein-seq">Protein Sequence</button>
+          <button class="result-tab pro-tab" data-rtab="promoter">Promoter Sequence</button>
+          <button class="result-tab pro-tab" data-rtab="cis">Cis-Acting Elements</button>
         </div>
 
         <!-- Tab: CDS Table -->
-        <div class="pro-tab-content" id="pro-cds">
+        <div class="result-tab-content" id="pro-cds">
           <div id="proCDSTable"></div>
         </div>
 
+        <!-- Tab: Full CDS Nucleotides -->
+        <div class="result-tab-content hidden" id="pro-cds-seq">
+          <div class="pro-seq-meta" id="proCDSSeqRange">Primary Anchor CDS</div>
+          <div class="pro-seq-viewer" id="proCDSSeqViewer"></div>
+          <button class="copy-btn" data-target="proCDSSeqViewer">Copy CDS</button>
+        </div>
+
+        <!-- Tab: Protein Product -->
+        <div class="result-tab-content hidden" id="pro-protein-seq">
+          <div class="pro-seq-meta" id="proProteinSeqRange">Primary Translation Product</div>
+          <div class="pro-seq-viewer" id="proProteinSeqViewer"></div>
+          <button class="copy-btn" data-target="proProteinSeqViewer">Copy Protein</button>
+        </div>
+
         <!-- Tab: Promoter Sequence Viewer -->
-        <div class="pro-tab-content hidden" id="pro-promoter">
+        <div class="result-tab-content hidden" id="pro-promoter">
           <div class="pro-seq-meta" id="proSeqRange"></div>
           <div class="pro-seq-viewer" id="proSeqViewer"></div>
           <div class="pro-cis-legend" id="proCisLegend"></div>
@@ -685,7 +712,7 @@
         </div>
 
         <!-- Tab: Cis-Elements Table -->
-        <div class="pro-tab-content hidden" id="pro-cis">
+        <div class="result-tab-content hidden" id="pro-cis">
           <div id="proCisTable"></div>
         </div>
 
