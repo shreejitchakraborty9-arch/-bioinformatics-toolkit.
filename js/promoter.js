@@ -442,4 +442,40 @@
     }
   });
 
+  document.getElementById('proClearBtn')?.addEventListener('click', () => {
+    const input = document.getElementById('proInput');
+    if (input) input.value = '';
+    document.getElementById('proResults')?.classList.add('hidden');
+    input.dispatchEvent(new Event('input'));
+  });
+
+  document.getElementById('proExportBtn')?.addEventListener('click', () => {
+    const input = document.getElementById('proInput');
+    if (!input || !input.value) return;
+    
+    const seq = window.cleanSeq(input.value);
+    const orfs = findORFs(seq);
+    const anchor = orfs.length > 0 ? orfs[0] : null;
+    const upstream = parseInt(document.getElementById('proUpstream').value) || 1000;
+
+    let text = `BioToolkit Promoter/CDS Analysis Report\n`;
+    text += `Generated: ${new Date().toLocaleString()}\n`;
+    text += `Source Sequence Length: ${seq.length} bp\n`;
+    text += `----------------------------------------\n\n`;
+
+    if (anchor) {
+      const cds = seq.substring(anchor.start - 1, anchor.end);
+      const proStart = Math.max(1, anchor.start - upstream);
+      const promoter = seq.substring(proStart - 1, anchor.start - 1);
+
+      text += `>Primary_Anchor_CDS [Range: ${anchor.start}-${anchor.end}] [Frame: ${anchor.frame}]\n${cds}\n\n`;
+      text += `>Primary_Anchor_Translation [${anchor.proteinLength} aa]\n${anchor.protein}\n\n`;
+      text += `>Promoter_Region [Range: ${proStart}-${anchor.start - 1}] [Upstream: ${upstream}bp]\n${promoter}\n\n`;
+    } else {
+      text += `No Anchor ORF found in query sequence.\n`;
+    }
+
+    window.BioKit.utils.downloadText(`biokit_analysis_${Date.now()}.txt`, text);
+  });
+
 })();

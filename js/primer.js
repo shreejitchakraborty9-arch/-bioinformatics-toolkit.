@@ -126,7 +126,10 @@
         formamide_m: formamide
       };
 
-      if (!fwd && !rev) { showToast('⚠ Enter at least one primer'); return; }
+      const fwd = window.cleanSeq(fwdInput.value);
+      const rev = window.cleanSeq(revInput.value);
+
+      if (!fwd && !rev) { window.showToast('⚠ Enter at least one primer'); return; }
 
       const valFwd = window.validateSequence(fwdInput.value, 'dna');
       const valRev = window.validateSequence(revInput.value, 'dna');

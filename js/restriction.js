@@ -206,7 +206,7 @@
     const chipsContainer = document.getElementById('enzymeChips');
     if (chipsContainer) {
       const fragment = document.createDocumentFragment();
-      allEnzymes.slice(0, 20).forEach(e => {
+      allEnzymes.forEach(e => {
         const chip = document.createElement('div');
         chip.className = 'enzyme-chip selected';
         chip.dataset.enzyme = e.name;
@@ -219,6 +219,14 @@
       chipsContainer.addEventListener('click', (e) => {
         const chip = e.target.closest('.enzyme-chip');
         if (chip) chip.classList.toggle('selected');
+      });
+
+      // Select All / Select None
+      document.getElementById('reSelectAll')?.addEventListener('click', () => {
+        chipsContainer.querySelectorAll('.enzyme-chip:not([style*="display: none"])').forEach(c => c.classList.add('selected'));
+      });
+      document.getElementById('reSelectNone')?.addEventListener('click', () => {
+        chipsContainer.querySelectorAll('.enzyme-chip').forEach(c => c.classList.remove('selected'));
       });
       
       // Filter logic
