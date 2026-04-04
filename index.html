@@ -13,7 +13,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230d1117'/><path d='M30 20 L70 20 M30 50 L70 50 M30 80 L70 80' stroke='%2358a6ff' stroke-width='8'/></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="css/style.css"/>
   <script src="https://unpkg.com/dompurify@latest/dist/purify.min.js"></script>
@@ -94,10 +94,15 @@
         <span class="nav-icon"><i data-lucide="settings"></i></span>
         <span class="nav-label">Settings</span>
       </button>
+
+      <button class="nav-item" id="themeToggleBtn">
+        <span class="nav-icon"><i data-lucide="sun-moon"></i></span>
+        <span class="nav-label">Toggle Theme</span>
+      </button>
     </nav>
 
     <div class="sidebar-footer">
-      <span>Professional Edition</span>
+      <span>Research Edition</span>
     </div>
   </aside>
 
@@ -122,83 +127,122 @@
     <!-- HOME PANEL -->
     <section class="tool-panel active" id="panel-home">
       <div class="hero-section">
-        <h1 class="hero-title">BioToolkit — Scientific Sequence Analysis Platform</h1>
+        <h1 class="hero-title">Scientific Sequence Analysis Platform</h1>
         <p class="hero-subtitle">
-          High-performance, research-grade tools for DNA, RNA, and protein analysis.
+          Professional-grade bioinformatics modules for genomics, transcription analysis, and protein informatics. Designed for laboratory accuracy and robust scientific workflows.
         </p>
       </div>
-        <div class="hero-stats">
-          <div class="stat-card">
-            <div class="stat-number">7</div>
-            <div class="stat-label">Core Tools</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-number">30+</div>
-            <div class="stat-label">Restriction Enzymes</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-number">100%</div>
-            <div class="stat-label">Privacy First</div>
-          </div>
-        </div>
-      </div>
 
+      <div class="category-header">
+        <h2 class="category-title">Core Analysis Modules</h2>
+      </div>
       <div class="tool-grid">
         <div class="tool-card" data-tool="dna">
           <div class="tool-card-icon"><i data-lucide="microscope"></i></div>
-          <h3>DNA · RNA Analyzer</h3>
-          <p>GC content, reverse complement, transcription, translation, and codon usage analysis.</p>
+          <div class="tool-card-category">Genomics</div>
+          <h3>DNA &amp; RNA Analyzer</h3>
+          <p>Compute GC content, generate reverse complements, map transcriptions, and execute codon usage analysis.</p>
           <div class="tool-card-tags"><span>GC%</span><span>Codons</span><span>Translation</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
         <div class="tool-card" data-tool="protein">
           <div class="tool-card-icon"><i data-lucide="beaker"></i></div>
-          <h3>Protein Analyzer</h3>
-          <p>Molecular weight, amino acid composition, isoelectric point, and hydrophobicity.</p>
+          <div class="tool-card-category">Proteomics</div>
+          <h3>Protein Informatics</h3>
+          <p>Determine molecular weights, amino acid composition properties, isoelectric points, and hydropathy plots.</p>
           <div class="tool-card-tags"><span>MW</span><span>pI</span><span>Composition</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
         <div class="tool-card" data-tool="alignment">
           <div class="tool-card-icon"><i data-lucide="link"></i></div>
-          <h3>Sequence Alignment</h3>
-          <p>Needleman-Wunsch global and Smith-Waterman local pairwise alignment with visual diff.</p>
-          <div class="tool-card-tags"><span>Global</span><span>Local</span><span>Visual Diff</span></div>
+          <div class="tool-card-category">Sequence Comparison</div>
+          <h3>Pairwise Alignment</h3>
+          <p>Execute dynamic programming alignments using Needleman-Wunsch (global) and Smith-Waterman (local).</p>
+          <div class="tool-card-tags"><span>Global</span><span>Local</span><span>Diff</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
         <div class="tool-card" data-tool="fasta">
           <div class="tool-card-icon"><i data-lucide="file-text"></i></div>
+          <div class="tool-card-category">Data Parsing</div>
           <h3>FASTA Parser</h3>
-          <p>Drag-and-drop FASTA file parsing with per-sequence statistics and export.</p>
-          <div class="tool-card-tags"><span>Multi-seq</span><span>Drag &amp; Drop</span><span>Stats</span></div>
+          <p>Process singular or multi-sequence FASTA files with automated per-sequence metric generation.</p>
+          <div class="tool-card-tags"><span>Multi-seq</span><span>Parsing</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
+      </div>
+
+      <div class="category-header" style="margin-top: 48px;">
+        <h2 class="category-title">Molecular Biology &amp; Cloning</h2>
+      </div>
+      <div class="tool-grid">
         <div class="tool-card" data-tool="primer">
           <div class="tool-card-icon"><i data-lucide="test-tubes"></i></div>
+          <div class="tool-card-category">PCR</div>
           <h3>Primer Design</h3>
-          <p>Melting temperature, GC clamp, hairpin detection, and primer pair evaluation.</p>
-          <div class="tool-card-tags"><span>Tm</span><span>Hairpin</span><span>GC Clamp</span></div>
+          <p>Evaluate thermodynamic properties, melting temperatures, and detect secondary structures like hairpins.</p>
+          <div class="tool-card-tags"><span>Tm</span><span>Hairpin</span><span>Clamp</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
         <div class="tool-card" data-tool="restriction">
           <div class="tool-card-icon"><i data-lucide="scissors"></i></div>
+          <div class="tool-card-category">Cloning</div>
           <h3>Restriction Enzymes</h3>
-          <p>Find recognition sites for 30+ enzymes with cut positions and fragment sizes.</p>
-          <div class="tool-card-tags"><span>30+ Enzymes</span><span>Cut Sites</span><span>Fragments</span></div>
+          <p>Map recognition sequences for over 30 endonucleases, determining exact cleavage positions.</p>
+          <div class="tool-card-tags"><span>Sites</span><span>Fragments</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
         <div class="tool-card" data-tool="promoter">
           <div class="tool-card-icon"><i data-lucide="compass"></i></div>
-          <h3>Promoter &amp; CDS Analyzer</h3>
-          <p>Detect ORFs, extract upstream promoter regions, and scan for cis-acting regulatory motifs.</p>
-          <div class="tool-card-tags"><span>CDS/ORF</span><span>Promoter</span><span>Cis-Elements</span></div>
+          <div class="tool-card-category">Regulatory</div>
+          <h3>Promoter &amp; CDS</h3>
+          <p>Isolate upstream promoter regions, identify open reading frames, and scan for cis-acting elements.</p>
+          <div class="tool-card-tags"><span>ORF</span><span>Promoter</span><span>Motifs</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
+      </div>
+
+      <div class="category-header" style="margin-top: 48px;">
+        <h2 class="category-title">Database &amp; Visualization</h2>
+      </div>
+      <div class="tool-grid">
         <div class="tool-card" data-tool="sequence-search">
           <div class="tool-card-icon"><i data-lucide="search"></i></div>
+          <div class="tool-card-category">Database Search</div>
           <h3>Sequence Search</h3>
-          <p>BLAST-like local alignment search against a mock genome database with E-value approximations.</p>
-          <div class="tool-card-tags"><span>Local Alignment</span><span>E-value</span><span>Detailed Hits</span></div>
+          <p>Perform BLAST-like local alignment searches against genomic datasets with E-value modeling.</p>
+          <div class="tool-card-tags"><span>Alignment</span><span>E-value</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
         <div class="tool-card" data-tool="genome-viewer">
           <div class="tool-card-icon"><i data-lucide="layers"></i></div>
+          <div class="tool-card-category">Visualization</div>
           <h3>Genome Viewer</h3>
-          <p>Interactive HTML5 Canvas engine for visualizing sequences, CDS, promoters, and motifs in an IGV-style track layout.</p>
-          <div class="tool-card-tags"><span>Interactive</span><span>Multi-Track</span><span>Performance</span></div>
+          <p>Interactive track visualization for sequenced features including CDS, motiffs, and promoters.</p>
+          <div class="tool-card-tags"><span>Canvas</span><span>Multi-Track</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
       </div>
+
+      <div class="category-header" style="margin-top: 48px;">
+        <h2 class="category-title" style="color: var(--text-muted);">Planned &amp; Experimental Modules</h2>
+      </div>
+      <div class="tool-grid" style="opacity: 0.6;">
+        <div class="tool-card" style="box-shadow: none; border-style: dashed; cursor: default;">
+          <div class="tool-card-icon" style="background: transparent;"><i data-lucide="network"></i></div>
+          <div class="tool-card-category">Systems Biology</div>
+          <h3 style="color: var(--text-muted);">Metabolic Pathway Modeling</h3>
+          <p>Simulate flux balance analysis across reconstructed metabolic networks.</p>
+          <div class="tool-card-tags"><span style="background: transparent; border-color: transparent;">Coming soon</span></div>
+        </div>
+        <div class="tool-card" style="box-shadow: none; border-style: dashed; cursor: default;">
+          <div class="tool-card-icon" style="background: transparent;"><i data-lucide="microscope"></i></div>
+          <div class="tool-card-category">Structural</div>
+          <h3 style="color: var(--text-muted);">3D Protein Fold Viewer</h3>
+          <p>Render PDB formats and predict tertiary structures for analysis.</p>
+          <div class="tool-card-tags"><span style="background: transparent; border-color: transparent;">Coming soon</span></div>
+        </div>
+      </div>
+
     </section>
 
     <!-- DNA/RNA PANEL -->
@@ -769,6 +813,7 @@
   <!-- Mobile Hamburger & Theme Toggle -->
   <script>
   (function(){
+    // Sidebar toggle logic
     const hamburger = document.getElementById('hamburgerBtn');
     const sidebar   = document.getElementById('sidebar');
     const backdrop  = document.getElementById('sidebarBackdrop');
@@ -782,7 +827,6 @@
         sidebar.classList.remove('open');
         backdrop.classList.remove('visible');
       });
-      // Close sidebar when nav item clicked on mobile
       sidebar.querySelectorAll('.nav-item').forEach(btn => {
         btn.addEventListener('click', () => {
           if (window.innerWidth <= 680) {
@@ -790,6 +834,19 @@
             backdrop.classList.remove('visible');
           }
         });
+      });
+    }
+
+    // Theme logic
+    const themeBtn = document.getElementById('themeToggleBtn');
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const doc = document.documentElement;
+        if (doc.getAttribute('data-theme') === 'dark') {
+          doc.removeAttribute('data-theme');
+        } else {
+          doc.setAttribute('data-theme', 'dark');
+        }
       });
     }
   })();
