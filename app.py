@@ -16,9 +16,11 @@ import logging
 import requests
 import re
 from functools import wraps
-from flask import Flask, jsonify, request, send_from_directory, Response, g
+from flask import Flask, jsonify, request, send_from_directory, Response, g, url_for
 from flask_cors import CORS
 from flask_caching import Cache
+from flask_login import LoginManager, UserMixin, login_required, current_user
+from models import db, User, Workspace, AnalysisResult
 try:
     from Bio.Seq import Seq as BioSeq
     _BIOPYTHON_AVAILABLE = True
@@ -35,6 +37,14 @@ except ImportError:
 # App Setup
 # ─────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder=".", static_url_path="")
+app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev-secret-key-12345")
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///biotoolkit.db")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize Extensions
+db.init_app(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
 
 REDIS_CACHE_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 cache_config = {'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 86400}
@@ -46,6 +56,13 @@ if _REDIS_AVAILABLE:
     }
 
 cache = Cache(app, config=cache_config)
+
+# Database table creation (Preparation Phase)
+with app.app_context():
+    try:
+        db.create_all()
+    except Exception as e:
+        print(f"Database initialization deferred: {e}")
 
 # 1. CORS Enforcement (Restrict to exact frontend domain)
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173") # Default to local dev
@@ -96,6 +113,14 @@ _cb_open_until = 0
 # ─────────────────────────────────────────────────────────────
 # Utilities
 # ─────────────────────────────────────────────────────────────
+def error_response(message: str, status_code: int = 400, details: dict = None):
+    """Standardized scientific error responder."""
+    payload = {"error": message, "status": "failure"}
+    if details:
+        payload["details"] = details
+    return jsonify(payload), status_code
+
+
 def enforce_rate_limit(db: str):
     """
     Redis-backed server-side per-database rate limiter for distributed workers.
@@ -148,6 +173,24 @@ def enforce_rate_limit(db: str):
         _last_request_time[db] = time.time() + (min_interval - elapsed)
     else:
         _last_request_time[db] = time.time()
+
+
+# ─────────────────────────────────────────────────────────────
+# Auth & Session Preparation (Placeholders)
+# ─────────────────────────────────────────────────────────────
+@login_manager.user_loader
+def load_user(user_id):
+    # Prepared for future DB-backed auth
+    return User.query.get(int(user_id)) if user_id else None
+
+
+def optional_login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Currently allows all users (Guest mode enabled)
+        # Flip this to @login_required later to enforce authentication
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def proxy_get(url: str, headers: dict = None, params: dict = None) -> requests.Response:
@@ -1320,7 +1363,29 @@ def gene_map():
 # ─────────────────────────────────────────────────────────────
 @app.route("/api/health")
 def health():
-    return jsonify({"status": "ok", "version": "1.0.0-mvp"})
+    return jsonify({"status": "ok", "version": "1.1.0-scaling-prep", "db": "ready"})
+
+
+# ─────────────────────────────────────────────────────────────
+# API – Async Job Status (Preparation)
+# ─────────────────────────────────────────────────────────────
+@app.route("/api/jobs/status/<task_id>")
+def get_task_status(task_id):
+    """
+    Endpoint to check the status of a background bioinformatics task.
+    Prepared for Celery integration.
+    """
+    from worker import celery
+    task = celery.AsyncResult(task_id)
+    if task.state == 'PENDING':
+        response = {"state": task.state, "status": "Pending..."}
+    elif task.state != 'FAILURE':
+        response = {"state": task.state, "status": task.info.get('status', '')}
+        if 'result' in task.info:
+            response['result'] = task.info['result']
+    else:
+        response = {"state": task.state, "status": str(task.info)}
+    return jsonify(response)
 
 
 # ─────────────────────────────────────────────────────────────

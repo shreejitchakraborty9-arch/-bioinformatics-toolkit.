@@ -1,14 +1,26 @@
 services:
   - type: web
-    name: biotoolkit-mvp
+    name: biotoolkit-enterprise
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 8 --timeout 120"
+    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gevent --workers 4 --threads 1 --timeout 120"
     healthCheckPath: /api/health
     envVars:
       - key: FLASK_ENV
         value: production
+      - key: DATABASE_URL
+        sync: false # Set in Render dashboard (Postgres)
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: biotoolkit-cache
+          property: connectionString
       - key: NCBI_API_KEY
-        sync: false   # Set this in the Render dashboard — never commit the key
+        sync: false
       - key: ALLOWED_ORIGIN
-        sync: false   # Set to your Render domain e.g. https://biotoolkit-mvp.onrender.com
+        sync: false
+
+  - type: redis
+    name: biotoolkit-cache
+    ipAllowList: [] # Only allow internal access
+    plan: free # Change to standard for production
