@@ -25,7 +25,9 @@ try:
     from Bio.Seq import Seq as BioSeq
     _BIOPYTHON_AVAILABLE = True
 except ImportError:
-    _BIOPYTHON_AVAILABLE = Falsetry:
+    _BIOPYTHON_AVAILABLE = False
+
+try:
     import redis
     _REDIS_AVAILABLE = True
 except ImportError:
@@ -68,7 +70,8 @@ ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173") # Def
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGIN}})
 
 # 2. Payload size Limit (5MB) - Prevents OOM and large sequence abuse
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024logging.basicConfig(level=logging.INFO)
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("BioToolkit")
 
 # ─────────────────────────────────────────────────────────────
@@ -114,38 +117,55 @@ def error_response(message: str, status_code: int = 400, details: dict = None):
     """Standardized scientific error responder."""
     payload = {"error": message, "status": "failure"}
     if details:
-        payload["details"] = detailsreturn jsonify(payload), status_codedef enforce_rate_limit(db: str):
+        payload["details"] = details
+    return jsonify(payload), status_code
+
+def enforce_rate_limit(db: str):
     """
     Redis-backed server-side per-database rate limiter for distributed workers.
     Gracefully degrades to in-memory if Redis is unavailable.
     """
     min_interval = RATE_LIMITS.get(db, 0.5)
     
-    # Specific adjustment for NCBI with API KEYif db == "ncbi" and NCBI_API_KEY:
-        min_interval = 0.1  # 10 req/secif redis_client:
+    # Specific adjustment for NCBI with API KEY
+    if db == "ncbi" and NCBI_API_KEY:
+        min_interval = 0.1  # 10 req/sec
+    if redis_client:
         try:
             key = f"rate_limit:{db}"
-            # Atomic Lua script for rate limit calculationlua_script = """
+            # Atomic Lua script for rate limit calculation
+            lua_script = """
             local last = redis.call('GET', KEYS[1])
             local current_time = tonumber(ARGV[1])
             local min_interval = tonumber(ARGV[2])
             
-            if not last thenredis.call('SET', KEYS[1], current_time)
-                return 0endlocal elapsed = current_time - tonumber(last)
-            if elapsed < min_interval thenlocal wait_time = min_interval - elapsedredis.call('SET', KEYS[1], current_time + wait_time)
-                return wait_timeelseredis.call('SET', KEYS[1], current_time)
-                return 0end
+            if not last then
+                redis.call('SET', KEYS[1], current_time)
+                return 0
+            end
+            local elapsed = current_time - tonumber(last)
+            if elapsed < min_interval then
+                local wait_time = min_interval - elapsed
+                redis.call('SET', KEYS[1], current_time + wait_time)
+                return wait_time
+            else
+                redis.call('SET', KEYS[1], current_time)
+                return 0
+            end
             """
             
             wait_time = redis_client.eval(lua_script, 1, key, time.time(), min_interval)
             
             if wait_time and float(wait_time) > 0:
                 time.sleep(float(wait_time))
-            returnexcept Exception as e:
+            return
+        except Exception as e:
             logger.error("Redis rate limit failed for %s, falling back to memory: %s", db, e)
             
-    # In-memory fallbacklast = _last_request_time.get(db, 0)
-    elapsed = time.time() - lastif elapsed < min_interval:
+    # In-memory fallback
+    last = _last_request_time.get(db, 0)
+    elapsed = time.time() - last
+    if elapsed < min_interval:
         time.sleep(min_interval - elapsed)
         _last_request_time[db] = time.time() + (min_interval - elapsed)
     else:
@@ -157,12 +177,18 @@ def error_response(message: str, status_code: int = 400, details: dict = None):
 # ─────────────────────────────────────────────────────────────
 @login_manager.user_loader
 def load_user(user_id):
-    # Prepared for future DB-backed authreturn User.query.get(int(user_id)) if user_id else Nonedef optional_login_required(f):
+    # Prepared for future DB-backed auth
+    return User.query.get(int(user_id)) if user_id else None
+
+def optional_login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # Currently allows all users (Guest mode enabled)
-        # Flip this to @login_required later to enforce authenticationreturn f(*args, **kwargs)
-    return decorated_functiondef proxy_get(url: str, headers: dict = None, params: dict = None) -> requests.Response:
+        # Flip this to @login_required later to enforce authentication
+        return f(*args, **kwargs)
+    return decorated_function
+
+def proxy_get(url: str, headers: dict = None, params: dict = None) -> requests.Response:
     """
     Make a proxied GET request with a consistent User-Agent,
     retry logic (exponential backoff), and a circuit breaker.
@@ -171,7 +197,8 @@ def load_user(user_id):
     
     # 1. Determine service for reportingservice = "NCBI" if "ncbi" in url else "Ensembl" if "ensembl" in url else "UniProt" if "uniprot" in url else "Biological service"
     
-    # 2. Check Circuit Breakerif time.time() < _cb_open_until:
+    # 2. Check Circuit Breaker
+    if time.time() < _cb_open_until:
         wait_left = int(_cb_open_until - time.time())
         logger.warning("[Circuit Breaker] Blocking request to %s (Open for %ds more)", service, wait_left)
         raise requests.RequestException(f"{service} is temporarily unavailable due to consecutive failures. Please try again in {wait_left} seconds.")
@@ -184,29 +211,39 @@ def load_user(user_id):
         h.update(headers)
     
     backoffs = [0.5, 1.0, 2.0]
-    total_attempts = len(backoffs) + 1for i in range(total_attempts):
+    total_attempts = len(backoffs) + 1
+    for i in range(total_attempts):
         try:
             resp = requests.get(url, headers=h, params=params, timeout=REQUEST_TIMEOUT)
             
-            # success (200) or client errors (400/404) that aren't service-level failuresif resp.status_code == 200 or (resp.status_code < 500 and resp.status_code not in (429,)):
-                _cb_failure_count = 0 # Reset on server-reachable responsereturn resp
+            # success (200) or client errors (400/404) that aren't service-level failures
+            if resp.status_code == 200 or (resp.status_code < 500 and resp.status_code not in (429,)):
+                _cb_failure_count = 0 # Reset on server-reachable response
+                return resp
             
             # retry on 429 (rate limit) or 500+ (server-side issues)
             if i < len(backoffs):
                 logger.warning("[Retry %d] %s returned HTTP %d. Backing off %ss.", i + 1, service, resp.status_code, backoffs[i])
                 time.sleep(backoffs[i])
-                continueelse:
-                # Max retries reachedbreakexcept (requests.Timeout, requests.RequestException) as e:
+                continue
+            else:
+                # Max retries reached
+                break
+        except (requests.Timeout, requests.RequestException) as e:
             if i < len(backoffs):
                 logger.warning("[Retry %d] Connection to %s failed: %s. Backing off %ss.", i + 1, service, e, backoffs[i])
                 time.sleep(backoffs[i])
-                continuebreak
+                continue
+            break
             
     # If we reached here, it's a persistent failure
-    _cb_failure_count += 1if _cb_failure_count >= 5:
-        _cb_open_until = time.time() + 30logger.error("[Circuit Breaker] OPENING for 30s after 5 consecutive failures.")
+    _cb_failure_count += 1
+    if _cb_failure_count >= 5:
+        _cb_open_until = time.time() + 30
+        logger.error("[Circuit Breaker] OPENING for 30s after 5 consecutive failures.")
         
-    # User-friendly message constructionmsg = f"{service} temporarily unavailable. Please try again soon."
+    # User-friendly message construction
+    msg = f"{service} temporarily unavailable. Please try again soon."
     if _cb_failure_count >= 5:
         msg = f"{service} service is under heavy load (circuit breaker active). Please try again in 30 seconds."
         
@@ -216,7 +253,8 @@ def load_user(user_id):
 def sanitize_input(val: str) -> str:
     """Sanitizes alphanumeric strings and accessions, blocking script/SQL injection."""
     if not val: return ""
-    # Only allow safe biological/standard charactersreturn re.sub(r"[^a-zA-Z0-9_\-\.\:\*\s\>\+]", "", val).strip()
+    # Only allow safe biological/standard characters
+    return re.sub(r"[^a-zA-Z0-9_\-\.\:\*\s\>\+]", "", val).strip()
 
 
 def validate_sequence(raw_text: str, seq_type: str = "dna") -> tuple[str, list[str], tuple]:
@@ -233,7 +271,8 @@ def validate_sequence(raw_text: str, seq_type: str = "dna") -> tuple[str, list[s
     if not raw_text:
         return "", [], error_response("Sequence is empty.", 400)
 
-    # Simple FASTA handlinglines = raw_text.splitlines()
+    # Simple FASTA handling
+    lines = raw_text.splitlines()
     if lines[0].startswith(">"):
         seq_lines = []
         for line in lines[1:]:
@@ -257,11 +296,14 @@ def validate_sequence(raw_text: str, seq_type: str = "dna") -> tuple[str, list[s
         warnings.append(f"Short sequence ({length} bases/aa). Results may lack statistical significance.")
 
     if seq_type in ("dna", "rna"):
-        # Match real bioinformatics tool standardsvalid_strict = set("ATGCNU")
+        # Match real bioinformatics tool standards
+        valid_strict = set("ATGCNU")
         ambiguous = set("RYSWKMBDHV")
-        allowed = valid_strict | ambiguousfound = set(cleaned_seq)
+        allowed = valid_strict | ambiguous
+        found = set(cleaned_seq)
         
-        invalid = found - allowedif invalid:
+        invalid = found - allowed
+        if invalid:
             return "", [], error_response(
                 f"Sequence contains invalid {seq_type.upper()} characters: {', '.join(sorted(invalid))}. "
                 "Only standard and IUPAC nucleotide bases are permitted.",
@@ -275,7 +317,8 @@ def validate_sequence(raw_text: str, seq_type: str = "dna") -> tuple[str, list[s
     elif seq_type == "protein":
         allowed = set("ACDEFGHIKLMNPQRSTVWY*")
         found = set(cleaned_seq)
-        invalid = found - allowedif invalid:
+        invalid = found - allowed
+        if invalid:
             return "", [], error_response(
                 f"Sequence contains invalid protein characters: {', '.join(sorted(invalid))}. "
                 "Only standard 20 amino acids and '*' are permitted.",
@@ -296,7 +339,8 @@ def _cacheable_response(response) -> bool:
     """
     try:
         if isinstance(response, tuple):
-            status_code = response[1] if len(response) > 1 else 200data = response[0] if response else b""
+            status_code = response[1] if len(response) > 1 else 200
+            data = response[0] if response else b""
             if isinstance(data, str):
                 data = data.encode()
             content_type = ""
@@ -307,17 +351,22 @@ def _cacheable_response(response) -> bool:
             data = response.get_data() if hasattr(response, "get_data") else b""
             content_type = getattr(response, "content_type", "") or ""
 
-        # Must be HTTP 200if status_code != 200:
+        # Must be HTTP 200
+        if status_code != 200:
             return False
-        # Must have a bodyif not data:
+        # Must have a body
+        if not data:
             return False
         # Must not be a JSON error payload  {"error": "..."}
         if "json" in content_type:
             try:
                 parsed = json.loads(data)
                 if isinstance(parsed, dict) and "error" in parsed:
-                    return Falseexcept (ValueError, TypeError):
-                passreturn Trueexcept Exception:
+                    return False
+            except (ValueError, TypeError):
+                pass
+        return True
+    except Exception:
         return False
 
 
@@ -325,7 +374,8 @@ def _cacheable_response(response) -> bool:
 def _security_gate():
     """Centralized security hardening: IP rate limiting and block/ban checking."""
     # 3. IP Rate Limiting (30 requests/min per IP)
-    ip = request.remote_addrif not ip: return
+    ip = request.remote_addr
+    if not ip: return
     
     # Check if IP is explicitly blocked (Abuse/Multiple failures)
     if _REDIS_AVAILABLE and redis_client:
@@ -349,37 +399,46 @@ def _security_gate():
     # Cache Logs & Tracking 
     # ─────────────────────────────────────────────────────────────
     if not request.path.startswith("/api/"):
-        returng._btk_request_start = time.monotonic()
+        return
+    g._btk_request_start = time.monotonic()
     try:
-        g._btk_cache_had_entry = cache.get(request.url) is not Noneexcept Exception:
+        g._btk_cache_had_entry = cache.get(request.url) is not None
+    except Exception:
         g._btk_cache_had_entry = False
 
 
 @app.after_request
 def _security_monitor(response):
     """Monitors failures to automatically block abusive IPs."""
-    ip = request.remote_addrif not ip or not _REDIS_AVAILABLE or not redis_client:
+    ip = request.remote_addr
+    if not ip or not _REDIS_AVAILABLE or not redis_client:
         return response
 
-    # 4. Prevent Abuse: Block if > 15 failures in 10 minutesif response.status_code >= 400 and response.status_code != 429:
+    # 4. Prevent Abuse: Block if > 15 failures in 10 minutes
+    if response.status_code >= 400 and response.status_code != 429:
         try:
             fail_key = f"fail_count:{ip}"
             fails = redis_client.incr(fail_key)
             if fails == 1:
-                redis_client.expire(fail_key, 600)  # 10m windowif fails >= 15:
+                redis_client.expire(fail_key, 600)  # 10m window
+            if fails >= 15:
                 logger.error("[Security] BANNING IP %s for 10 minutes (Too many failures).", ip)
                 redis_client.setex(f"block_ip:{ip}", 600, "1")
         except Exception:
-            passif not request.path.startswith("/api/"):
-        return responsetry:
-        elapsed_ms = (time.monotonic() - getattr(g, "_btk_request_start", time.monotonic())) * 1000was_cached = getattr(g, "_btk_cache_had_entry", False)
+            pass
+    if not request.path.startswith("/api/"):
+        return response
+    try:
+        elapsed_ms = (time.monotonic() - getattr(g, "_btk_request_start", time.monotonic())) * 1000
+        was_cached = getattr(g, "_btk_cache_had_entry", False)
         status = "HIT " if was_cached else "MISS"
         logger.info(
             "[Cache %s] %s %s \u2192 HTTP %d (%.1f ms)",
             status, request.method, request.full_path.rstrip("?"), response.status_code, elapsed_ms,
         )
     except Exception:
-        passreturn response
+        pass
+    return response
 
 
 # ─────────────────────────────────────────────────────────────
@@ -451,14 +510,19 @@ def _infer_db_from_accession(acc: str):
     # Try longest match first (e.g. NM_ before N)
     for prefix, (db, mol) in sorted(ACCESSION_PREFIX_MAP.items(), key=lambda x: -len(x[0])):
         if upper.startswith(prefix.upper()):
-            return db, molreturn None, Nonedef _validate_accession(acc: str, requested_db: str):
+            return db, mol
+    return None, None
+
+def _validate_accession(acc: str, requested_db: str):
     """
     Validate the accession against the requested database.
     Returns (is_valid, inferred_db, mol_type, error_message).
     """
     inferred_db, mol_type = _infer_db_from_accession(acc)
     if inferred_db is None:
-        # Unknown prefix — allow it through with a warning; NCBI will reject if truly invalidreturn True, requested_db, "sequence", Noneif requested_db != inferred_db:
+        # Unknown prefix — allow it through with a warning; NCBI will reject if truly invalid
+        return True, requested_db, "sequence", None
+    if requested_db != inferred_db:
         prefix = acc.split("_")[0] + ("_" if "_" in acc else "")
         return (
             False,
@@ -491,7 +555,8 @@ def fetch_ncbi():
     """
     acc_id = sanitize_input(request.args.get("id", ""))
     fmt    = sanitize_input(request.args.get("format", "fasta")).lower()
-    # Legacy 'rettype' param still honoured for backwards compatif "rettype" in request.args and "format" not in request.args:
+    # Legacy 'rettype' param still honoured for backwards compat
+    if "rettype" in request.args and "format" not in request.args:
         fmt = "genbank" if sanitize_input(request.args["rettype"]) == "gb" else "fasta"
 
     requested_db = sanitize_input(request.args.get("db", "")).lower() or None
@@ -538,21 +603,25 @@ def fetch_ncbi():
         "email":   "admin@biotoolkit.dev",
     }
     user_key = request.headers.get("X-NCBI-API-Key", "").strip()
-    effective_key = user_key or NCBI_API_KEYif effective_key:
-        params["api_key"] = effective_keytry:
+    effective_key = user_key or NCBI_API_KEY
+    if effective_key:
+        params["api_key"] = effective_key
+    try:
         resp = proxy_get(f"{NCBI_BASE}/efetch.fcgi", params=params)
 
         if resp.status_code == 200:
             text = resp.text.strip()
 
-            # Catch NCBI HTML error pages masquerading as 200if text.startswith("<!DOCTYPE") or text.startswith("<html"):
+            # Catch NCBI HTML error pages masquerading as 200
+            if text.startswith("<!DOCTYPE") or text.startswith("<html"):
                 return error_response(
                     f"NCBI could not retrieve '{acc_id}'. The accession may be "
                     "invalid, suppressed, or not available in the requested database.",
                     404,
                 )
 
-            # Catch NCBI "not found" text responsesif "Error" in text[:30] or "Nothing" in text[:40]:
+            # Catch NCBI "not found" text responses
+            if "Error" in text[:30] or "Nothing" in text[:40]:
                 return error_response(
                     f"NCBI returned no data for accession '{acc_id}' in database '{db}'.",
                     404,
@@ -623,8 +692,10 @@ def search_ncbi():
         "email": "admin@biotoolkit.dev"
     }
     user_key = request.headers.get("X-NCBI-API-Key", "").strip()
-    effective_key = user_key or NCBI_API_KEYif effective_key:
-        search_params["api_key"] = effective_keytry:
+    effective_key = user_key or NCBI_API_KEY
+    if effective_key:
+        search_params["api_key"] = effective_key
+    try:
         s_resp = proxy_get(f"{NCBI_BASE}/esearch.fcgi", params=search_params)
         if s_resp.status_code != 200:
             return error_response(f"NCBI esearch returned HTTP {s_resp.status_code}.", s_resp.status_code)
@@ -647,8 +718,10 @@ def search_ncbi():
             "email": "admin@biotoolkit.dev"
         }
         user_key = request.headers.get("X-NCBI-API-Key", "").strip()
-        effective_key = user_key or NCBI_API_KEYif effective_key:
-            sum_params["api_key"] = effective_keysum_resp = proxy_get(f"{NCBI_BASE}/esummary.fcgi", params=sum_params)
+        effective_key = user_key or NCBI_API_KEY
+        if effective_key:
+            sum_params["api_key"] = effective_key
+        sum_resp = proxy_get(f"{NCBI_BASE}/esummary.fcgi", params=sum_params)
         sum_data = sum_resp.json()
         
         gene_info = sum_data.get("result", {}).get(gene_id, {})
@@ -664,8 +737,10 @@ def search_ncbi():
             "email": "admin@biotoolkit.dev"
         }
         user_key = request.headers.get("X-NCBI-API-Key", "").strip()
-        effective_key = user_key or NCBI_API_KEYif effective_key:
-            link_params["api_key"] = effective_keylink_resp = proxy_get(f"{NCBI_BASE}/elink.fcgi", params=link_params)
+        effective_key = user_key or NCBI_API_KEY
+        if effective_key:
+            link_params["api_key"] = effective_key
+        link_resp = proxy_get(f"{NCBI_BASE}/elink.fcgi", params=link_params)
         link_data = link_resp.json()
         
         nucleotide_accessions = []
@@ -686,7 +761,8 @@ def search_ncbi():
                 elif db_to == "protein":
                     protein_accessions.extend(links)
 
-        # Structure the final scientific-grade JSONreturn jsonify({
+        # Structure the final scientific-grade JSON
+        return jsonify({
             "gene_symbol": gene_info.get("name", symbol),
             "organism": gene_info.get("organism", {}).get("scientificname", species),
             "description": gene_info.get("description", ""),
@@ -740,7 +816,8 @@ def fetch_ensembl():
     json_headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
     # ── 1. Symbol → Ensembl ID resolution ─────────────────────
-    ens_id = raw_idif not raw_id.upper().startswith("ENS"):
+    ens_id = raw_id
+    if not raw_id.upper().startswith("ENS"):
         enforce_rate_limit("ensembl")
         try:
             xref_resp = proxy_get(
@@ -815,7 +892,8 @@ def fetch_ensembl():
                 "exons":        exons_out,
             })
 
-        # Sort: canonical first, then by starttranscripts_out.sort(key=lambda t: (not t["is_canonical"], t.get("start") or 0))
+        # Sort: canonical first, then by start
+        transcripts_out.sort(key=lambda t: (not t["is_canonical"], t.get("start") or 0))
 
         result = {
             "ensembl_id":       ens_id,
@@ -1025,16 +1103,20 @@ def ensembl_translate():
     # ── 2. Translate using Biopython ──────────────────────────
     cds_seq, warnings, err = validate_sequence(cds_raw, seq_type="dna")
     if err:
-        return errremainder = len(cds_seq) % 3if remainder != 0:
+        return err
+    remainder = len(cds_seq) % 3
+    if remainder != 0:
         cds_seq = cds_seq[:-remainder]
         warnings.append(f"CDS length was not a multiple of 3 (remainder: {remainder}). Extra bases ignored.")
 
     bio_seq = BioSeq(cds_seq)
     has_start = cds_seq[:3] == "ATG"
 
-    # Translate — stop at first stop codon (*), to_stop=False so we can report allprotein_with_stops = str(bio_seq.translate(table=1, to_stop=False))
+    # Translate — stop at first stop codon (*), to_stop=False so we can report all
+    protein_with_stops = str(bio_seq.translate(table=1, to_stop=False))
 
-    # Locate all stop codons in the CDSstop_codons = []
+    # Locate all stop codons in the CDS
+    stop_codons = []
     for i in range(0, len(cds_seq) - 2, 3):
         codon = cds_seq[i:i + 3]
         if len(codon) == 3 and str(BioSeq(codon).translate(table=1)) == "*":
@@ -1044,8 +1126,10 @@ def ensembl_translate():
                 "nucleotide_offset": i,
             })
 
-    # Clean protein: everything up to (but not including) the first * for the primary ORFprotein_seq = protein_with_stops.split("*")[0]
-    has_stop = "*" in protein_with_stopsreturn jsonify({
+    # Clean protein: everything up to (but not including) the first * for the primary ORF
+    protein_seq = protein_with_stops.split("*")[0]
+    has_stop = "*" in protein_with_stops
+    return jsonify({
         "ensembl_id":       ens_id,
         "cds_sequence":     cds_seq,
         "protein_sequence": protein_seq,
@@ -1094,23 +1178,31 @@ def analyze_dna():
     
     cln_seq, warnings, err = validate_sequence(raw_seq, seq_type="dna")
     if err:
-        return errlength = len(cln_seq)
+        return err
+    length = len(cln_seq)
     
-    # Manual GC computation avoids version-specific Bio.SeqUtils importsgc_count = cln_seq.count('G') + cln_seq.count('C') + cln_seq.count('S')
-    gc_content = round((gc_count / length) * 100, 2) if length > 0 else 0.0b_seq = BioSeq(cln_seq)
+    # Manual GC computation avoids version-specific Bio.SeqUtils imports
+    gc_count = cln_seq.count('G') + cln_seq.count('C') + cln_seq.count('S')
+    gc_content = round((gc_count / length) * 100, 2) if length > 0 else 0.0
+    b_seq = BioSeq(cln_seq)
     
     rev_comp = str(b_seq.reverse_complement())
     
     # Transcription (T -> U). Bio.Seq.transcribe() handles DNA->RNA strictly.
-    # If the user passed RNA natively, transcribe() will raise an error if T is missing and U is present
-    # We gracefully manually handle it if it contains U alreadyif "U" in cln_seq and "T" not in cln_seq:
-        rna = cln_seqelse:
+    # We gracefully manually handle it if it contains U already
+    if "U" in cln_seq and "T" not in cln_seq:
+        rna = cln_seq
+    else:
         rna = str(b_seq.transcribe())
 
-    # 3-Frame conceptual translationframes = []
+    # 3-Frame conceptual translation
+    frames = []
     for frame in range(3):
-        # Slice sequence to start at the frame offsetframe_seq = cln_seq[frame:]
-        # Biopython translate requires sequence length multiple of 3remainder = len(frame_seq) % 3if remainder != 0:
+        # Slice sequence to start at the frame offset
+        frame_seq = cln_seq[frame:]
+        # Biopython translate requires sequence length multiple of 3
+        remainder = len(frame_seq) % 3
+        if remainder != 0:
             frame_seq = frame_seq[:-remainder]
             
         if len(frame_seq) >= 3:
@@ -1157,7 +1249,8 @@ def gene_map():
     effective_key = user_key or NCBI_API_KEY
 
     # ── 1. Resolve NCBI Gene ID (via eSearch/eLink) ─────
-    is_acc = "_" in queryif is_acc:
+    is_acc = "_" in query
+    if is_acc:
         db = "protein" if query.startswith("NP_") or query.startswith("XP_") or query.startswith("WP_") else "nuccore"
         req_url = f"{NCBI_BASE}/esearch.fcgi?db={db}&term={query}&retmode=json"
         if NCBI_API_KEY: req_url += f"&api_key={NCBI_API_KEY}"
@@ -1168,13 +1261,15 @@ def gene_map():
             uids = r1.get("esearchresult", {}).get("idlist", [])
             if uids:
                 link_url = f"{NCBI_BASE}/elink.fcgi?dbfrom={db}&db=gene&id={uids[0]}&retmode=json"
-                if effective_key: link_url += f"&api_key={effective_key}"
+                if effective_key:
+                    link_url += f"&api_key={effective_key}"
                 enforce_rate_limit("ncbi")
                 r2 = proxy_get(link_url).json()
                 try:
                     out["ncbi_gene_id"] = r2["linksets"][0]["linksetdbs"][0]["links"][0]
                 except (KeyError, IndexError):
-                    passexcept Exception as e:
+                    pass
+        except Exception as e:
             logger.error("NCBI accession to gene mapping failed: %s", e)
     else:
         term = f"{query}[Gene Name] AND {species}[Organism]"
@@ -1191,7 +1286,8 @@ def gene_map():
             
     # ── 2. Resolve Ensembl ID (via xrefs) ───────────────
     try:
-        # Avoid empty queries if species parsing is weird, but we validated queryif is_acc and out["ncbi_gene_id"]:
+        # Avoid empty queries if species parsing is weird, but we validated query
+        if is_acc and out["ncbi_gene_id"]:
             url = f"{ENSEMBL_BASE}/xrefs/name/{species}/{out['ncbi_gene_id']}"
         else:
             url = f"{ENSEMBL_BASE}/xrefs/symbol/{species}/{query}"
@@ -1207,7 +1303,8 @@ def gene_map():
             
     # ── 3. Resolve UniProt & KEGG (via UniProt API) ─────
     try:
-        search_query = Noneif out["ensembl_id"]:
+        search_query = None
+        if out["ensembl_id"]:
             search_query = out["ensembl_id"]
         elif out["ncbi_gene_id"]:
             search_query = out["ncbi_gene_id"]
@@ -1226,14 +1323,25 @@ def gene_map():
                     
                     out["uniprot_id"] = entry.get("primaryAccession")
                     out["organism"]   = entry.get("organism", {}).get("scientificName", species)
-                    # Parse KEGGfor d in entry.get("uniProtKBCrossReferences", []):
+                    # Parse KEGG
+                    for d in entry.get("uniProtKBCrossReferences", []):
                         if d.get("database") == "KEGG":
                             out["kegg_id"] = d.get("id")
-                            breakexcept Exception as e:
+                            break
+    except Exception as e:
         logger.error("UniProt API mapping failed: %s", e)
 
     # ── 4. Confidence Score ─────────────────────────────
-    score = 0.0if out["ncbi_gene_id"]: score += 0.25if out["ensembl_id"]:   score += 0.25if out["uniprot_id"]:   score += 0.25if out["kegg_id"]:      score += 0.25out["confidence"] = round(score, 2)
+    score = 0.0
+    if out["ncbi_gene_id"]:
+        score += 0.25
+    if out["ensembl_id"]:
+        score += 0.25
+    if out["uniprot_id"]:
+        score += 0.25
+    if out["kegg_id"]:
+        score += 0.25
+    out["confidence"] = round(score, 2)
     
     if out["confidence"] == 0.0:
         return error_response(f"Could not map '{query}' to any known gene identities in specified databases.", 404)
@@ -1258,7 +1366,8 @@ def create_job():
     """
     Submits a bioinformatics task for asynchronous processing with intelligent caching.
     """
-    from worker import process_sequence_taskdata = request.get_json()
+    from worker import process_sequence_task
+    data = request.get_json()
     if not data or "tool_type" not in data:
         return error_response("Missing 'tool_type' in JSON body.", 400)
     
@@ -1269,12 +1378,18 @@ def create_job():
     if "sequence" in params:
         stype = "protein" if tool_type in ("protein_analysis", "hydrophobicity") else "dna"
         cleaned, warnings, error = validate_sequence(params["sequence"], seq_type=stype)
-        if error: return errorparams["sequence"] = cleaned
+        if error:
+            return error
+        params["sequence"] = cleaned
     
     # 2. Intelligent Task Caching (Deduplication)
-    # Reduces server load for identical scientific queriescache_key = Noneif redis_client:
+    # Reduces server load for identical scientific queries
+    cache_key = None
+    if redis_client:
         try:
-            # Generate a stable hash of the task requestimport hashlibpayload_str = json.dumps({"t": tool_type, "p": params}, sort_keys=True)
+            # Generate a stable hash of the task request
+            import hashlib
+            payload_str = json.dumps({"t": tool_type, "p": params}, sort_keys=True)
             task_hash = hashlib.sha256(payload_str.encode()).hexdigest()
             cache_key = f"task_cache:{task_hash}"
             
@@ -1286,15 +1401,20 @@ def create_job():
                     "task_id": existing_id.decode(),
                     "message": "Found cached task for this request.",
                     "cached": True
-                }), 202except Exception as e:
+                }), 202
+        except Exception as e:
             logger.debug("Task caching failed: %s", e)
     
-    # 3. Queue the Tasktask = process_sequence_task.delay(tool_type, params)
+    # 3. Queue the Task
+    task = process_sequence_task.delay(tool_type, params)
     
-    # Store caching entry if possibleif cache_key and redis_client:
+    # Store caching entry if possible
+    if cache_key and redis_client:
         try:
-            redis_client.setex(cache_key, 86400, task.id) # Cache task mapping for 24hexcept Exception:
-            passreturn jsonify({
+            redis_client.setex(cache_key, 86400, task.id) # Cache task mapping for 24h
+        except Exception:
+            pass
+    return jsonify({
         "status": "accepted",
         "task_id": task.id,
         "message": f"Task {tool_type} has been queued for processing.",
@@ -1307,7 +1427,8 @@ def get_task_status(task_id):
     """
     Endpoint to check the status of a background bioinformatics task.
     """
-    from worker import celerytask = celery.AsyncResult(task_id)
+    from worker import celery
+    task = celery.AsyncResult(task_id)
     
     response = {"state": task.state, "task_id": task_id}
     
@@ -1317,13 +1438,20 @@ def get_task_status(task_id):
         response["status"] = "Processing..."
     elif task.state == 'PROGRESS':
         response["status"] = "Processing..."
-        response["progress"] = task.info.get('progress', 0) if task.info else 0elif task.state == 'SUCCESS':
-        # task.result contains the dictionary returned by the workerresult = task.resultresponse["status"] = "Completed"
-        response["result"] = resultelif task.state == 'FAILURE':
+        response["progress"] = task.info.get('progress', 0) if task.info else 0
+    elif task.state == 'SUCCESS':
+        # task.result contains the dictionary returned by the worker
+        result = task.result
+        response["status"] = "Completed"
+        response["result"] = result
+    elif task.state == 'FAILURE':
         response["status"] = "Failed"
-        # Extract scientific error message if possibleinfo = task.inforesponse["error"] = str(info) if info else "Internal worker failure."
+        # Extract scientific error message if possible
+        info = task.info
+        response["error"] = str(info) if info else "Internal worker failure."
     else:
-        response["status"] = task.statereturn jsonify(response)
+        response["status"] = task.state
+    return jsonify(response)
 
 
 

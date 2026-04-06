@@ -725,6 +725,37 @@
     window.BioKit.core.SessionManager.init();
     window.BioKit.core.ShortcutManager.init();
 
+    // ── API Settings Modal Logic (For NCBI Rate Limits) ──
+    const settingsOverlay = document.getElementById('settingsOverlay');
+    const ncbiKeyInput = document.getElementById('ncbiApiKey');
+    
+    // Load existing key from localStorage
+    if (ncbiKeyInput) {
+      ncbiKeyInput.value = localStorage.getItem('btk_ncbi_api_key') || '';
+    }
+
+    // Toggle Settings
+    document.getElementById('openSettingsBtn')?.addEventListener('click', () => {
+      settingsOverlay?.classList.remove('hidden');
+    });
+
+    document.getElementById('closeSettingsBtn')?.addEventListener('click', () => {
+      settingsOverlay?.classList.add('hidden');
+    });
+
+    document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
+      if (ncbiKeyInput) {
+        localStorage.setItem('btk_ncbi_api_key', ncbiKeyInput.value.trim());
+        window.showToast('API Settings Saved');
+      }
+      settingsOverlay?.classList.add('hidden');
+    });
+
+    // Close on backdrop click
+    settingsOverlay?.addEventListener('click', (e) => {
+      if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden');
+    });
+
     // Mark changes on input
     document.querySelectorAll('input, textarea').forEach(el => {
       el.addEventListener('input', () => window.BioKit.core.SessionManager.markChanged());
