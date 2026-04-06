@@ -183,13 +183,24 @@ def process_sequence_task(self, tool_type, params):
             results = {"orfs": [], "motifs": []}
             
             # 6a. Professional ORF Finding (all 6 frames)
-            def find_orfs(s, strand_name):
+            def find_orfs(dna_seq, strand_name):
                 found = []
                 for frame in range(3):
-                    for orf in s[frame:].split("*"):
-                        if "M" in orf:
-                            start_idx = orf.find("M")
-                            actual_orf = orf[start_idx:]
+                    # Correct scientific approach: translate from DNA offset
+                    frame_dna = dna_seq[frame:]
+                    remainder = len(frame_dna) % 3
+                    if remainder:
+                        frame_dna = frame_dna[:-remainder]
+                    
+                    if not frame_dna: continue
+                    
+                    prot = str(frame_dna.translate(table=1))
+                    
+                    # Split by stop codons
+                    for orf_prot in prot.split("*"):
+                        if "M" in orf_prot:
+                            start_idx = orf_prot.find("M")
+                            actual_orf = orf_prot[start_idx:]
                             if len(actual_orf) >= 30: # Min 30 AA
                                 found.append({
                                     "strand": strand_name,
@@ -199,8 +210,8 @@ def process_sequence_task(self, tool_type, params):
                                 })
                 return found
             
-            results["orfs"].extend(find_orfs(seq_obj.translate(), "+"))
-            results["orfs"].extend(find_orfs(seq_obj.reverse_complement().translate(), "-"))
+            results["orfs"].extend(find_orfs(seq_obj, "+"))
+            results["orfs"].extend(find_orfs(seq_obj.reverse_complement(), "-"))
             
             # Simple Motif Scan (Biopython motifs can be huge, using consensus for now)
             # This can be expanded with real PWM files in a scientific prod environment
