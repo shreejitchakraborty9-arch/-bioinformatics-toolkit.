@@ -33,14 +33,14 @@
         this.displayResults(seq, results);
       }, seq.length, {
         type: 'RESTRICTION_SEARCH',
-        payload: { seq, enzymes: selectedEnzymes }
+        strategy: 'auto',
+        payload: { sequence: seq, enzymes: selectedEnzymes }
       });
     },
 
     getSelectedEnzymes: function() {
       const chips = document.querySelectorAll('.enzyme-chip.selected');
-      const allEnzymes = window.BioKit.data.RESTRICTION_ENZYMES || window.RESTRICTION_ENZYMES || [];
-      return Array.from(chips).map(c => allEnzymes.find(e => e.name === c.dataset.enzyme)).filter(Boolean);
+      return Array.from(chips).map(c => c.dataset.enzyme);
     },
 
     calculateFragments: function(seqLength, results) {

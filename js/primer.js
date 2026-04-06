@@ -144,11 +144,20 @@
       if (fwd.length >= 10) primers.push({ label: 'Forward Primer', seq: fwd });
       if (rev.length >= 10) primers.push({ label: 'Reverse Primer', seq: rev });
 
-      window.withLoading('panel-primer', () => {
+      window.withLoading('panel-primer', async () => {
         grid.textContent = ''; 
-        primers.forEach(({ label, seq }) => {
-          const tmRes = calcTm(seq, options);
-          const tm = tmRes.tm;
+        const pairEl = document.getElementById('primerPairResults');
+        pairEl.style.display = 'none';
+
+        const results = await Promise.all(primers.map(async ({ label, seq }) => {
+          // Offload to worker (Local or Backend) for high-precision Tm
+          const workerRes = await window.BioKit.core.WorkerManager.runTask({
+            type: 'THERMO_ANALYSIS',
+            strategy: 'auto',
+            payload: { sequence: seq, ...options }
+          });
+
+          const tm = workerRes.tm_nn || calcTm(seq, options).tm;
           const gc = gcPct(seq);
           const len = seq.length;
           const clamp = hasGCClamp(seq);
@@ -165,9 +174,8 @@
               <div class="primer-seq">${escapeHTML(seq)}</div>
               <div class="primer-stat-item"><span class="primer-stat-key">Length</span>
                 <span class="primer-stat-val ${lenOk?'pass':len<15||len>30?'fail':'warn'}">${escapeHTML(len)} nt ${lenOk?'✓':len<18?'(too short)':'(too long)'}</span></div>
-              <div class="primer-stat-item"><span class="primer-stat-key">Tm (NN model)</span>
-                <span class="primer-stat-val ${tmOk?'pass':Math.abs(parseFloat(tm)-60)>10?'fail':'warn'}">${escapeHTML(tm)} °C ${tmRes.confidence ? `<small style="opacity:0.6"> ${escapeHTML(tmRes.confidence)}</small>` : ''}</span></div>
-              ${tmRes.warning ? `<div style="font-size:0.75rem; color:var(--rose); margin-top:-4px; margin-bottom:8px;">⚠ ${escapeHTML(tmRes.warning)}</div>` : ''}
+              <div class="primer-stat-item"><span class="primer-stat-key">Tm (Scientific NN)</span>
+                <span class="primer-stat-val ${tmOk?'pass':Math.abs(parseFloat(tm)-60)>10?'fail':'warn'}">${escapeHTML(tm)} °C</span></div>
               <div class="primer-stat-item"><span class="primer-stat-key">GC Content</span>
                 <span class="primer-stat-val ${gcOk?'pass':'warn'}">${escapeHTML(gc)}% ${gcOk?'✓':'(ideal: 40–60%)'}</span></div>
               <div class="primer-stat-item"><span class="primer-stat-key">GC Clamp (3′ end)</span>
@@ -178,20 +186,20 @@
                 <span class="primer-stat-val ${dimer.found?'warn':'pass'}">${dimer.found?`⚠ ${escapeHTML(dimer.maxRun)}nt run`:'✓ Low'}</span></div>
             </div>`;
           grid.innerHTML += window.sanitizeHTML(cardHtml);
-        });
+          return { label, seq, tm };
+        }));
 
-        const pairEl = document.getElementById('primerPairResults');
-        if (primers.length === 2) {
-          const tm1Res = calcTm(primers[0].seq, options);
-          const tm2Res = calcTm(primers[1].seq, options);
-          const diff = tmDiff(tm1Res.tm, tm2Res.tm);
+        if (results.length === 2) {
+          const tm1 = results[0].tm;
+          const tm2 = results[1].tm;
+          const diff = Math.abs(parseFloat(tm1) - parseFloat(tm2)).toFixed(1);
           const diffOk = parseFloat(diff) <= 5;
 
           const comp = { A:'T', T:'A', G:'C', C:'G' };
-          const rc2  = primers[1].seq.split('').reverse().map(b=>comp[b]||'N').join('');
+          const rc2  = results[1].seq.split('').reverse().map(b=>comp[b]||'N').join('');
           let maxHetero = 0, run = 0;
-          for (let i = 0; i < Math.min(primers[0].seq.length, rc2.length); i++) {
-            if (primers[0].seq[i] === rc2[i]) { run++; maxHetero = Math.max(maxHetero, run); } else run = 0;
+          for (let i = 0; i < Math.min(results[0].seq.length, rc2.length); i++) {
+            if (results[0].seq[i] === rc2[i]) { run++; maxHetero = Math.max(maxHetero, run); } else run = 0;
           }
           const heteroRisk = maxHetero >= 4;
 
@@ -202,13 +210,11 @@
             <div class="primer-stat-item"><span class="primer-stat-key">Heterodimer Risk</span>
               <span class="primer-stat-val ${heteroRisk?'warn':'pass'}">${heteroRisk?`⚠ ${escapeHTML(maxHetero)}nt complementarity`:'✓ Low'}</span></div>
             <div class="primer-stat-item"><span class="primer-stat-key">Forward Tm</span>
-              <span class="primer-stat-val">${escapeHTML(tm1Res.tm)} °C</span></div>
+              <span class="primer-stat-val">${escapeHTML(tm1)} °C</span></div>
             <div class="primer-stat-item"><span class="primer-stat-key">Reverse Tm</span>
-              <span class="primer-stat-val">${escapeHTML(tm2Res.tm)} °C</span></div>`;
+              <span class="primer-stat-val">${escapeHTML(tm2)} °C</span></div>`;
           pairEl.innerHTML = window.sanitizeHTML(pairHtml);
           pairEl.style.display = 'block';
-        } else {
-          pairEl.style.display = 'none';
         }
       }, Math.max(fwd.length, rev.length));
     } catch (err) {

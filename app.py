@@ -1367,25 +1367,103 @@ def health():
 
 
 # ─────────────────────────────────────────────────────────────
-# API – Async Job Status (Preparation)
 # ─────────────────────────────────────────────────────────────
+# API – Async Job Processing
+# ─────────────────────────────────────────────────────────────
+@app.route("/api/jobs/create", methods=["POST"])
+def create_job():
+    """
+    Submits a bioinformatics task for asynchronous processing with intelligent caching.
+    """
+    from worker import process_sequence_task
+    
+    data = request.get_json()
+    if not data or "tool_type" not in data:
+        return error_response("Missing 'tool_type' in JSON body.", 400)
+    
+    tool_type = sanitize_input(data["tool_type"]).lower()
+    params = data.get("params", {})
+    
+    # 1. Server-side Sequence Validation (Scientific grade)
+    if "sequence" in params:
+        stype = "protein" if tool_type in ("protein_analysis", "hydrophobicity") else "dna"
+        cleaned, warnings, error = validate_sequence(params["sequence"], seq_type=stype)
+        if error: return error
+        params["sequence"] = cleaned
+    
+    # 2. Intelligent Task Caching (Deduplication)
+    # Reduces server load for identical scientific queries
+    cache_key = None
+    if redis_client:
+        try:
+            # Generate a stable hash of the task request
+            import hashlib
+            payload_str = json.dumps({"t": tool_type, "p": params}, sort_keys=True)
+            task_hash = hashlib.sha256(payload_str.encode()).hexdigest()
+            cache_key = f"task_cache:{task_hash}"
+            
+            existing_id = redis_client.get(cache_key)
+            if existing_id:
+                logger.info("[Cache HIT] Reusing task %s for matching request", existing_id.decode())
+                return jsonify({
+                    "status": "accepted",
+                    "task_id": existing_id.decode(),
+                    "message": "Found cached task for this request.",
+                    "cached": True
+                }), 202
+        except Exception as e:
+            logger.debug("Task caching failed: %s", e)
+    
+    # 3. Queue the Task
+    task = process_sequence_task.delay(tool_type, params)
+    
+    # Store caching entry if possible
+    if cache_key and redis_client:
+        try:
+            redis_client.setex(cache_key, 86400, task.id) # Cache task mapping for 24h
+        except Exception:
+            pass
+            
+    return jsonify({
+        "status": "accepted",
+        "task_id": task.id,
+        "message": f"Task {tool_type} has been queued for processing.",
+        "cached": False
+    }), 202
+
+
 @app.route("/api/jobs/status/<task_id>")
 def get_task_status(task_id):
     """
     Endpoint to check the status of a background bioinformatics task.
-    Prepared for Celery integration.
     """
     from worker import celery
     task = celery.AsyncResult(task_id)
+    
+    response = {"state": task.state, "task_id": task_id}
+    
     if task.state == 'PENDING':
-        response = {"state": task.state, "status": "Pending..."}
-    elif task.state != 'FAILURE':
-        response = {"state": task.state, "status": task.info.get('status', '')}
-        if 'result' in task.info:
-            response['result'] = task.info['result']
+        response["status"] = "Queued..."
+    elif task.state == 'STARTED':
+        response["status"] = "Processing..."
+    elif task.state == 'PROGRESS':
+        response["status"] = "Processing..."
+        response["progress"] = task.info.get('progress', 0) if task.info else 0
+    elif task.state == 'SUCCESS':
+        # task.result contains the dictionary returned by the worker
+        result = task.result
+        response["status"] = "Completed"
+        response["result"] = result
+    elif task.state == 'FAILURE':
+        response["status"] = "Failed"
+        # Extract scientific error message if possible
+        info = task.info
+        response["error"] = str(info) if info else "Internal worker failure."
     else:
-        response = {"state": task.state, "status": str(task.info)}
+        response["status"] = task.state
+        
     return jsonify(response)
+
 
 
 # ─────────────────────────────────────────────────────────────

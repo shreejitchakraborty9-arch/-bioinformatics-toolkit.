@@ -1356,6 +1356,28 @@ canvas {
 }
 
 /* ── Settings Modal Card ────────────────────────────────── */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 2000;
+  padding: 20px;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+.settings-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  display: none; /* Force layout removal when hidden */
+}
+
 .settings-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1364,19 +1386,79 @@ canvas {
   width: 100%;
   max-width: 480px;
   box-shadow: 0 24px 64px rgba(0,0,0,0.6);
-  animation: panelIn 0.25s ease;
+  animation: modalScaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+}
+
+@keyframes modalScaleIn {
+  from { transform: scale(0.9) translateY(20px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-header h2 {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+.settings-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.settings-close:hover { color: var(--rose); }
+
+/* Shortcut List Styling */
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-input);
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.shortcut-item kbd {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-active);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  margin: 0 2px;
+  box-shadow: 0 2px 0 var(--border);
+}
+.shortcut-item span {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 }
 
 /* ── Settings content (originally just .settings-content) ── */
-.settings-content {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 32px;
-  width: 100%;
-  max-width: 480px;
-  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
-  animation: panelIn 0.25s ease;
+.settings-section {
+  margin-bottom: 24px;
+}
+.settings-section label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
 }
 
 /* ── btn-outline (used in DNA panel) ─────────────────────── */

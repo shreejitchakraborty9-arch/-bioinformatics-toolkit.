@@ -299,7 +299,7 @@
     if (container) container.innerHTML = sanitizeHTML(html);
   };
 
-  // ── Worker Manager ────────────────────────────────────────
+  // ── Worker Manager (Web Worker + Server-side Backend) ─────
   window.WorkerManager = {
     worker: null,
     currentTask: null,
@@ -317,13 +317,76 @@
       return true;
     },
 
-    runTask(type, payload, onProgress) {
+    /**
+     * Runs a task either in the local Web Worker or on the remote Server-side (Python/Biopython).
+     * Automatically chooses based on strategy and sequence size if not specified.
+     */
+    async runTask(type, payload, onProgress, strategy = 'auto') {
+      const seqSize = (payload.sequence?.length || 0) + (payload.a?.length || 0) + (payload.b?.length || 0);
+      
+      // Auto-offload to backend if sequence is large (> 500kb) or it's a scientific analytical tool
+      const isComplexTool = ['THERMO_ANALYSIS', 'RESTRICTION_SEARCH', 'SEQ_SEARCH'].includes(type);
+      const shouldOffload = strategy === 'backend' || (strategy === 'auto' && (seqSize > 500000 || isComplexTool));
+      
+      if (shouldOffload) {
+        return this.runBackendTask(type, payload, onProgress);
+      } else {
+        return this.runLocalTask(type, payload, onProgress);
+      }
+    },
+
+    runLocalTask(type, payload, onProgress) {
       if (!this.init()) return Promise.reject('No Worker Support');
       const taskId = Math.random().toString(36).substr(2, 9);
       return new Promise((resolve, reject) => {
         this.currentTask = { taskId, resolve, reject, onProgress };
         this.worker.postMessage({ type, payload, taskId });
       });
+    },
+
+    async runBackendTask(type, payload, onProgress) {
+      const taskId = "backend-" + Math.random().toString(36).substr(2, 9);
+      
+      try {
+        // 1. Submit the job
+        const response = await fetch('/api/jobs/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tool_type: type.toLowerCase().replace('_', '-'),
+            params: payload
+          })
+        });
+        
+        if (!response.ok) throw new Error(`Server failed to accept task: ${response.status}`);
+        const data = await response.json();
+        const serverTaskId = data.task_id;
+        
+        // 2. Poll for status
+        return new Promise((resolve, reject) => {
+          const pollInterval = setInterval(async () => {
+            try {
+              const statusRes = await fetch(`/api/jobs/status/${serverTaskId}`);
+              const statusData = await statusRes.json();
+              
+              if (statusData.state === 'SUCCESS') {
+                clearInterval(pollInterval);
+                resolve(statusData.result);
+              } else if (statusData.state === 'FAILURE') {
+                clearInterval(pollInterval);
+                reject(new Error(statusData.error || 'Server-side task failed.'));
+              } else if (onProgress && statusData.progress) {
+                onProgress(statusData.progress);
+              }
+            } catch (err) {
+              clearInterval(pollInterval);
+              reject(err);
+            }
+          }, 2000); // Poll every 2 seconds
+        });
+      } catch (err) {
+        throw err;
+      }
     },
 
     handleMessage(data) {
@@ -582,30 +645,60 @@
     init() {
       window.addEventListener('keydown', (e) => {
         const isCtrl = e.ctrlKey || e.metaKey;
+        const isShift = e.shiftKey;
+        const target = e.target;
+        const isInput = ['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable;
 
-        if (isCtrl && e.key === 'Enter') {
+        // 1. Run Analysis (Ctrl+Enter)
+        if (isCtrl && (e.key === 'Enter' || e.keyCode === 13)) {
           e.preventDefault();
-          document.querySelector('.tool-panel.active .btn-primary')?.click();
+          const activePanel = document.querySelector('.tool-panel.active');
+          const runBtn = activePanel?.querySelector('.btn-primary');
+          if (runBtn) {
+            showToast('🚀 Running Analysis...');
+            runBtn.click();
+          }
         }
-        if (isCtrl && e.key === 'z') {
+
+        // 2. Undo (Ctrl+Z)
+        if (isCtrl && !isShift && (e.key === 'z' || e.key === 'Z')) {
           e.preventDefault();
           window.BioKit.core.HistoryManager.undo();
         }
-        if (isCtrl && e.key === 'y') {
+
+        // 3. Redo (Ctrl+Y or Ctrl+Shift+Z)
+        if ((isCtrl && (e.key === 'y' || e.key === 'Y')) || (isCtrl && isShift && (e.key === 'z' || e.key === 'Z'))) {
           e.preventDefault();
           window.BioKit.core.HistoryManager.redo();
         }
-        if (isCtrl && e.key === 'd') {
+
+        // 4. Export (Ctrl+D)
+        if (isCtrl && (e.key === 'd' || e.key === 'D')) {
+          const exportBtn = document.querySelector('.tool-panel.active #proExportBtn');
+          if (exportBtn) {
+            e.preventDefault();
+            showToast('📄 Exporting results...');
+            exportBtn.click();
+          }
+        }
+
+        // 5. Close Modals (Escape)
+        if (e.key === 'Escape' || e.keyCode === 27) {
+          const modals = document.querySelectorAll('.settings-overlay:not(.hidden)');
+          if (modals.length > 0) {
+            modals.forEach(m => m.classList.add('hidden'));
+            showToast('Modals closed');
+          }
+        }
+
+        // 6. Help Modal (?)
+        // We only trigger '?' shortcut if user is NOT typing in an input
+        if (e.key === '?' && !isInput) {
           e.preventDefault();
-          document.querySelector('.tool-panel.active #proExportBtn')?.click();
-        }
-        if (e.key === 'Escape') {
-          document.querySelectorAll('.settings-overlay').forEach(el => el.classList.add('hidden'));
-          settingsOverlay?.classList.remove('visible');
-        }
-        if (e.key === '?' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
           const modal = document.getElementById('shortcutModal');
-          if (modal) modal.classList.toggle('hidden');
+          if (modal) {
+            modal.classList.toggle('hidden');
+          }
         }
       });
     }
