@@ -126,6 +126,7 @@
 
     let allowed = /^[ATGCNU]+$/;
     let label = 'DNA/RNA';
+    let limit = 0;
     if (type === 'protein') {
       allowed = /^[ACDEFGHIKLMNPQRSTVWY\*]+$/;
       label = 'Protein';
@@ -463,6 +464,7 @@
         bar.style.width = '100%';
         setTimeout(() => {
           resetUI();
+          if (window.lucide) window.lucide.createIcons();
           callback(result);
         }, 200);
       }).catch(err => {
@@ -477,6 +479,7 @@
       setTimeout(() => {
         resetUI();
         try {
+          if (window.lucide) window.lucide.createIcons();
           callback();
         } catch (err) {
           handleError(err, 'Task');
@@ -661,19 +664,19 @@
         }
 
         // 2. Undo (Ctrl+Z)
-        if (isCtrl && !isShift && (e.key === 'z' || e.key === 'Z')) {
+        if (isCtrl && !isShift && (e.key === 'z' || e.key === 'Z') && !isInput) {
           e.preventDefault();
           window.BioKit.core.HistoryManager.undo();
         }
 
         // 3. Redo (Ctrl+Y or Ctrl+Shift+Z)
-        if ((isCtrl && (e.key === 'y' || e.key === 'Y')) || (isCtrl && isShift && (e.key === 'z' || e.key === 'Z'))) {
+        if (((isCtrl && (e.key === 'y' || e.key === 'Y')) || (isCtrl && isShift && (e.key === 'z' || e.key === 'Z'))) && !isInput) {
           e.preventDefault();
           window.BioKit.core.HistoryManager.redo();
         }
 
         // 4. Export (Ctrl+D)
-        if (isCtrl && (e.key === 'd' || e.key === 'D')) {
+        if (isCtrl && (e.key === 'd' || e.key === 'D') && !isInput) {
           const exportBtn = document.querySelector('.tool-panel.active #proExportBtn');
           if (exportBtn) {
             e.preventDefault();
@@ -725,7 +728,25 @@
     window.BioKit.core.SessionManager.init();
     window.BioKit.core.ShortcutManager.init();
 
-    // ── API Settings Modal Logic (For NCBI Rate Limits) ──
+    // ── Header Actions & Logic ────────────────────────────────
+  document.addEventListener('click', (e) => {
+    const shareBtn = e.target.closest('.header-action i[data-lucide="share-2"]')?.parentNode || e.target.closest('.header-action[data-action="share"]');
+    if (shareBtn) {
+      const url = window.location.href;
+      navigator.clipboard.writeText(url).then(() => showToast('🔗 Analysis link copied!'));
+    }
+
+    const setBtn = e.target.closest('.header-action i[data-lucide="settings"]')?.parentNode || e.target.closest('.header-action[data-action="settings"]');
+    if (setBtn) {
+      document.getElementById('settingsOverlay')?.classList.remove('hidden');
+    }
+  });
+
+  // Track session name changes
+  const sessionName = document.querySelector('.session-name');
+  if (sessionName) {
+    sessionName.addEventListener('input', () => window.BioKit.core.SessionManager.markChanged());
+  }
     const settingsOverlay = document.getElementById('settingsOverlay');
     const ncbiKeyInput = document.getElementById('ncbiApiKey');
     
@@ -757,8 +778,11 @@
     });
 
     // Mark changes on input
-    document.querySelectorAll('input, textarea').forEach(el => {
+    document.querySelectorAll('input, textarea, select, [contenteditable]').forEach(el => {
       el.addEventListener('input', () => window.BioKit.core.SessionManager.markChanged());
+      if (el.tagName === 'SELECT') {
+        el.addEventListener('change', () => window.BioKit.core.SessionManager.markChanged());
+      }
     });
   });
 

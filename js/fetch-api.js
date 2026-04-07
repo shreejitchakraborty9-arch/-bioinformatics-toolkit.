@@ -104,7 +104,11 @@
       }
 
       const url = urlFn(cleanId);
-      const res = await fetch(url);
+      const headers = {};
+      const userKey = localStorage.getItem('btk_ncbi_api_key');
+      if (userKey) headers['X-NCBI-API-Key'] = userKey;
+
+      const res = await fetch(url, { headers });
       const text = await res.text();
 
       if (!res.ok) {
