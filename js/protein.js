@@ -7,6 +7,7 @@
   'use strict';
 
   window.BioKit = window.BioKit || { utils: {}, core: {}, tools: {}, data: {} };
+  const BioMath = window.BioKit.core.BioMath;
 
   // ── Amino Acid Data ────────────────────────────────────
   const AA_NAMES = {
@@ -54,7 +55,6 @@
     }
 
     const seq = validation.clean.replace(/\*/g, '');
-    const BioMath = window.BioKit.core.BioMath;
 
     window.withLoading('panel-protein', () => {
       const hydro = BioMath.calculateHydrophobicity(seq);
