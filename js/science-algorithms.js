@@ -360,8 +360,8 @@
       'Q': -3.5, 'E': -3.5, 'H': -3.2, 'P': -1.6,
       'Y': -1.3, 'W': -0.9, 'S': -0.8, 'T': -0.7,
       'G': -0.4, 'A': 1.8,  'M': 1.9,  'C': 2.5,
-      'F': 2.8,  'L': 3.8,  'V': 4.2,  'I': 4.5
   };
+  BioMath.KD_SCALE = KD_SCALE;
 
   BioMath.calculateHydrophobicity = function(seq) {
       if (!seq || seq.length === 0) return 0;

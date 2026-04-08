@@ -27,12 +27,14 @@
     const totalLen = seqA.length + seqB.length;
     const workerType = algo === 'global' ? 'ALIGN_GLOBAL' : 'ALIGN_LOCAL';
 
+    const type = window.detectFormat(seqA) === 'protein' || window.detectFormat(seqB) === 'protein' ? 'protein' : 'dna';
+
     try {
       window.withLoading('panel-alignment', (result) => {
         displayAlignment(result, seqA.length, seqB.length, algo);
       }, totalLen, {
         type: workerType,
-        payload: { a: seqA, b: seqB, match, mismatch, gap }
+        payload: { a: seqA, b: seqB, match, mismatch, gap, type }
       });
     } catch (error) {
       window.handleError(error, 'Alignment');

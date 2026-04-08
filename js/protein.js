@@ -86,7 +86,13 @@
       // Hydrophobicity plot
       renderHydroPlot(seq);
 
-      document.getElementById('proteinResults').classList.remove('hidden');
+      // Show results, hide empty state
+      const empty = document.getElementById('proteinEmptyState');
+      const content = document.querySelector('#proteinResults .results-content');
+      if (empty) empty.classList.add('hidden');
+      if (content) content.classList.remove('hidden');
+
+      window.showToast('Analysis Complete');
     }, seq.length);
   }
 
@@ -178,7 +184,7 @@
     for (let i = 0; i <= seq.length - windowSize; i++) {
       let sum = 0;
       for (let j = i; j < i + windowSize; j++) {
-        const val = BioKit.core.BioMath.KD_SCALE ? BioKit.core.BioMath.KD_SCALE[seq[j]] : KD_SCALE[seq[j]];
+        const val = BioMath.KD_SCALE[seq[j]];
         sum += val || 0;
       }
       values.push(sum / windowSize);
