@@ -81,6 +81,17 @@
       ]
   };
   
+  BioMath.reverseComplement = function(seq) {
+      if (!seq) return '';
+      const comp = { 
+          'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C', 'N': 'N',
+          'a': 't', 't': 'a', 'c': 'g', 'g': 'c', 'n': 'n',
+          'R': 'Y', 'Y': 'R', 'S': 'S', 'W': 'W', 'K': 'M', 'M': 'K',
+          'B': 'V', 'V': 'B', 'D': 'H', 'H': 'D'
+      };
+      return seq.split('').reverse().map(b => comp[b] || b).join('');
+  };
+
   // ==========================================================
   // 1. Accurate GC Calculation
   // ==========================================================

@@ -122,13 +122,33 @@
         return;
       }
 
-      // Validate: must look like FASTA
-      if (!text.trim() || text.trim().startsWith("<")) {
-        window.showToast("❌ Unexpected response from server. ID may be incorrect.", 4000);
-        return;
+      // Try parsing as JSON first (database-driven metadata mode)
+      let header = "";
+      let sequence = "";
+      let metadata = null;
+      let transcripts = [];
+
+      try {
+        const jsonData = JSON.parse(text);
+        if (jsonData.sequence) {
+          sequence = jsonData.sequence;
+          metadata = jsonData.metadata;
+          transcripts = jsonData.transcripts || [metadata];
+          header = metadata.description || "";
+        }
+      } catch (e) {
+        // Fallback: Validate legacy FASTA
+        if (!text.trim() || text.trim().startsWith("<")) {
+          window.showToast("❌ Unexpected response from server. ID may be incorrect.", 4000);
+          return;
+        }
+        const parsed = parseFasta(text);
+        header = parsed.header;
+        sequence = parsed.sequence;
       }
 
-      const { header, sequence } = parseFasta(text);
+      // Store in global scope for Analysis Priority Switch
+      window.BioKit.activeAnalysis = { sequence, metadata, transcripts };
 
       if (!sequence) {
         window.showToast("❌ Could not parse a sequence from the response.", 4000);
@@ -147,7 +167,9 @@
       if (meta) {
         const unit = ["uniprot", "ncbiprotein", "keggprotein"].includes(db) ? "aa" : "bp";
         const truncHeader = header.length > 70 ? header.slice(0, 70) + "…" : header;
-        meta.textContent = `${sequence.length.toLocaleString()} ${unit} · ${truncHeader}`;
+        let info = `${sequence.length.toLocaleString()} ${unit} · ${truncHeader}`;
+        if (metadata && metadata.strand) info += ` [Strand: ${metadata.strand}]`;
+        meta.textContent = info;
       }
 
       window.showToast(`✅ ${sequence.length.toLocaleString()} residues loaded from ${db.toUpperCase()}`);

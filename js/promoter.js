@@ -110,15 +110,10 @@
   });
 
   // ── ORF Finder ────────────────────────────────────────
-  function getReverseComplement(seq) {
-    const comp = { 'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C', 'N': 'N' };
-    return seq.split('').reverse().map(b => comp[b] || 'N').join('');
-  }
-
   function findORFs(seq, minLength = 30) {
     const orfs = [];
     const BioMath = window.BioKit.core.BioMath;
-    const rcSeq = getReverseComplement(seq);
+    const rcSeq = BioMath.reverseComplement(seq);
 
     function scanStrand(strandSeq, isRev) {
       for (let frame = 0; frame < 3; frame++) {
@@ -246,6 +241,59 @@
     return found.sort((a, b) => a.position - b.position);
   }
 
+  // ── Helper: Extract Spliced CDS (Annotation Mode) ────────
+  function extractCDS(seq, regions, strand) {
+    if (!regions || regions.length === 0) return '';
+    const BioMath = window.BioKit.core.BioMath;
+    
+    // Biological order: exons are joined 5' to 3'.
+    // On minus strand, higher genomic coordinates come first in transcript order.
+    const sorted = [...regions].sort((a, b) => strand === '-' ? b[0] - a[0] : a[0] - b[0]);
+    
+    let full = '';
+    sorted.forEach(([start, end]) => {
+      let chunk = seq.substring(Math.max(0, start - 1), Math.min(seq.length, end));
+      if (strand === '-') chunk = BioMath.reverseComplement(chunk);
+      full += chunk;
+    });
+    return full;
+  }
+
+  /**
+   * Performs high-fidelity motif scanning on extracted promoter sequences.
+   * Focuses on validatory elements like GC-rich regions (sliding window).
+   */
+  function detectPromoterMotifs(sequence) {
+    const hits = [];
+    const windowSize = 50;
+    const threshold = 0.6; // 60% GC
+
+    if (!sequence || sequence.length < windowSize) return hits;
+
+    for (let i = 0; i <= sequence.length - windowSize; i++) {
+      const chunk = sequence.substring(i, i + windowSize);
+      let gcCount = 0;
+      for (let j = 0; j < chunk.length; j++) {
+        const b = chunk[j].toUpperCase();
+        if (b === 'G' || b === 'C') gcCount++;
+      }
+      const gcContent = gcCount / windowSize;
+      
+      if (gcContent >= threshold) {
+        hits.push({
+          name: 'GC-Rich Region',
+          position: i + 1,
+          matched: chunk.substring(0, 8) + '...',
+          cssClass: 'motif-sky',
+          desc: `High GC density region (${(gcContent * 100).toFixed(0)}%)`,
+          score: (gcContent * 100).toFixed(1) + '%'
+        });
+        i += 15; // Shift window to prevent excessive redundancy
+      }
+    }
+    return hits;
+  }
+
   // ── Main Run ──────────────────────────────────────────
   function run() {
     const input = document.getElementById('proInput');
@@ -275,8 +323,22 @@
     if (!container) return;
     container.classList.remove('hidden');
 
-    // Identify Anchor ORF (Longest)
-    const anchor = orfs.length > 0 ? orfs[0] : null;
+    // Identify Anchor ORF
+    let anchor = null;
+    if (orfs.length > 0) {
+      // Logic requirement: Try to follow the strand hint from metadata if available
+      const metaText = document.getElementById('proInputMeta')?.textContent || '';
+      const hintMinus = metaText.includes('[strand: -]');
+      const hintPlus = metaText.includes('[strand: +]');
+
+      if (hintMinus) {
+        anchor = orfs.find(o => o.frame < 0) || orfs[0];
+      } else if (hintPlus) {
+        anchor = orfs.find(o => o.frame > 0) || orfs[0];
+      } else {
+        anchor = orfs[0]; // Default to longest
+      }
+    }
 
     // Stats
     window.buildStatCards('proStatRow', [
@@ -293,31 +355,108 @@
     renderMotifTable(motifs);
     renderLegend(motifs);
 
-    // Handle Primary Anchor Extraction (CDS, Promoter, Protein)
-    if (anchor) {
-      // 1. Extract CDS
-      const cdsSeq = seq.substring(anchor.start - 1, anchor.end);
-      document.getElementById('proCDSSeqRange').textContent = `CDS [${anchor.start} ... ${anchor.end}] · ${anchor.length} bp · Frame ${anchor.frame > 0 ? '+' : ''}${anchor.frame}`;
+    // Handle Primary Anchor Extraction (Annotation Mode vs Prediction Mode)
+    const activeAnalysis = window.BioKit.activeAnalysis;
+    const BioMath = window.BioKit.core.BioMath;
+    
+    // Isoform Handling: Use primary transcript if multiple are available
+    let meta = activeAnalysis?.metadata;
+    if (activeAnalysis?.transcripts?.length > 0) {
+      meta = activeAnalysis.transcripts[0];
+    }
+    
+    if (meta && (meta.cds_regions?.length > 0 || meta.tss)) {
+      // ────────────────────────────────────────────────────────
+      // A) DATABASE ANNOTATION MODE (Isoform Aware)
+      // ────────────────────────────────────────────────────────
+      const strand = meta.strand || '+';
+      const isMinus = strand === '-';
+      const tss = meta.tss || 1;
+
+      // 1. Extract & Correct CDS (Spliced exons)
+      const cdsSeq = extractCDS(seq, meta.cds_regions, strand);
+      const cdsLen = cdsSeq.length;
+      
+      const txInfo = meta.id && meta.id !== 'undefined' ? `Isoform ${meta.id}` : 'Annotated Transcript';
+      document.getElementById('proCDSSeqRange').textContent = `${txInfo} · ${cdsLen} bp · Strand [${strand}]`;
+      renderPlainSequence(cdsSeq, 'proCDSSeqViewer');
+
+      // 2. Translate Protein
+      const protein = BioMath.translateDNA(cdsSeq);
+      document.getElementById('proProteinSeqRange').textContent = `Annotated Translation · ${protein.length} aa`;
+      renderPlainSequence(protein, 'proProteinSeqViewer', true);
+
+      // 3. Extract & Correct Promoter (Upstream of TSS)
+      let proStart, proEnd, promoterSeq;
+      if (!isMinus) {
+        proStart = Math.max(1, tss - upstreamLen);
+        proEnd = tss - 1;
+        promoterSeq = seq.substring(proStart - 1, proEnd);
+      } else {
+        proStart = tss + 1;
+        proEnd = Math.min(seq.length, tss + upstreamLen);
+        promoterSeq = BioMath.reverseComplement(seq.substring(proStart - 1, proEnd));
+      }
+      
+      // Perform deep motif scanning on the extracted promoter
+      const deepMotifs = detectPromoterMotifs(promoterSeq);
+      
+      // Map genomic motifs to promoter local coordinates and merge
+      const mappedMotifs = motifs.filter(m => m.position >= proStart && m.position <= proEnd)
+                             .map(m => ({ ...m, position: m.position - (proStart - 1) }));
+      
+      const finalPromoterMotifs = [...mappedMotifs, ...deepMotifs].sort((a, b) => a.position - b.position);
+
+      document.getElementById('proSeqRange').textContent = `Promoter [TSS ${tss}] · ${promoterSeq.length} bp ${isMinus ? '(RC)' : '(FWD)'}`;
+      if (promoterSeq) {
+        renderHighlightedSequence(promoterSeq, finalPromoterMotifs, 'proSeqViewer');
+      } else {
+        document.getElementById('proSeqViewer').innerHTML = '<p class="text-muted">Insufficient upstream sequence for promoter extraction.</p>';
+      }
+
+    } else if (anchor) {
+      // ────────────────────────────────────────────────────────
+      // B) PREDICTION MODE (Fallback ORF Finder)
+      // ────────────────────────────────────────────────────────
+      const isMinus = anchor.frame < 0;
+
+      // 1. Extract & Correct CDS
+      let cdsSeq = seq.substring(anchor.start - 1, anchor.end);
+      if (isMinus) cdsSeq = BioMath.reverseComplement(cdsSeq);
+      
+      document.getElementById('proCDSSeqRange').textContent = `Predicted CDS [${anchor.start} ... ${anchor.end}] · ${anchor.length} bp · Frame ${anchor.frame > 0 ? '+' : ''}${anchor.frame}`;
       renderPlainSequence(cdsSeq, 'proCDSSeqViewer');
 
       // 2. Extract Protein
-      document.getElementById('proProteinSeqRange').textContent = `Translation Product · ${anchor.proteinLength} aa`;
+      document.getElementById('proProteinSeqRange').textContent = `Predicted Translation · ${anchor.proteinLength} aa`;
       renderPlainSequence(anchor.protein, 'proProteinSeqViewer', true);
 
-      // 3. Extract Promoter (Upstream)
-      const proStart = Math.max(1, anchor.start - upstreamLen);
-      const proEnd = anchor.start - 1;
-      const promoterSeq = seq.substring(proStart - 1, proEnd);
+      // 3. Extract & Correct Promoter (Upstream)
+      let proStart, proEnd, promoterSeq;
+      
+      if (!isMinus) {
+        proStart = Math.max(1, anchor.start - upstreamLen);
+        proEnd = anchor.start - 1;
+        promoterSeq = seq.substring(proStart - 1, proEnd);
+      } else {
+        proStart = anchor.end + 1;
+        proEnd = Math.min(seq.length, anchor.end + upstreamLen);
+        promoterSeq = BioMath.reverseComplement(seq.substring(proStart - 1, proEnd));
+      }
       
       const proMotifs = motifs.filter(m => m.position >= proStart && m.position <= proEnd)
                              .map(m => ({ ...m, position: m.position - (proStart - 1) }));
 
-      document.getElementById('proSeqRange').textContent = `Promoter Region [${proStart} ... ${proEnd}] · ${promoterSeq.length} bp`;
-      renderHighlightedSequence(promoterSeq, proMotifs, 'proSeqViewer');
+      document.getElementById('proSeqRange').textContent = `Predicted Promoter [${proStart} ... ${proEnd}] · ${promoterSeq.length} bp ${isMinus ? '(RC)' : '(FWD)'}`;
+      if (promoterSeq) {
+        renderHighlightedSequence(promoterSeq, proMotifs, 'proSeqViewer');
+      } else {
+        document.getElementById('proSeqViewer').innerHTML = '<p class="text-muted">Insufficient sequence for promoter extraction.</p>';
+      }
     } else {
       ['proCDSSeqViewer', 'proProteinSeqViewer', 'proSeqViewer'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.innerHTML = '<p style="color:var(--text-muted)">No suitable ORF found to anchor sequence extraction.</p>';
+        if (el) el.innerHTML = '<p style="color:var(--text-muted)">No annotation or ORF found to anchor sequence extraction.</p>';
       });
       document.querySelectorAll('.pro-seq-meta').forEach(el => el.textContent = '—');
     }

@@ -21,8 +21,9 @@ from flask_cors import CORS
 from flask_caching import Cache
 from flask_login import LoginManager, UserMixin, login_required, current_user
 from models import db, User, Workspace, AnalysisResult
+import io
 try:
-    from Bio.Seq import Seq as BioSeq
+    from Bio import SeqIO
     _BIOPYTHON_AVAILABLE = True
 except ImportError:
     _BIOPYTHON_AVAILABLE = False
@@ -153,14 +154,90 @@ def fetch_external():
     try:
         if db_type == "ncbi":
             enforce_rate_limit("ncbi")
+            is_nt = db_type == "ncbi" and request.args.get("db", "nucleotide") == "nucleotide"
             params = {
-                "db": "nucleotide",
+                "db": "nucleotide" if is_nt else "protein",
                 "id": acc_id,
-                "rettype": "fasta",
+                "rettype": "gb" if is_nt else "fasta",
                 "retmode": "text",
                 "api_key": NCBI_API_KEY
             }
             resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
+            resp.raise_for_status()
+            raw_data = resp.text
+
+            if is_nt and _BIOPYTHON_AVAILABLE:
+                try:
+                    record = SeqIO.read(io.StringIO(raw_data), "genbank")
+                    transcripts = {}
+                    
+                    # 1. Primary pass: Discover all mRNA/transcript models
+                    for feat in record.features:
+                        if feat.type in ["mRNA", "transcript", "mRNA"]:
+                            tid = feat.qualifiers.get("transcript_id", [None])[0] or \
+                                  feat.qualifiers.get("locus_tag", [None])[0] or \
+                                  str(feat.location)
+                            transcripts[tid] = {
+                                "id": tid,
+                                "strand": "+" if feat.location.strand >= 0 else "-",
+                                "exon_list": [],
+                                "cds_regions": [],
+                                "gene_range": [int(feat.location.start) + 1, int(feat.location.end)],
+                                "description": feat.qualifiers.get("product", [record.description])[0]
+                            }
+
+                    # 2. Association pass: Link exons and CDS to transcripts
+                    for feat in record.features:
+                        if feat.type in ["exon", "CDS"]:
+                            tid = feat.qualifiers.get("transcript_id", [None])[0]
+                            if not tid:
+                                # Fallback: Positional overlap with known transcript
+                                for mtid, mdata in transcripts.items():
+                                    if int(feat.location.start) >= mdata["gene_range"][0]-1 and \
+                                       int(feat.location.end) <= mdata["gene_range"][1]:
+                                        tid = mtid
+                                        break
+                            
+                            if tid in transcripts:
+                                if feat.type == "exon":
+                                    transcripts[tid]["exon_list"].append([int(feat.location.start) + 1, int(feat.location.end)])
+                                else:
+                                    parts = feat.location.parts if hasattr(feat.location, 'parts') else [feat.location]
+                                    transcripts[tid]["cds_regions"] = [[int(p.start) + 1, int(p.end)] for p in parts]
+
+                    # 3. Finalize transcript list with TSS and sorting
+                    tx_list = list(transcripts.values())
+                    for tx in tx_list:
+                        if tx["exon_list"]:
+                            tx["exon_list"].sort(key=lambda x: x[0])
+                            tx["tss"] = tx["exon_list"][0][0] if tx["strand"] == "+" else tx["exon_list"][-1][1]
+                        else:
+                            tx["tss"] = tx["gene_range"][0] if tx["strand"] == "+" else tx["gene_range"][1]
+                    
+                    # If no transcripts found (prokaryotic or simple FASTA-like GB), fallback to gene-level
+                    if not tx_list:
+                        metadata = {
+                            "strand": "+", "tss": 1, "exon_list": [], "cds_regions": [],
+                            "gene_range": [1, len(record.seq)], "description": record.description
+                        }
+                        for feat in record.features:
+                            if feat.type == "gene":
+                                metadata["gene_range"] = [int(feat.location.start) + 1, int(feat.location.end)]
+                                metadata["strand"] = "+" if feat.location.strand >= 0 else "-"
+                            elif feat.type == "CDS":
+                                parts = feat.location.parts if hasattr(feat.location, 'parts') else [feat.location]
+                                metadata["cds_regions"] = [[int(p.start) + 1, int(p.end)] for p in parts]
+                        tx_list = [metadata]
+
+                    return jsonify({
+                        "sequence": str(record.seq),
+                        "metadata": tx_list[0], # Primary transcript for backward compat
+                        "transcripts": tx_list
+                    })
+                except Exception as e:
+                    logger.warning("Isoform parsing failed: %s", e)
+
+            return Response(raw_data, mimetype="text/plain")
         
         elif db_type == "ncbiprotein":
             enforce_rate_limit("ncbi")
@@ -179,6 +256,23 @@ def fetch_external():
 
         elif db_type == "ensembl":
             enforce_rate_limit("ensembl")
+            # Ensembl metadata is easier via JSON, but the user expects sequence.
+            # We'll fetch sequence and try to get metadata separately or from headers.
+            headers = {"Content-Type": "application/json"}
+            resp = requests.get("{}/sequence/id/{}?expand_5prime=2000;expand_3prime=2000".format(ENSEMBL_BASE, acc_id), headers=headers, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                # Return structured if Ensembl gives it
+                return jsonify({
+                    "sequence": data.get("seq"),
+                    "metadata": {
+                        "strand": "+" if data.get("strand") >= 0 else "-",
+                        "tss": 2001, # We expanded by 2000
+                        "exon_list": [],
+                        "description": data.get("desc", "Ensembl Sequence")
+                    }
+                })
+            # Fallback to plain FASTA if JSON fails or not found
             headers = {"Content-Type": "text/x-fasta"}
             resp = requests.get("{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id), headers=headers, timeout=15)
 
