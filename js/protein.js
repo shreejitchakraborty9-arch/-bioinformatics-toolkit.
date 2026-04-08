@@ -144,7 +144,7 @@
     const comp = getAAComposition(seq);
     const total = seq.length;
 
-    const html = `<table class="aa-table"><thead><tr>
+    let html = `<table class="aa-table"><thead><tr>
       <th>AA</th><th>Name</th><th>Group</th><th>Count</th><th>%</th>
     </tr></thead><tbody>`;
     comp.forEach(([aa, cnt]) => {
