@@ -261,8 +261,10 @@ def fetch_external():
                 "rettype": "fasta",
                 "retmode": "text"
             }
-            if NCBI_API_KEY:
-                params["api_key"] = NCBI_API_KEY
+            user_key = request.headers.get("X-NCBI-API-Key", "").strip()
+            effective_key = user_key or NCBI_API_KEY
+            if effective_key and str(effective_key).strip():
+                params["api_key"] = effective_key
             resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
 
         elif db_type == "uniprot":
@@ -271,25 +273,110 @@ def fetch_external():
 
         elif db_type == "ensembl":
             enforce_rate_limit("ensembl")
-            # Ensembl metadata is easier via JSON, but the user expects sequence.
-            # We'll fetch sequence and try to get metadata separately or from headers.
             headers = {"Content-Type": "application/json"}
             resp = requests.get("{}/sequence/id/{}?expand_5prime=2000;expand_3prime=2000".format(ENSEMBL_BASE, acc_id), headers=headers, timeout=15)
             if resp.status_code == 200:
                 data = resp.json()
-                # Return structured if Ensembl gives it
                 return jsonify({
                     "sequence": data.get("seq"),
                     "metadata": {
-                        "strand": "+" if data.get("strand") >= 0 else "-",
-                        "tss": 2001, # We expanded by 2000
+                        "strand": "+" if data.get("strand", 1) >= 0 else "-",
+                        "tss": 2001,
                         "exon_list": [],
                         "description": data.get("desc", "Ensembl Sequence")
                     }
                 })
-            # Fallback to plain FASTA if JSON fails or not found
             headers = {"Content-Type": "text/x-fasta"}
             resp = requests.get("{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id), headers=headers, timeout=15)
+
+        elif db_type == "kegg":
+            enforce_rate_limit("kegg")
+            seq_type = request.args.get("type", "ntseq")
+            if seq_type not in ("ntseq", "aaseq"):
+                return jsonify({"error": "Invalid KEGG type. Use 'ntseq' or 'aaseq'."}), 400
+            resp = requests.get("{}/get/{}/{}".format(KEGG_BASE, acc_id, seq_type), timeout=15)
+            if resp.status_code == 200:
+                text = resp.text.strip()
+                if not text or text.startswith("<!"):
+                    return jsonify({"error": "KEGG ID '{}' returned no sequence.".format(acc_id)}), 404
+                return Response(text, mimetype="text/plain")
+            elif resp.status_code == 404:
+                return jsonify({"error": "KEGG ID '{}' not found.".format(acc_id)}), 404
+            else:
+                return jsonify({"error": "KEGG returned HTTP {}.".format(resp.status_code)}), resp.status_code
+
+        elif db_type == "ncbisymbol":
+            enforce_rate_limit("ncbi")
+            species = request.args.get("species", "Homo sapiens")
+            user_key = request.headers.get("X-NCBI-API-Key", "").strip()
+            effective_key = user_key or NCBI_API_KEY
+
+            # Step 1: ESearch to find gene ID
+            search_params = {
+                "db": "gene",
+                "term": "{}[Gene] AND {}[Organism]".format(acc_id, species),
+                "retmax": 1,
+                "retmode": "json",
+                "tool": "BioToolkit",
+                "email": "admin@biotoolkit.dev"
+            }
+            if effective_key and str(effective_key).strip():
+                search_params["api_key"] = effective_key
+
+            s_resp = requests.get("{}/esearch.fcgi".format(NCBI_BASE), params=search_params, timeout=15)
+            s_resp.raise_for_status()
+            s_data = s_resp.json()
+            ids = s_data.get("esearchresult", {}).get("idlist", [])
+
+            if not ids:
+                return jsonify({"error": "No results for symbol '{}' in '{}'.".format(acc_id, species)}), 404
+
+            gene_id = str(ids[0])
+
+            # Step 2: ELink to find associated nucleotide accession
+            enforce_rate_limit("ncbi")
+            link_params = {
+                "dbfrom": "gene",
+                "db": "nuccore",
+                "id": gene_id,
+                "retmode": "json",
+                "tool": "BioToolkit",
+                "email": "admin@biotoolkit.dev"
+            }
+            if effective_key and str(effective_key).strip():
+                link_params["api_key"] = effective_key
+
+            l_resp = requests.get("{}/elink.fcgi".format(NCBI_BASE), params=link_params, timeout=15)
+            l_resp.raise_for_status()
+            l_data = l_resp.json()
+
+            nuc_id = None
+            try:
+                for linkset in l_data.get("linksets", []):
+                    for ldb in linkset.get("linksetdbs", []):
+                        if ldb.get("dbto") == "nuccore" and ldb.get("links"):
+                            nuc_id = str(ldb["links"][0])
+                            break
+                    if nuc_id:
+                        break
+            except (KeyError, IndexError):
+                pass
+
+            if not nuc_id:
+                return jsonify({"error": "No nucleotide record linked to gene '{}'. Try using an accession ID directly.".format(acc_id)}), 404
+
+            # Step 3: EFetch the nucleotide record
+            enforce_rate_limit("ncbi")
+            fetch_params = {
+                "db": "nucleotide",
+                "id": nuc_id,
+                "rettype": "fasta",
+                "retmode": "text"
+            }
+            if effective_key and str(effective_key).strip():
+                fetch_params["api_key"] = effective_key
+
+            resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=fetch_params, timeout=15)
 
         else:
             return jsonify({"error": "Unsupported database: {}".format(db_type)}), 400

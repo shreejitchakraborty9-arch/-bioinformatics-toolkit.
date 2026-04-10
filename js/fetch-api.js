@@ -22,13 +22,13 @@
   }
 
   const ROUTES = {
-    ncbi:        (id) => buildUrl("/ncbi",    { id, db: "nucleotide" }),
-    ncbiprotein: (id) => buildUrl("/ncbi",    { id, db: "protein" }),
-    ncbisymbol:  (symbol, db) => buildUrl("/ncbi/search", { symbol, db: db || "nucleotide" }),
-    ensembl:     (id) => buildUrl("/ensembl", { id }),
-    uniprot:     (id) => buildUrl("/uniprot", { id }),
-    kegg:        (id) => buildUrl("/kegg",    { id, type: "ntseq" }),
-    keggprotein: (id) => buildUrl("/kegg",    { id, type: "aaseq" }),
+    ncbi:        (id) => buildUrl("", { id, db: "ncbi" }),
+    ncbiprotein: (id) => buildUrl("", { id, db: "ncbiprotein" }),
+    ncbisymbol:  (symbol, db) => buildUrl("", { id: symbol, db: "ncbisymbol", species: "Homo sapiens" }),
+    ensembl:     (id) => buildUrl("", { id, db: "ensembl" }),
+    uniprot:     (id) => buildUrl("", { id, db: "uniprot" }),
+    kegg:        (id) => buildUrl("", { id, db: "kegg", type: "ntseq" }),
+    keggprotein: (id) => buildUrl("", { id, db: "kegg", type: "aaseq" }),
   };
 
   // ─────────────────────────────────────────────────────────────
