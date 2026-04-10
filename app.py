@@ -77,7 +77,7 @@ logger = logging.getLogger("BioToolkit")
 # ─────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────
-NCBI_API_KEY = os.environ.get("NCBI_API_KEY", "")
+NCBI_API_KEY = os.environ.get("NCBI_API_KEY")
 NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 ENSEMBL_BASE = "https://rest.ensembl.org"
 UNIPROT_BASE = "https://rest.uniprot.org"
@@ -164,9 +164,10 @@ def fetch_external():
                 "db": "nucleotide",
                 "id": acc_id,
                 "rettype": "gb",
-                "retmode": "text",
-                "api_key": NCBI_API_KEY
+                "retmode": "text"
             }
+            if NCBI_API_KEY:
+                params["api_key"] = NCBI_API_KEY
             resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
             resp.raise_for_status()
             raw_data = resp.text
@@ -243,9 +244,10 @@ def fetch_external():
                 "db": "protein",
                 "id": acc_id,
                 "rettype": "fasta",
-                "retmode": "text",
-                "api_key": NCBI_API_KEY
+                "retmode": "text"
             }
+            if NCBI_API_KEY:
+                params["api_key"] = NCBI_API_KEY
             resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
 
         elif db_type == "uniprot":
@@ -299,9 +301,10 @@ def search_ncbi():
         params = {
             "db": db_name,
             "term": query,
-            "retmode": "json",
-            "api_key": NCBI_API_KEY
+            "retmode": "json"
         }
+        if NCBI_API_KEY:
+            params["api_key"] = NCBI_API_KEY
         resp = requests.get("{}/esearch.fcgi".format(NCBI_BASE), params=params, timeout=10)
         resp.raise_for_status()
         return jsonify(resp.json())
