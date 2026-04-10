@@ -1053,94 +1053,129 @@
 
   /**
    * Automatically suggests optimal primer pairs from a template sequence.
-   * Uses a multi-parameter ranking system (Tm symmetry, specificity, thermodynamic stability).
+   * Uses a research-grade scoring system (Integrity + Performance).
    */
   BioMath.suggestPrimerPairs = function(template, constraints, options = {}) {
     if (!template || template.length < 50) return [];
     const t = template.toUpperCase();
-    const limit = 10000; 
-    const scanArea = t.substring(0, Math.min(t.length, limit));
+    const scanLimit = 15000;
+    const scanArea = t.substring(0, Math.min(t.length, scanLimit));
     
-    const fwdCandidates = [];
-    const revCandidates = [];
-    
-    const minLen = constraints.length.min || 18;
-    const maxLen = constraints.length.max || 25;
-    const homoLimit = constraints.homopolymerLimit || 5;
-
-    // Helper to validate single primer integrity for design
-    const validateIntegrity = (seq) => {
+    // Internal helper to score a single candidate
+    const evaluatePrimer = (seq, currentConstraints) => {
       const tm = parseFloat(BioMath.calculateTmNN(seq, options).tm);
       const gc = parseFloat(BioMath.calculateGC(seq));
       
-      // Basic requirements
-      if (tm < constraints.tm.min || tm > constraints.tm.max) return null;
-      if (gc < constraints.gc.min || gc > constraints.gc.max) return null;
+      // HARD FILTERS (Researcher Must-Haves)
+      if (tm < currentConstraints.tm.min - 2 || tm > currentConstraints.tm.max + 2) return null;
+      if (gc < currentConstraints.gc.min - 5 || gc > currentConstraints.gc.max + 5) return null;
 
-      // Scientific Integrity filters
-      if (BioMath.validateGCClamp && !BioMath.validateGCClamp(seq, constraints)) return null;
-      if (BioMath.detectHomopolymerRuns(seq, homoLimit).hasViolation) return null;
-      if (BioMath.detectHairpin(seq).found) return null;
+      let score = 100;
+      let warnings = [];
+
+      // Tm/GC Penalties (if outside narrow preferred range)
+      if (tm < currentConstraints.tm.min || tm > currentConstraints.tm.max) {
+        score -= 10; warnings.push("Tm slightly outside preferred range");
+      }
+      if (gc < currentConstraints.gc.min || gc > currentConstraints.gc.max) {
+        score -= 10; warnings.push("GC slightly outside preferred range");
+      }
+
+      // INTEGRITY PENALTIES (Research-Grade)
+      if (BioMath.validateGCClamp && !BioMath.validateGCClamp(seq, currentConstraints)) {
+        score -= 15; warnings.push("No 3' GC Clamp");
+      }
       
-      const dimer = BioMath.calculateDimerThermodynamics(seq, seq);
-      if (parseFloat(dimer.deltaG) <= -6.0) return null;
+      const homoRes = BioMath.detectHomopolymerRuns(seq, currentConstraints.homopolymerLimit || 5);
+      if (homoRes.hasViolation) {
+        score -= 25; warnings.push("Homopolymer run detected");
+      }
+
+      if (BioMath.detectHairpin(seq).found) {
+        score -= 30; warnings.push("Hairpin secondary structure");
+      }
 
       const stability = BioMath.assess3PrimeStability(seq);
-      if (stability.verdict === 'CRITICAL') return null;
+      if (stability.verdict === 'CRITICAL') {
+        score -= 20; warnings.push("Poor 3' terminal stability");
+      }
 
-      return { seq, tm, gc, selfDg: dimer.deltaG };
+      const dimer = BioMath.calculateDimerThermodynamics(seq, seq);
+      const dg = parseFloat(dimer.deltaG);
+      if (dg <= -9.0) { score -= 30; warnings.push("Critical self-dimer risk"); }
+      else if (dg <= -6.0) { score -= 15; warnings.push("Self-dimer risk"); }
+
+      return { seq, tm, gc, score, warnings, selfDg: dg };
     };
 
-    // 1. Find Forward Candidates (5' end focus)
-    const fwdScanLimit = Math.floor(scanArea.length * 0.4);
-    for (let i = 0; i < fwdScanLimit; i++) {
-      for (let len = minLen; len <= maxLen; len++) {
-        const seq = scanArea.substring(i, i + len);
-        if (seq.length < len) break;
-        
-        const stats = validateIntegrity(seq);
-        if (stats) {
-          fwdCandidates.push({ ...stats, pos: i + 1 });
+    const doScan = (activeConstraints) => {
+      const fCands = [];
+      const rCands = [];
+      const minL = activeConstraints.length.min || 18;
+      const maxL = activeConstraints.length.max || 25;
+
+      // Scan Fwd (Start)
+      const fLimit = Math.min(scanArea.length * 0.4, 3000);
+      for (let i = 0; i < fLimit; i++) {
+        for (let l = minL; l <= maxL; l++) {
+          const s = scanArea.substring(i, i + l);
+          if (s.length < l) break;
+          const res = evaluatePrimer(s, activeConstraints);
+          if (res && res.score >= 40) fCands.push({ ...res, pos: i + 1 });
         }
+        if (fCands.length > 80) break;
       }
-      if (fwdCandidates.length > 60) break;
+
+      // Scan Rev (End)
+      const rStart = Math.max(0, scanArea.length - Math.min(scanArea.length * 0.4, 3000));
+      for (let i = scanArea.length; i >= rStart; i--) {
+        for (let l = minL; l <= maxL; l++) {
+          const sr = scanArea.substring(i - l, i);
+          if (sr.length < l) continue;
+          const s = BioMath.reverseComplement(sr);
+          const res = evaluatePrimer(s, activeConstraints);
+          if (res && res.score >= 40) rCands.push({ ...res, pos: i });
+        }
+        if (rCands.length > 80) break;
+      }
+      return { fCands, rCands };
+    };
+
+    // ── Primary Scan ───────────────
+    let { fCands, rCands } = doScan(constraints);
+
+    // ── Fallback: Relaxed Scan ───────
+    if (fCands.length === 0 || rCands.length === 0) {
+      const relaxed = JSON.parse(JSON.stringify(constraints));
+      relaxed.tm.min -= 2; relaxed.tm.max += 2;
+      relaxed.gc.min -= 5; relaxed.gc.max += 5;
+      const secondTry = doScan(relaxed);
+      fCands = secondTry.fCands;
+      rCands = secondTry.rCands;
     }
 
-    // 2. Find Reverse Candidates (3' end focus)
-    const revScanStart = Math.max(0, scanArea.length - Math.floor(scanArea.length * 0.4));
-    for (let i = scanArea.length; i >= revScanStart; i--) {
-      for (let len = minLen; len <= maxLen; len++) {
-        const seq_rc = scanArea.substring(i - len, i);
-        if (seq_rc.length < len) continue;
-        
-        const seq = BioMath.reverseComplement(seq_rc);
-        const stats = validateIntegrity(seq);
-        if (stats) {
-          revCandidates.push({ ...stats, pos: i });
-        }
-      }
-      if (revCandidates.length > 60) break;
-    }
-
-    // 3. Pair them up
     const pairs = [];
-    for (const f of fwdCandidates) {
-      for (const r of revCandidates) {
+    for (const f of fCands) {
+      for (const r of rCands) {
         const size = r.pos - f.pos + 1;
         if (size >= constraints.productSize.min && size <= constraints.productSize.max) {
           const tmDiff = Math.abs(f.tm - r.tm);
-          if (tmDiff <= constraints.tmDifference) {
+          if (tmDiff <= constraints.tmDifference + 1) {
             const hetero = BioMath.calculateDimerThermodynamics(f.seq, r.seq);
-            const heteroDg = parseFloat(hetero.deltaG);
+            const hdg = parseFloat(hetero.deltaG);
             
-            if (heteroDg > -6.0) {
-              const score = (20 - tmDiff * 2) + (heteroDg + 12);
-              pairs.push({ fwd: f, rev: r, size, tmDiff, heteroDg, score });
+            if (hdg > -8.0) {
+              // Final Pair Score
+              let pairScore = (f.score + r.score) / 2;
+              pairScore -= tmDiff * 4; // Extra penalty for Tm mismatch
+              if (hdg <= -6.0) pairScore -= 10; 
+              
+              pairs.push({ fwd: f, rev: r, size, tmDiff, heteroDg: hdg, score: pairScore });
             }
           }
         }
       }
-      if (pairs.length > 100) break;
+      if (pairs.length > 150) break;
     }
 
     return pairs.sort((a, b) => b.score - a.score).slice(0, 5);
