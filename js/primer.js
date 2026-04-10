@@ -26,7 +26,6 @@
   }
 
   function detectHairpin(seq) {
-    // Look for self-complementary stem ≥ 4 bp with loop ≥ 3
     const comp = { A:'T', T:'A', G:'C', C:'G' };
     const minStem = 4, minLoop = 3;
     for (let stemLen = minStem; stemLen <= Math.floor((seq.length - minLoop) / 2); stemLen++) {
@@ -50,7 +49,23 @@
     return { found: maxRun >= 4, maxRun };
   }
 
-
+  function detectHeterodimer(seq1, seq2) {
+    const comp = { A:'T', T:'A', G:'C', C:'G' };
+    const rc2  = seq2.split('').reverse().map(b => comp[b] || 'N').join('');
+    let maxRun = 0;
+    for (let shift = -seq1.length + 1; shift < seq2.length; shift++) {
+      let run = 0;
+      for (let i = 0; i < seq1.length; i++) {
+        const j = i + shift;
+        if (j >= 0 && j < rc2.length) {
+          if (seq1[i] === rc2[j]) {
+            run++; maxRun = Math.max(maxRun, run);
+          } else run = 0;
+        }
+      }
+    }
+    return maxRun;
+  }
 
   function complement(seq) {
     const comp = { A:'T', T:'A', G:'C', C:'G' };
@@ -63,6 +78,12 @@
 
   function tmDiff(tm1, tm2) {
     return Math.abs(parseFloat(tm1) - parseFloat(tm2)).toFixed(1);
+  }
+
+  function updateTemplateUI(data) {
+    const meta = document.getElementById('templateMeta');
+    if (meta) meta.textContent = `Length: ${data.sequence.length} bp | Source: ${data.accession || 'Database'}`;
+    // Optional: map features to genome viewer or summary
   }
 
   // ── State (PROMPT 2) ──────────────────────────────────────
@@ -85,7 +106,9 @@
 
   // ── Helpers (Prompt 4) ──────────────────────────────────────
   function loadAssayPreset(type) {
-    const presets = window.BioKit.core.BioMath.ASSAY_PRESETS;
+    const BioMath = window.BioKit && window.BioKit.core && window.BioKit.core.BioMath;
+    if (!BioMath || !BioMath.ASSAY_PRESETS) return;
+    const presets = BioMath.ASSAY_PRESETS;
     if (presets[type]) {
       state.constraints = JSON.parse(JSON.stringify(presets[type]));
       renderConstraints();
@@ -133,10 +156,19 @@
   const togglePanel = (headerId, contentId) => {
     const hdr = document.getElementById(headerId);
     const content = document.getElementById(contentId);
+    if (!hdr || !content) return;
     hdr.addEventListener('click', (e) => {
       if (e.target.tagName === 'BUTTON') return;
       content.classList.toggle('hidden');
       hdr.classList.toggle('open');
+      const icon = hdr.querySelector('.toggle-icon');
+      if (icon) {
+        if (content.classList.contains('hidden')) {
+          icon.style.transform = 'rotate(0deg)';
+        } else {
+          icon.style.transform = 'rotate(90deg)';
+        }
+      }
     });
   };
   togglePanel('templateSettingsToggle', 'templateSettingsContent');
@@ -150,19 +182,19 @@
   const editForm = document.getElementById('constraintsEditForm');
   const displayArea = document.getElementById('constraintsDisplay');
 
-  editBtn.addEventListener('click', () => {
+  if (editBtn) editBtn.addEventListener('click', () => {
     editForm.classList.remove('hidden');
     displayArea.classList.add('hidden');
   });
-  cancelBtn.addEventListener('click', () => {
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
     editForm.classList.add('hidden');
     displayArea.classList.remove('hidden');
   });
-  resetBtn.addEventListener('click', () => {
+  if (resetBtn) resetBtn.addEventListener('click', () => {
     loadAssayPreset(state.assayType);
     window.showToast(`✓ Reset to ${state.assayType.toUpperCase()} defaults`);
   });
-  saveBtn.addEventListener('click', () => {
+  if (saveBtn) saveBtn.addEventListener('click', () => {
     state.constraints.length.min = parseInt(document.getElementById('conMinLen').value);
     state.constraints.length.max = parseInt(document.getElementById('conMaxLen').value);
     state.constraints.tm.min = parseFloat(document.getElementById('conMinTm').value);
@@ -199,13 +231,14 @@
   });
 
   // ── State Listeners ────────────────────────────────────────
-  templateInput.addEventListener('input', () => {
+  if (templateInput) templateInput.addEventListener('input', () => {
     const s = (templateInput.value || '').toUpperCase().replace(/[^A-Z]/gi, '');
     state.template.sequence = s;
-    templateMeta.textContent = `Length: ${s.length} bp`;
+    if (templateMeta) templateMeta.textContent = `Length: ${s.length} bp`;
   });
 
-  document.getElementById('organism').addEventListener('change', (e) => {
+  const organismEl = document.getElementById('organism');
+  if (organismEl) organismEl.addEventListener('change', (e) => {
     state.template.organism = e.target.value;
   });
 
@@ -220,27 +253,25 @@
     });
   });
   
-  document.getElementById('avoidExonJunction').addEventListener('change', (e) => {
+  const avoidExonJunctionEl = document.getElementById('avoidExonJunction');
+  if (avoidExonJunctionEl) avoidExonJunctionEl.addEventListener('change', (e) => {
     state.biologicalOptions.avoidExonJunction = e.target.checked;
   });
-  document.getElementById('intronSpanning').addEventListener('change', (e) => {
+  const intronSpanningEl = document.getElementById('intronSpanning');
+  if (intronSpanningEl) intronSpanningEl.addEventListener('change', (e) => {
     state.biologicalOptions.intronSpanning = e.target.checked;
   });
-  document.getElementById('excludeSnp').addEventListener('change', (e) => {
+  const excludeSnpEl = document.getElementById('excludeSnp');
+  if (excludeSnpEl) excludeSnpEl.addEventListener('change', (e) => {
     state.biologicalOptions.excludeSnp = e.target.checked;
   });
   
   // Initialize Defaults
   loadAssayPreset('pcr');
 
-  ['avoidExonJunction', 'intronSpanning', 'excludeSnp'].forEach(id => {
-    const cb = document.getElementById(id);
-    cb.addEventListener('change', () => state.biologicalOptions[id] = cb.checked);
-  });
-
   // ── Fetch Handler (PROMPT 3) ─────────────────────────────
   const fetchBtn = document.getElementById('primerFetchBtn');
-  fetchBtn.addEventListener('click', async () => {
+  if (fetchBtn) fetchBtn.addEventListener('click', async () => {
     const db = document.getElementById('primerTemplateDb').value;
     const id = document.getElementById('primerTemplateId').value;
     if (!id) { window.showToast('⚠ Enter an Accession ID'); return; }
@@ -271,7 +302,8 @@
         updateTemplateUI(data);
 
         // Automatically switch back to paste view to show result
-        document.querySelector('input[name="templateSource"][value="paste"]').click();
+        const pasteRadio = document.querySelector('input[name="templateSource"][value="paste"]');
+        if (pasteRadio) pasteRadio.click();
         window.showToast('✓ Template sequence and features loaded');
       } else {
         window.showToast('⚠ Accession found but no sequence data returned');
@@ -285,36 +317,39 @@
     }
   });
 
-  fwdInput.addEventListener('input', () => {
-    const s = cleanSeq(fwdInput.value);
-    const tmRes = calcTm(s, 50, 250);
+  if (fwdInput) fwdInput.addEventListener('input', () => {
+    const s = window.cleanSeq(fwdInput.value);
+    const tmRes = calcTm(s, { naConc_mM: 50, oligoConc_nM: 250 });
     const validation = window.validateSequence(s, 'dna');
     let metaText = `Length: ${s.length} nt  |  GC: ${gcPct(s)}%  |  Tm ≈ ${tmRes.tm} °C`;
     if (!validation.valid || tmRes.warning) {
       metaText = `⚠ ${metaText} ${tmRes.warning ? '(Warning)' : '(Limit Exceeded)'}`;
-      fwdMeta.style.color = 'var(--rose)';
+      if (fwdMeta) fwdMeta.style.color = 'var(--rose)';
     } else {
-      fwdMeta.style.color = 'var(--text-muted)';
+      if (fwdMeta) fwdMeta.style.color = 'var(--text-muted)';
     }
-    fwdMeta.textContent = metaText;
+    if (fwdMeta) fwdMeta.textContent = metaText;
   });
-  revInput.addEventListener('input', () => {
-    const s = cleanSeq(revInput.value);
-    const tmRes = calcTm(s, 50, 250);
+  if (revInput) revInput.addEventListener('input', () => {
+    const s = window.cleanSeq(revInput.value);
+    const tmRes = calcTm(s, { naConc_mM: 50, oligoConc_nM: 250 });
     const validation = window.validateSequence(s, 'dna');
     let metaText = `Length: ${s.length} nt  |  GC: ${gcPct(s)}%  |  Tm ≈ ${tmRes.tm} °C`;
     if (!validation.valid || tmRes.warning) {
       metaText = `⚠ ${metaText} ${tmRes.warning ? '(Warning)' : '(Limit Exceeded)'}`;
-      revMeta.style.color = 'var(--rose)';
+      if (revMeta) revMeta.style.color = 'var(--rose)';
     } else {
-      revMeta.style.color = 'var(--text-muted)';
+      if (revMeta) revMeta.style.color = 'var(--text-muted)';
     }
-    revMeta.textContent = metaText;
+    if (revMeta) revMeta.textContent = metaText;
   });
 
   // ── Controls ───────────────────────────────────────────────
-  document.getElementById('primerAnalyzeBtn').addEventListener('click', window.debounce(analyze, 300));
-  document.getElementById('primerSampleBtn').addEventListener('click', () => {
+  const analyzeBtn = document.getElementById('primerAnalyzeBtn');
+  if (analyzeBtn) analyzeBtn.addEventListener('click', window.debounce(analyze, 300));
+  
+  const sampleBtn = document.getElementById('primerSampleBtn');
+  if (sampleBtn) sampleBtn.addEventListener('click', () => {
     templateInput.value = "ATGGCTATCAAGCAGAAGTTTGATGCCATCAAGAAGCTGGAGGAGCAGCTGACCAAGGACATCCAGTACAACATGGGCCTGGCCGACATGGCCGGCATCGTGGTGCACGGCCACCACATCAAGAAGCTGTGA";
     fwdInput.value = 'ATGGCTATCAAGCAGAAGTTTG';
     revInput.value = 'TCACAGCTTCTTGATGTGGTG';
@@ -325,6 +360,7 @@
 
   function analyze() {
     try {
+      const BioMath = window.BioKit.core.BioMath;
       const na = parseFloat(document.getElementById('saltConc').value) || 50;
       const k = parseFloat(document.getElementById('kConc').value) || 0;
       const mg = parseFloat(document.getElementById('mgConc').value) || 1.5;
@@ -346,10 +382,10 @@
         formamide_m: formamide
       };
 
-      const fwd = window.cleanSeq(fwdInput.value);
-      const rev = window.cleanSeq(revInput.value);
+      const fwdStr = window.cleanSeq(fwdInput.value);
+      const revStr = window.cleanSeq(revInput.value);
 
-      if (!fwd && !rev) { window.showToast('⚠ Enter at least one primer'); return; }
+      if (!fwdStr && !revStr) { window.showToast('⚠ Enter at least one primer'); return; }
 
       const valFwd = window.validateSequence(fwdInput.value, 'dna');
       const valRev = window.validateSequence(revInput.value, 'dna');
@@ -360,11 +396,10 @@
       }
 
       const thresholds = state.constraints;
-
       const grid = document.getElementById('primerResultGrid');
       const primers = [];
-      if (fwd.length >= 8) primers.push({ label: 'Forward Primer', seq: fwd });
-      if (rev.length >= 8) primers.push({ label: 'Reverse Primer', seq: rev });
+      if (fwdStr.length >= 8) primers.push({ label: 'Forward Primer', seq: fwdStr });
+      if (revStr.length >= 8) primers.push({ label: 'Reverse Primer', seq: revStr });
 
       window.withLoading('panel-primer', async () => {
         grid.textContent = ''; 
@@ -372,11 +407,7 @@
         pairEl.style.display = 'none';
 
         const results = await Promise.all(primers.map(async ({ label, seq }) => {
-          const workerRes = await window.BioKit.core.WorkerManager.runTask({
-            type: 'THERMO_ANALYSIS',
-            strategy: 'auto',
-            payload: { sequence: seq, ...options }
-          });
+          const workerRes = await window.BioKit.core.WorkerManager.runTask('THERMO_ANALYSIS', { sequence: seq, ...options });
 
           const tm = workerRes.tm_nn || calcTm(seq, options).tm;
           const gc = gcPct(seq);
@@ -385,8 +416,6 @@
           const hairpin = detectHairpin(seq);
           const dimer = detectSelfDimer(seq);
           const homoRes = BioMath.detectHomopolymerRuns(seq, thresholds.homopolymerLimit);
-
-          const BioMath = window.BioKit.core.BioMath;
 
           // Validation using core engine
           const lenOk = BioMath.validateLength(seq, thresholds);
@@ -406,10 +435,10 @@
           const cardHtml = `
             <div class="primer-card ${failReasons.length > 2 ? 'fail-border' : failReasons.length > 0 ? 'warn-border' : ''}">
               <div class="primer-card-header">
-                <h4>${escapeHTML(label)}</h4>
+                <h4>${window.escapeHTML(label)}</h4>
                 <span class="qc-status ${failReasons.length === 0 ? 'pass' : 'fail'}">${failReasons.length === 0 ? 'QC PASS' : 'QC FLAG'}</span>
               </div>
-              <div class="primer-seq">${escapeHTML(seq)}</div>
+              <div class="primer-seq">${window.escapeHTML(seq)}</div>
               
               <div class="primer-stat-grid">
                 <div class="primer-stat-item"><span class="primer-stat-key">Length</span>
@@ -431,7 +460,7 @@
               ${failReasons.length > 0 ? `
               <div class="fail-list">
                 <strong>Reasons for Flag:</strong>
-                <ul>${failReasons.map(r => `<li>${escapeHTML(r)}</li>`).join('')}</ul>
+                <ul>${failReasons.map(r => `<li>${window.escapeHTML(r)}</li>`).join('')}</ul>
               </div>` : ''}
 
               <div class="thermo-transparency-section">
@@ -450,7 +479,12 @@
           return { label, seq, tm };
         }));
 
-          // ── Pair Assessment & Verdict (PROMPT 8) ──────────────────
+        if (results.length === 2) {
+          // ── Pair Assessment & Verdict ──────────────────
+          const diff = tmDiff(results[0].tm, results[1].tm);
+          const diffOk = BioMath.validateTmDifference(results[0].tm, results[1].tm, thresholds);
+          const maxHetero = detectHeterodimer(results[0].seq, results[1].seq);
+
           const pairFailures = [];
           const pairWarnings = [];
           
@@ -458,20 +492,7 @@
           if (maxHetero >= 5) pairFailures.push(`High heterodimer risk (${maxHetero}bp complementarity)`);
           else if (maxHetero >= 4) pairWarnings.push(`Moderate heterodimer risk (${maxHetero}bp)`);
 
-          const fwdResults = results[0];
-          const revResults = results[1];
-          const fwdStats = { 
-            tm: parseFloat(fwdResults.tm), 
-            len: fwdResults.seq.length,
-            homo: BioMath.validateHomopolymer(fwdResults.seq, thresholds)
-          };
-          const revStats = { 
-            tm: parseFloat(revResults.tm), 
-            len: revResults.seq.length,
-            homo: BioMath.validateHomopolymer(revResults.seq, thresholds)
-          };
-
-          // ── Specificity Section (PROMPT 10) ──────────────────────
+          // ── Specificity Section ──────────────────────
           let specificityHtml = '';
           if (template) {
             const fwdSpec = BioMath.checkTemplateSpecificity(fwdStr, template, false);
@@ -501,8 +522,9 @@
           // ── Amplicon Section ─────────────────────────────────────
           let ampliconHtml = '';
           let ampliconVerdict = 'PASS';
+          let ampInfo = null;
           if (template) {
-            const ampInfo = BioMath.calculateAmpliconInfo(template, fwdStr, revStr, thresholds);
+            ampInfo = BioMath.calculateAmpliconInfo(template, fwdStr, revStr, thresholds);
             if (ampInfo.amplicon.size > 0) {
               const size = ampInfo.amplicon.size;
               const sizeWarning = ampInfo.warnings.find(w => w.includes('size'));
@@ -532,11 +554,9 @@
             }
           }
 
-          // ── Exon-Junction Spanning (PROMPT 11) ─────────────────
+          // ── Exon-Junction Spanning ─────────────────
           let exonHtml = '';
-          if (template && state.template.features && state.template.features.length > 0) {
-            const ampInfo = BioMath.calculateAmpliconInfo(template, fwdStr, revStr, thresholds);
-            if (ampInfo.amplicon.size > 0) {
+          if (template && state.template.features && state.template.features.length > 0 && ampInfo && ampInfo.amplicon.size > 0) {
               const exonRes = BioMath.checkExonSpanning(
                 ampInfo.amplicon.start, ampInfo.amplicon.start + fwdStr.length - 1,
                 ampInfo.amplicon.end - revStr.length + 1, ampInfo.amplicon.end,
@@ -563,12 +583,11 @@
                   </div>
                 `;
               }
-            }
           }
 
-          // ── Final Verdict Engine (PROMPT 12) ───────────────────
+          // ── Final Verdict Engine ───────────────────
           const finalVerdict = BioMath.generatePrimerPairVerdict(
-            [fwdResults, revResults],
+            [results[0], results[1]],
             { tmDiff: diff, maxHetero: maxHetero },
             thresholds,
             template,
@@ -596,7 +615,7 @@
                 <div class="verdict-action-box">
                   <strong>Findings &amp; Actions:</strong>
                   <ul>
-                    ${[...finalVerdict.failures, ...finalVerdict.warnings].map(err => `<li>${escapeHTML(err)}</li>`).join('')}
+                    ${[...finalVerdict.failures, ...finalVerdict.warnings].map(err => `<li>${window.escapeHTML(err)}</li>`).join('')}
                   </ul>
                   <p style="margin-top:10px; font-weight:600; font-size:0.8rem;">
                     Action: ${finalVerdict.actionItems.length > 0 ? finalVerdict.actionItems.join(' ') : 'Review primer design and target site'}
@@ -612,8 +631,8 @@
             </div>`;
 
           state.lastAnalysis = {
-            forward: fwdResults,
-            reverse: revResults,
+            forward: results[0],
+            reverse: results[1],
             verdict: finalVerdict,
             assay: assay,
             organism: organism
@@ -623,9 +642,10 @@
           pairEl.style.display = 'block';
 
           // Bind export button
-          document.getElementById('exportReportBtn').addEventListener('click', exportPrimerQCReport);
+          const exportBtn = document.getElementById('exportReportBtn');
+          if (exportBtn) exportBtn.addEventListener('click', exportPrimerQCReport);
         }
-      }, Math.max(fwd.length, rev.length));
+      }, Math.max(fwdStr.length, revStr.length));
     } catch (err) {
       window.handleError(err, 'Primer Analysis');
     }
@@ -650,9 +670,10 @@
       meta: {
         model: "SantaLucia 1998 NN",
         buffer: {
-          na: document.getElementById('na_conc').value,
-          mg: document.getElementById('mg_conc').value,
-          dntp: document.getElementById('dntp_conc').value
+          na: document.getElementById('saltConc').value,
+          k: document.getElementById('kConc').value,
+          mg: document.getElementById('mgConc').value,
+          dntp: document.getElementById('dntpConc').value
         }
       }
     };
