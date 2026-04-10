@@ -26,15 +26,9 @@
   }
 
   function detectHairpin(seq) {
-    const comp = { A:'T', T:'A', G:'C', C:'G' };
-    const minStem = 4, minLoop = 3;
-    for (let stemLen = minStem; stemLen <= Math.floor((seq.length - minLoop) / 2); stemLen++) {
-      const stem5 = seq.slice(0, stemLen);
-      for (let loop = minLoop; loop <= seq.length - 2 * stemLen; loop++) {
-        const stem3 = seq.slice(stemLen + loop, stemLen + loop + stemLen);
-        const rc3   = stem3.split('').reverse().map(b => comp[b] || 'N').join('');
-        if (stem5 === rc3) return { found: true, stemLen, loop };
-      }
+    const BioMath = window.BioKit && window.BioKit.core && window.BioKit.core.BioMath;
+    if (BioMath && BioMath.detectHairpin) {
+      return BioMath.detectHairpin(seq);
     }
     return { found: false };
   }
