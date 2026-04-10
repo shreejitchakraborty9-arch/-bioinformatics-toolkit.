@@ -201,6 +201,14 @@
     const s = (templateInput.value || '').toUpperCase().replace(/[^A-Z]/gi, '');
     state.template.sequence = s;
     if (templateMeta) templateMeta.textContent = `Length: ${s.length} bp`;
+    
+    // Auto-toggle to paste view if sequence suddenly appears (from fetch)
+    if (s.length > 0) {
+      const pasteRadio = document.querySelector('input[name="templateSource"][value="paste"]');
+      if (pasteRadio && !pasteRadio.checked) {
+        pasteRadio.click();
+      }
+    }
   });
 
   const organismEl = document.getElementById('organism');
@@ -302,44 +310,7 @@
   });
 
   // ── Database Fetching (Unified) ──────────────────────────
-  const fetchBtn = document.getElementById('primerFetchBtn');
-  if (fetchBtn) {
-    fetchBtn.addEventListener('click', async () => {
-      const db = document.getElementById('primerTemplateDb').value;
-      const id = document.getElementById('primerTemplateId').value.trim();
-      if (!id) { window.showToast('⚠ Enter an Accession ID'); return; }
-
-      window.withLoading('panel-primer', async () => {
-        try {
-          const resp = await fetch(`/api/fetch?db=${db}&id=${id}`);
-          const data = await resp.json();
-          if (data.error) throw new Error(data.error);
-
-          state.template.sequence = data.sequence.toUpperCase();
-          state.template.features = data.features || [];
-          state.template.organism = data.organism || 'human';
-          state.template.accession = id;
-          
-          templateInput.value = state.template.sequence;
-          updateTemplateUI(data);
-          
-          if (document.getElementById('organism')) {
-              document.getElementById('organism').value = data.organism?.toLowerCase().includes('mouse') ? 'mouse' : 'human';
-          }
-          
-          templateInput.dispatchEvent(new Event('input'));
-          
-          // Switch to paste view to show sequence
-          const pasteRadio = document.querySelector('input[name="templateSource"][value="paste"]');
-          if (pasteRadio) pasteRadio.click();
-          
-          window.showToast(`✓ Fetched ${id} successfully`);
-        } catch (err) {
-          window.handleError(err, 'Template Fetch');
-        }
-      });
-    });
-  }
+  // Handled globally by fetch-api.js via .fetch-btn class in index.html
 
   // ── Auto-Design Integration ────────────────────────────────
   const suggestBtn = document.getElementById('primerSuggestBtn');

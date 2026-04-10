@@ -537,14 +537,14 @@
           </div>
           
           <!-- Fetch Area -->
-          <div id="fetchTemplateGroup" class="hidden">
+          <div id="fetchTemplateGroup" class="fetch-widget hidden" data-target="primerTemplate" data-meta="templateMeta">
             <div class="fetch-row" style="display:flex; gap:8px; margin-bottom:12px;">
-              <select class="num-input" id="primerTemplateDb" style="width:120px;">
+              <select class="fetch-db-select" id="primerTemplateDb" style="width:120px;">
                 <option value="ncbi">NCBI</option>
                 <option value="ensembl">Ensembl</option>
               </select>
-              <input type="text" class="seq-input-line" id="primerTemplateId" placeholder="e.g. NM_007294">
-              <button class="btn-primary" id="primerFetchBtn">Fetch</button>
+              <input type="text" class="fetch-id-input" id="primerTemplateId" placeholder="e.g. NM_007294">
+              <button class="btn-primary fetch-btn">Fetch</button>
             </div>
           </div>
 
