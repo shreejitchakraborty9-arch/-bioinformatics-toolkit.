@@ -24,6 +24,7 @@ from models import db, User, Workspace, AnalysisResult
 import io
 try:
     from Bio import SeqIO
+    from Bio.Seq import Seq as BioSeq
     _BIOPYTHON_AVAILABLE = True
 except ImportError:
     _BIOPYTHON_AVAILABLE = False
@@ -144,11 +145,14 @@ def send_css(path):
 @app.route("/api/fetch", methods=["GET", "POST"])
 def fetch_external():
     """Proxy for external bioinformatics databases."""
-    # Manual caching to prevent caching error states (400, 502, etc.)
+    # Cache stores serializable dicts: {"json": {...}} or {"text": "..."}
     cache_key = "proxy_cache_{}".format(request.full_path)
     cached_val = cache.get(cache_key)
     if cached_val:
-        return cached_val
+        if isinstance(cached_val, dict) and "json" in cached_val:
+            return jsonify(cached_val["json"])
+        if isinstance(cached_val, dict) and "text" in cached_val:
+            return Response(cached_val["text"], mimetype="text/plain")
 
     if request.method == "POST":
         data = request.get_json() or {}
@@ -235,7 +239,7 @@ def fetch_external():
                     if not tx_list:
                         tx_list = [{"exon_list": [], "cds_regions": [], "gene_range": [1, len(record.seq)], "strand": "+"}]
 
-                    return jsonify({
+                    result = {
                         "sequence": str(record.seq),
                         "accession": acc_id,
                         "organism": record.annotations.get("organism", "Unknown"),
@@ -243,15 +247,15 @@ def fetch_external():
                         "features": features,
                         "metadata": tx_list[0],
                         "transcripts": tx_list
-                    })
+                    }
+                    cache.set(cache_key, {"json": result}, timeout=86400)
+                    return jsonify(result)
                 except Exception as e:
-                    logger.warning("Parsing failed: %s", e)
+                    logger.warning("Biopython parsing failed, falling back to raw GenBank text: %s", e)
             
-            # Create the final response and cache ONLY if successful (200 OK)
-            final_resp = final_resp or Response(raw_data, mimetype="text/plain")
-            if final_resp.status_code == 200:
-                cache.set(cache_key, final_resp, timeout=86400)
-            return final_resp
+            # Fallback: return raw GenBank text
+            cache.set(cache_key, {"text": raw_data}, timeout=86400)
+            return Response(raw_data, mimetype="text/plain")
         
         elif db_type == "ncbiprotein":
             enforce_rate_limit("ncbi")
@@ -269,15 +273,22 @@ def fetch_external():
 
         elif db_type == "uniprot":
             enforce_rate_limit("uniprot")
-            resp = requests.get("{}/{}.fasta".format(UNIPROT_BASE, acc_id), timeout=15)
+            # New UniProt REST API endpoint (uniprotkb)
+            resp = requests.get("{}/uniprotkb/{}.fasta".format(UNIPROT_BASE, acc_id), timeout=15)
 
         elif db_type == "ensembl":
             enforce_rate_limit("ensembl")
-            headers = {"Content-Type": "application/json"}
-            resp = requests.get("{}/sequence/id/{}?expand_5prime=2000;expand_3prime=2000".format(ENSEMBL_BASE, acc_id), headers=headers, timeout=15)
+            # Ensembl REST: use Accept header (not Content-Type) for GET requests
+            json_headers = {"Accept": "application/json"}
+            resp = requests.get(
+                "{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id),
+                headers=json_headers,
+                params={"expand_5prime": 2000, "expand_3prime": 2000},
+                timeout=15
+            )
             if resp.status_code == 200:
                 data = resp.json()
-                return jsonify({
+                result = {
                     "sequence": data.get("seq"),
                     "metadata": {
                         "strand": "+" if data.get("strand", 1) >= 0 else "-",
@@ -285,9 +296,12 @@ def fetch_external():
                         "exon_list": [],
                         "description": data.get("desc", "Ensembl Sequence")
                     }
-                })
-            headers = {"Content-Type": "text/x-fasta"}
-            resp = requests.get("{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id), headers=headers, timeout=15)
+                }
+                cache.set(cache_key, {"json": result}, timeout=86400)
+                return jsonify(result)
+            # Fallback: plain FASTA
+            fasta_headers = {"Accept": "text/x-fasta"}
+            resp = requests.get("{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id), headers=fasta_headers, timeout=15)
 
         elif db_type == "kegg":
             enforce_rate_limit("kegg")
@@ -382,6 +396,7 @@ def fetch_external():
             return jsonify({"error": "Unsupported database: {}".format(db_type)}), 400
 
         resp.raise_for_status()
+        cache.set(cache_key, {"text": resp.text}, timeout=86400)
         return Response(resp.text, mimetype="text/plain")
 
     except requests.exceptions.RequestException as e:

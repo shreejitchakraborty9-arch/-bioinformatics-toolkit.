@@ -14,8 +14,8 @@ def validate_cds(acc):
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
         
-        # In Python 2, use io.BytesIO or just pass the string if SeqIO supports it
-        handle = io.BytesIO(resp.content)
+        # Use io.StringIO for text-based GenBank data
+        handle = io.StringIO(resp.text)
         record = SeqIO.read(handle, "genbank")
 
         # 2. Ground Truth (Biopython Built-in Extraction)
