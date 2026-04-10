@@ -142,9 +142,14 @@ def send_css(path):
 # ─────────────────────────────────────────────────────────────
 
 @app.route("/api/fetch", methods=["GET", "POST"])
-@cache.cached(timeout=86400, query_string=True)
 def fetch_external():
     """Proxy for external bioinformatics databases."""
+    # Manual caching to prevent caching error states (400, 502, etc.)
+    cache_key = "proxy_cache_{}".format(request.full_path)
+    cached_val = cache.get(cache_key)
+    if cached_val:
+        return cached_val
+
     if request.method == "POST":
         data = request.get_json() or {}
         db_type = data.get("db", "ncbi")
@@ -165,12 +170,18 @@ def fetch_external():
                 "id": acc_id,
                 "rettype": "gb",
                 "retmode": "text"
-            }
-            if NCBI_API_KEY:
-                params["api_key"] = NCBI_API_KEY
+            # Determine which API Key to use (Header > ENV)
+            user_key = request.headers.get("X-NCBI-API-Key", "").strip()
+            effective_key = user_key or NCBI_API_KEY
+            
+            if effective_key and str(effective_key).strip():
+                params["api_key"] = effective_key
+
             resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
             resp.raise_for_status()
             raw_data = resp.text
+            
+            final_resp = None
 
             if _BIOPYTHON_AVAILABLE:
                 try:
@@ -234,9 +245,12 @@ def fetch_external():
                     })
                 except Exception as e:
                     logger.warning("Parsing failed: %s", e)
-                    # Fallback to plain text if parsing fails
             
-            return Response(raw_data, mimetype="text/plain")
+            # Create the final response and cache ONLY if successful (200 OK)
+            final_resp = final_resp or Response(raw_data, mimetype="text/plain")
+            if final_resp.status_code == 200:
+                cache.set(cache_key, final_resp, timeout=86400)
+            return final_resp
         
         elif db_type == "ncbiprotein":
             enforce_rate_limit("ncbi")
@@ -303,7 +317,7 @@ def search_ncbi():
             "term": query,
             "retmode": "json"
         }
-        if NCBI_API_KEY:
+        if NCBI_API_KEY and str(NCBI_API_KEY).strip():
             params["api_key"] = NCBI_API_KEY
         resp = requests.get("{}/esearch.fcgi".format(NCBI_BASE), params=params, timeout=10)
         resp.raise_for_status()

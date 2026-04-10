@@ -77,7 +77,7 @@ logger = logging.getLogger("BioToolkit")
 # ─────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────
-NCBI_API_KEY = os.environ.get("NCBI_API_KEY", "")
+NCBI_API_KEY = os.environ.get("NCBI_API_KEY") # Default to None
 NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 ENSEMBL_BASE = "https://rest.ensembl.org"
 UNIPROT_BASE = "https://rest.uniprot.org"
@@ -128,7 +128,7 @@ def enforce_rate_limit(db: str):
     min_interval = RATE_LIMITS.get(db, 0.5)
     
     # Specific adjustment for NCBI with API KEY
-    if db == "ncbi" and NCBI_API_KEY:
+    if db == "ncbi" and NCBI_API_KEY and str(NCBI_API_KEY).strip():
         min_interval = 0.1  # 10 req/sec
     if redis_client:
         try:
@@ -604,7 +604,7 @@ def fetch_ncbi():
     }
     user_key = request.headers.get("X-NCBI-API-Key", "").strip()
     effective_key = user_key or NCBI_API_KEY
-    if effective_key:
+    if effective_key and str(effective_key).strip():
         params["api_key"] = effective_key
     try:
         resp = proxy_get(f"{NCBI_BASE}/efetch.fcgi", params=params)
@@ -693,7 +693,7 @@ def search_ncbi():
     }
     user_key = request.headers.get("X-NCBI-API-Key", "").strip()
     effective_key = user_key or NCBI_API_KEY
-    if effective_key:
+    if effective_key and str(effective_key).strip():
         search_params["api_key"] = effective_key
     try:
         s_resp = proxy_get(f"{NCBI_BASE}/esearch.fcgi", params=search_params)
@@ -719,7 +719,7 @@ def search_ncbi():
         }
         user_key = request.headers.get("X-NCBI-API-Key", "").strip()
         effective_key = user_key or NCBI_API_KEY
-        if effective_key:
+        if effective_key and str(effective_key).strip():
             sum_params["api_key"] = effective_key
         sum_resp = proxy_get(f"{NCBI_BASE}/esummary.fcgi", params=sum_params)
         sum_data = sum_resp.json()
@@ -738,7 +738,7 @@ def search_ncbi():
         }
         user_key = request.headers.get("X-NCBI-API-Key", "").strip()
         effective_key = user_key or NCBI_API_KEY
-        if effective_key:
+        if effective_key and str(effective_key).strip():
             link_params["api_key"] = effective_key
         link_resp = proxy_get(f"{NCBI_BASE}/elink.fcgi", params=link_params)
         link_data = link_resp.json()
@@ -1253,7 +1253,7 @@ def gene_map():
     if is_acc:
         db = "protein" if query.startswith("NP_") or query.startswith("XP_") or query.startswith("WP_") else "nuccore"
         req_url = f"{NCBI_BASE}/esearch.fcgi?db={db}&term={query}&retmode=json"
-        if NCBI_API_KEY: req_url += f"&api_key={NCBI_API_KEY}"
+        if NCBI_API_KEY and str(NCBI_API_KEY).strip(): req_url += f"&api_key={NCBI_API_KEY}"
         
         enforce_rate_limit("ncbi")
         try:
@@ -1261,7 +1261,7 @@ def gene_map():
             uids = r1.get("esearchresult", {}).get("idlist", [])
             if uids:
                 link_url = f"{NCBI_BASE}/elink.fcgi?dbfrom={db}&db=gene&id={uids[0]}&retmode=json"
-                if effective_key:
+                if effective_key and str(effective_key).strip():
                     link_url += f"&api_key={effective_key}"
                 enforce_rate_limit("ncbi")
                 r2 = proxy_get(link_url).json()
@@ -1274,7 +1274,7 @@ def gene_map():
     else:
         term = f"{query}[Gene Name] AND {species}[Organism]"
         req_url = f"{NCBI_BASE}/esearch.fcgi?db=gene&term={term}&retmode=json"
-        if NCBI_API_KEY: req_url += f"&api_key={NCBI_API_KEY}"
+        if NCBI_API_KEY and str(NCBI_API_KEY).strip(): req_url += f"&api_key={NCBI_API_KEY}"
         enforce_rate_limit("ncbi")
         try:
             r1 = proxy_get(req_url).json()
