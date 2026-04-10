@@ -473,10 +473,9 @@
         const pairEl = document.getElementById('primerPairResults');
         pairEl.style.display = 'none';
 
-        const results = await Promise.all(primers.map(async ({ label, seq }) => {
-          const workerRes = await window.BioKit.core.WorkerManager.runTask('THERMO_ANALYSIS', { sequence: seq, ...options });
-
-          const tm = workerRes.tm_nn || calcTm(seq, options).tm;
+        const results = primers.map(({ label, seq }) => {
+          const tmRes = calcTm(seq, options);
+          const tm = tmRes.tm;
           const gc = gcPct(seq);
           const len = seq.length;
           const hairpin = detectHairpin(seq);
@@ -546,7 +545,7 @@
             </div>`;
           grid.innerHTML += window.sanitizeHTML(cardHtml);
           return { label, seq, tm, selfDg: dimer.deltaG };
-        }));
+        });
 
         if (results.length === 2) {
           const diff = tmDiff(results[0].tm, results[1].tm);
