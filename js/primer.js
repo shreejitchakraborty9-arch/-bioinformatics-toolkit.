@@ -241,53 +241,6 @@
   // Initialize Defaults
   loadAssayPreset('pcr');
 
-  // ── Fetch Handler (PROMPT 3) ─────────────────────────────
-  const fetchBtn = document.getElementById('primerFetchBtn');
-  if (fetchBtn) fetchBtn.addEventListener('click', async () => {
-    const db = document.getElementById('primerTemplateDb').value;
-    const id = document.getElementById('primerTemplateId').value;
-    if (!id) { window.showToast('⚠ Enter an Accession ID'); return; }
-
-    fetchBtn.disabled = true;
-    fetchBtn.textContent = 'Fetching...';
-    try {
-      const resp = await fetch('/api/fetch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          db: db,
-          accession: id, 
-          organism: state.template.organism 
-        })
-      });
-      
-      if (!resp.ok) {
-        throw new Error('Accession not found or database error');
-      }
-
-      const data = await resp.json();
-      if (data.sequence) {
-        state.template.sequence = data.sequence.toUpperCase();
-        state.template.features = data.features || [];
-        
-        templateInput.value = state.template.sequence;
-        updateTemplateUI(data);
-
-        // Automatically switch back to paste view to show result
-        const pasteRadio = document.querySelector('input[name="templateSource"][value="paste"]');
-        if (pasteRadio) pasteRadio.click();
-        window.showToast('✓ Template sequence and features loaded');
-      } else {
-        window.showToast('⚠ Accession found but no sequence data returned');
-      }
-    } catch (err) {
-      window.handleError(err, 'Fetch Template');
-      window.showToast(`⚠ Error: ${err.message}`);
-    } finally {
-      fetchBtn.disabled = false;
-      fetchBtn.textContent = 'Fetch';
-    }
-  });
 
   if (fwdInput) fwdInput.addEventListener('input', () => {
     const s = window.cleanSeq(fwdInput.value);
@@ -329,6 +282,148 @@
     fwdInput.dispatchEvent(new Event('input'));
     revInput.dispatchEvent(new Event('input'));
   });
+
+  // ── Source & Assay Toggles (PROMPT 2 & 4) ──────────────────
+  document.querySelectorAll('input[name="templateSource"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const isFetch = e.target.value === 'fetch';
+      document.getElementById('pasteTemplateGroup').classList.toggle('hidden', isFetch);
+      document.getElementById('fetchTemplateGroup').classList.toggle('hidden', !isFetch);
+    });
+  });
+
+  document.querySelectorAll('input[name="assayType"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      state.assayType = e.target.value;
+      loadAssayPreset(e.target.value);
+    });
+  });
+
+  // Bind biological checkboxes
+  ['avoidExonJunction', 'intronSpanning', 'excludeSnp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', (e) => {
+      state.biologicalOptions[id] = e.target.checked;
+    });
+  });
+
+  // ── Database Fetching (Unified) ──────────────────────────
+  const fetchBtn = document.getElementById('primerFetchBtn');
+  if (fetchBtn) {
+    fetchBtn.addEventListener('click', async () => {
+      const db = document.getElementById('primerTemplateDb').value;
+      const id = document.getElementById('primerTemplateId').value.trim();
+      if (!id) { window.showToast('⚠ Enter an Accession ID'); return; }
+
+      window.withLoading('panel-primer', async () => {
+        try {
+          const resp = await fetch(`/api/fetch?db=${db}&id=${id}`);
+          const data = await resp.json();
+          if (data.error) throw new Error(data.error);
+
+          state.template.sequence = data.sequence.toUpperCase();
+          state.template.features = data.features || [];
+          state.template.organism = data.organism || 'human';
+          state.template.accession = id;
+          
+          templateInput.value = state.template.sequence;
+          updateTemplateUI(data);
+          
+          if (document.getElementById('organism')) {
+              document.getElementById('organism').value = data.organism?.toLowerCase().includes('mouse') ? 'mouse' : 'human';
+          }
+          
+          templateInput.dispatchEvent(new Event('input'));
+          
+          // Switch to paste view to show sequence
+          const pasteRadio = document.querySelector('input[name="templateSource"][value="paste"]');
+          if (pasteRadio) pasteRadio.click();
+          
+          window.showToast(`✓ Fetched ${id} successfully`);
+        } catch (err) {
+          window.handleError(err, 'Template Fetch');
+        }
+      });
+    });
+  }
+
+  // ── Auto-Design Integration ────────────────────────────────
+  const suggestBtn = document.getElementById('primerSuggestBtn');
+  if (suggestBtn) suggestBtn.addEventListener('click', window.debounce(suggest, 300));
+
+  async function suggest() {
+    const template = window.cleanSeq(templateInput.value);
+    if (!template || template.length < 50) {
+      window.showToast('⚠ Provide a template sequence (min 50bp) for design');
+      return;
+    }
+
+    const BioMath = window.BioKit.core.BioMath;
+    const suggestionsGrid = document.getElementById('suggestionGrid');
+    const suggestionsArea = document.getElementById('primerSuggestionsArea');
+
+    // Gather buffer options
+    const options = {
+      naConc_mM: (parseFloat(document.getElementById('saltConc').value) || 50) + (parseFloat(document.getElementById('kConc').value) || 0),
+      mgConc_mM: parseFloat(document.getElementById('mgConc').value) || 1.5,
+      dntpConc_mM: parseFloat(document.getElementById('dntpConc').value) || 0.8,
+      oligoConc_nM: parseFloat(document.getElementById('primerConc').value) || 250
+    };
+
+    window.withLoading('panel-primer', async () => {
+      suggestionsArea.classList.remove('hidden');
+      suggestionsGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 40px; text-align:center; color:var(--text-muted);"><div class="spinner-sm" style="margin-bottom:12px;"></div>Scanning template for optimal pairs...</div>';
+
+      // Small delay to ensure spinner renders
+      await new Promise(r => setTimeout(r, 100));
+
+      const pairs = BioMath.suggestPrimerPairs(template, state.constraints, options);
+
+      if (!pairs || pairs.length === 0) {
+        suggestionsGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 40px; text-align:center; color:var(--rose);">No pairs found matching constraints. Try relaxing Tm or Product Size limits.</div>';
+        return;
+      }
+
+      suggestionsGrid.innerHTML = pairs.map((p, idx) => `
+        <div class="suggestion-card" style="background:var(--card-bg); border:1px solid var(--border-color); padding:16px; border-radius:12px; transition:all 0.2s hover:border-teal;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
+            <strong style="color:var(--teal);">Pair #${idx + 1}</strong>
+            <span style="font-size:0.75rem; color:var(--text-muted);">Score: ${p.score.toFixed(1)}</span>
+          </div>
+          
+          <div style="font-size:0.85rem; margin-bottom:14px; color:var(--text-main);">
+            <div style="margin-bottom:4px;"><strong>Fwd:</strong> <span style="font-family:var(--mono);">...${p.fwd.seq.slice(-15)}</span></div>
+            <div><strong>Rev:</strong> <span style="font-family:var(--mono);">...${p.rev.seq.slice(-15)}</span></div>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:0.75rem; color:var(--text-muted); margin-bottom:16px;">
+            <div>Tm: ${p.fwd.tm}°/${p.rev.tm}°</div>
+            <div>Avg GC: ${((parseFloat(p.fwd.gc) + parseFloat(p.rev.gc))/2).toFixed(1)}%</div>
+            <div>Size: ${p.size} bp</div>
+            <div>Hetero ΔG: ${p.heteroDg}</div>
+          </div>
+
+          <button class="btn-primary btn-sm suggest-apply-btn" style="width:100%;" 
+                  data-fwd="${p.fwd.seq}" data-rev="${p.rev.seq}">
+            Use This Pair
+          </button>
+        </div>
+      `).join('');
+
+      // Bind Apply buttons
+      suggestionsGrid.querySelectorAll('.suggest-apply-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          fwdInput.value = btn.dataset.fwd;
+          revInput.value = btn.dataset.rev;
+          fwdInput.dispatchEvent(new Event('input'));
+          revInput.dispatchEvent(new Event('input'));
+          analyze(); // Trigger full audit
+          window.showToast('✅ Primers applied to audit engine');
+          window.location.hash = 'primerResults';
+        });
+      });
+    });
+  }
 
   function analyze() {
     try {

@@ -1031,4 +1031,94 @@
     return verdict;
   };
 
+  /**
+   * Automatically suggests optimal primer pairs from a template sequence.
+   * Uses a sliding window approach with thermodynamic ranking.
+   */
+  BioMath.suggestPrimerPairs = function(template, constraints, options = {}) {
+    if (!template || template.length < 50) return [];
+    const t = template.toUpperCase();
+    const limit = 10000; // soft limit for web performance
+    const scanArea = t.substring(0, Math.min(t.length, limit));
+    
+    const fwdCandidates = [];
+    const revCandidates = [];
+    
+    const minLen = constraints.length.min;
+    const maxLen = constraints.length.max;
+
+    // 1. Find Forward Candidates (5' end focus)
+    // We scan the first 1/3 of the template for forward primers
+    const fwdScanLimit = Math.floor(scanArea.length * 0.4);
+    for (let i = 0; i < fwdScanLimit; i++) {
+      for (let len = minLen; len <= maxLen; len++) {
+        const seq = scanArea.substring(i, i + len);
+        if (seq.length < len) break;
+        
+        const tm = parseFloat(BioMath.calculateTmNN(seq, options).tm);
+        const gc = parseFloat(BioMath.calculateGC(seq));
+        
+        if (tm >= constraints.tm.min && tm <= constraints.tm.max &&
+            gc >= constraints.gc.min && gc <= constraints.gc.max) {
+          
+          const hairpin = BioMath.detectHairpin ? BioMath.detectHairpin(seq) : { found: false };
+          const dimer = BioMath.calculateDimerThermodynamics(seq, seq);
+          
+          if (!hairpin.found && parseFloat(dimer.deltaG) > -5.0) {
+            fwdCandidates.push({ seq, tm, gc, pos: i + 1, selfDg: dimer.deltaG });
+          }
+        }
+      }
+      if (fwdCandidates.length > 50) break; // Optimization
+    }
+
+    // 2. Find Reverse Candidates (3' end focus)
+    const revScanStart = Math.max(0, scanArea.length - Math.floor(scanArea.length * 0.4));
+    for (let i = scanArea.length; i >= revScanStart; i--) {
+      for (let len = minLen; len <= maxLen; len++) {
+        const seq_rc = scanArea.substring(i - len, i);
+        if (seq_rc.length < len) continue;
+        
+        const seq = BioMath.reverseComplement(seq_rc);
+        const tm = parseFloat(BioMath.calculateTmNN(seq, options).tm);
+        const gc = parseFloat(BioMath.calculateGC(seq));
+
+        if (tm >= constraints.tm.min && tm <= constraints.tm.max &&
+            gc >= constraints.gc.min && gc <= constraints.gc.max) {
+          
+          const dimer = BioMath.calculateDimerThermodynamics(seq, seq);
+          if (parseFloat(dimer.deltaG) > -5.0) {
+            revCandidates.push({ seq, tm, gc, pos: i, selfDg: dimer.deltaG });
+          }
+        }
+      }
+      if (revCandidates.length > 50) break;
+    }
+
+    // 3. Pair them up
+    const pairs = [];
+    for (const f of fwdCandidates) {
+      for (const r of revCandidates) {
+        const size = r.pos - f.pos + 1;
+        if (size >= constraints.productSize.min && size <= constraints.productSize.max) {
+          const tmDiff = Math.abs(f.tm - r.tm);
+          if (tmDiff <= constraints.tmDifference) {
+            const hetero = BioMath.calculateDimerThermodynamics(f.seq, r.seq);
+            const heteroDg = parseFloat(hetero.deltaG);
+            
+            if (heteroDg > -6.0) {
+              // Score based on Tm symmetry and Dimer safety
+              const score = (10 - tmDiff) + (heteroDg + 10);
+              pairs.push({ fwd: f, rev: r, size, tmDiff, heteroDg, score });
+            }
+          }
+        }
+      }
+      if (pairs.length > 200) break;
+    }
+
+    // Sort by score and take top 5
+    return pairs.sort((a, b) => b.score - a.score).slice(0, 5);
+  };
+
 })();
