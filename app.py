@@ -48,9 +48,9 @@ db.init_app(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 
-REDIS_CACHE_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+REDIS_CACHE_URL = os.environ.get("REDIS_URL")
 cache_config = {'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 86400}
-if _REDIS_AVAILABLE:
+if _REDIS_AVAILABLE and REDIS_CACHE_URL:
     cache_config = {
         'CACHE_TYPE': 'RedisCache',
         'CACHE_REDIS_URL': REDIS_CACHE_URL,
