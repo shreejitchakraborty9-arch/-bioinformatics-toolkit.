@@ -39,34 +39,6 @@
     return { found: false };
   }
 
-  function detectSelfDimer(seq) {
-    const comp = { A:'T', T:'A', G:'C', C:'G' };
-    const rc   = seq.split('').reverse().map(b => comp[b] || 'N').join('');
-    let maxRun = 0, run = 0;
-    for (let i = 0; i < seq.length; i++) {
-      if (seq[i] === rc[i]) { run++; maxRun = Math.max(maxRun, run); } else run = 0;
-    }
-    return { found: maxRun >= 4, maxRun };
-  }
-
-  function detectHeterodimer(seq1, seq2) {
-    const comp = { A:'T', T:'A', G:'C', C:'G' };
-    const rc2  = seq2.split('').reverse().map(b => comp[b] || 'N').join('');
-    let maxRun = 0;
-    for (let shift = -seq1.length + 1; shift < seq2.length; shift++) {
-      let run = 0;
-      for (let i = 0; i < seq1.length; i++) {
-        const j = i + shift;
-        if (j >= 0 && j < rc2.length) {
-          if (seq1[i] === rc2[j]) {
-            run++; maxRun = Math.max(maxRun, run);
-          } else run = 0;
-        }
-      }
-    }
-    return maxRun;
-  }
-
   function complement(seq) {
     const comp = { A:'T', T:'A', G:'C', C:'G' };
     return seq.split('').map(b => comp[b] || 'N').join('');
@@ -412,9 +384,9 @@
           const tm = workerRes.tm_nn || calcTm(seq, options).tm;
           const gc = gcPct(seq);
           const len = seq.length;
-          const clamp = hasGCClamp(seq);
           const hairpin = detectHairpin(seq);
-          const dimer = detectSelfDimer(seq);
+          const dimer = BioMath.calculateDimerThermodynamics(seq, seq);
+          const terminal = BioMath.assess3PrimeStability(seq);
           const homoRes = BioMath.detectHomopolymerRuns(seq, thresholds.homopolymerLimit);
 
           // Validation using core engine
@@ -423,6 +395,7 @@
           const gcOk  = BioMath.validateGC(gc, thresholds);
           const clampOk = BioMath.validateGCClamp(seq, thresholds);
           const homoOk  = !homoRes.hasViolation;
+          const dgOk = parseFloat(dimer.deltaG) > -6.0;
 
           let failReasons = [];
           if (!lenOk) failReasons.push(`Length (${len}nt) outside ${thresholds.length.min}-${thresholds.length.max} range`);
@@ -431,6 +404,7 @@
           if (hairpin.found) failReasons.push(`Hairpin risk detected`);
           if (!homoOk) failReasons.push(`Homopolymer detected: ${homoRes.summary}`);
           if (!clampOk) failReasons.push(`Missing 3' GC clamp (G or C at end)`);
+          if (terminal.verdict === 'CRITICAL') failReasons.push(terminal.message);
 
           const cardHtml = `
             <div class="primer-card ${failReasons.length > 2 ? 'fail-border' : failReasons.length > 0 ? 'warn-border' : ''}">
@@ -447,13 +421,13 @@
                   <span class="primer-stat-val ${tmOk?'pass':'warn'}">${tm} °C</span></div>
                 <div class="primer-stat-item"><span class="primer-stat-key">GC Content</span>
                   <span class="primer-stat-val ${gcOk?'pass':'warn'}">${gc}%</span></div>
-                <div class="primer-stat-item"><span class="primer-stat-key">3′ GC Clamp</span>
-                  <span class="primer-stat-val ${clamp?'pass':'warn'}">${clamp?'Yes':'No'}</span></div>
+                <div class="primer-stat-item"><span class="primer-stat-key">3′ Integrity</span>
+                  <span class="primer-stat-val ${terminal.verdict === 'STABLE' ? 'pass' : 'warn'}">${terminal.verdict}</span></div>
               </div>
 
               <div class="structural-report">
                 <div class="struct-stat ${hairpin.found?'fail':'pass'}">Hairpin: ${hairpin.found?`Fail` : 'Pass'}</div>
-                <div class="struct-stat ${dimer.maxRun >= 4?'warn':'pass'}">Self-Dimer: ${dimer.maxRun}nt</div>
+                <div class="struct-stat ${dgOk?'pass':'warn'}">Self-Dimer: ${dimer.deltaG} kcal/mol</div>
                 <div class="struct-stat ${homoOk?'pass':'fail'}">Homopolymer: ${homoRes.hasViolation ? homoRes.summary : 'None'}</div>
               </div>
 
@@ -476,21 +450,21 @@
               </div>
             </div>`;
           grid.innerHTML += window.sanitizeHTML(cardHtml);
-          return { label, seq, tm };
+          return { label, seq, tm, selfDg: dimer.deltaG };
         }));
 
         if (results.length === 2) {
-          // ── Pair Assessment & Verdict ──────────────────
           const diff = tmDiff(results[0].tm, results[1].tm);
           const diffOk = BioMath.validateTmDifference(results[0].tm, results[1].tm, thresholds);
-          const maxHetero = detectHeterodimer(results[0].seq, results[1].seq);
+          const hetero = BioMath.calculateDimerThermodynamics(results[0].seq, results[1].seq);
+          const heteroDg = hetero.deltaG;
 
           const pairFailures = [];
           const pairWarnings = [];
           
           if (!diffOk) pairWarnings.push(`Tm difference (${diff}°C) exceeds assay tolerance (max ${thresholds.tmDifference}°C)`);
-          if (maxHetero >= 5) pairFailures.push(`High heterodimer risk (${maxHetero}bp complementarity)`);
-          else if (maxHetero >= 4) pairWarnings.push(`Moderate heterodimer risk (${maxHetero}bp)`);
+          if (parseFloat(heteroDg) <= -9.0) pairFailures.push(`High heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
+          else if (parseFloat(heteroDg) <= -6.0) pairWarnings.push(`Moderate heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
 
           // ── Specificity Section ──────────────────────
           let specificityHtml = '';
@@ -588,7 +562,7 @@
           // ── Final Verdict Engine ───────────────────
           const finalVerdict = BioMath.generatePrimerPairVerdict(
             [results[0], results[1]],
-            { tmDiff: diff, maxHetero: maxHetero },
+            { tmDiff: diff, heteroDg: heteroDg },
             thresholds,
             template,
             state.template.features,
@@ -645,7 +619,7 @@
           const exportBtn = document.getElementById('exportReportBtn');
           if (exportBtn) exportBtn.addEventListener('click', exportPrimerQCReport);
         }
-      }, Math.max(fwdStr.length, revStr.length));
+      });
     } catch (err) {
       window.handleError(err, 'Primer Analysis');
     }

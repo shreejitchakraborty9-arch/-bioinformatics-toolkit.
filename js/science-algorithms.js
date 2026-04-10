@@ -399,13 +399,107 @@
     res.amplicon.sequence = t.substring(ampliconStart, ampliconEnd);
 
     // 3. Constraint Validation
-    if (constraints.productSize) {
-      if (size < constraints.productSize.min || size > constraints.productSize.max) {
-        res.warnings.push(`Amplicon size (${size}bp) falls outside target range (${constraints.productSize.min}-${constraints.productSize.max}bp).`);
+    return res;
+  };
+
+  /**
+   * Calculates the thermodynamic stability (Delta G) of a dimerization event.
+   * Based on SantaLucia NN parameters at a given temperature.
+   * @param {string} seq1 - First primer sequence.
+   * @param {string} seq2 - Second primer sequence (or same for self-dimer).
+   * @param {number} temp_C - Evaluation temperature in Celsius (default 37.0).
+   * @returns {Object} { deltaG, maxRun, is3PrimeTerminal }
+   */
+  BioMath.calculateDimerThermodynamics = function (seq1, seq2, temp_C = 37.0) {
+    const s1 = seq1.toUpperCase();
+    const s2 = seq2.toUpperCase();
+    const s2_rc = BioMath.reverseComplement(s2).toUpperCase();
+    const temp_K = temp_C + 273.15;
+    const R = 1.9872;
+
+    let minDeltaG = 0;
+    let bestRun = 0;
+    let is3Prime = false;
+
+    // Use a sliding alignment to find the most stable binding site
+    for (let shift = -s1.length + 1; shift < s2_rc.length; shift++) {
+      let dH = 0, dS = 0, currentRun = 0, maxRunInShift = 0;
+      let shiftIs3Prime = false;
+
+      // Check complementarity at this shift
+      for (let i = 0; i < s1.length; i++) {
+        const j = i + shift;
+        if (j >= 0 && j < s2_rc.length) {
+          if (s1[i] === s2_rc[j]) {
+            currentRun++;
+            maxRunInShift = Math.max(maxRunInShift, currentRun);
+            
+            // If we have at least a dimer pair (2 bases), add NN params
+            if (currentRun >= 2) {
+              const pair = s1[i-1] + s1[i];
+              if (NN_PARAMS[pair]) {
+                dH += NN_PARAMS[pair][0];
+                dS += NN_PARAMS[pair][1];
+              }
+            }
+            
+            // Detect if this match involves the 3' end of either primer
+            // Primer 1 3' is at indexed s1.length-1
+            // Primer 2 3' is at s2_rc index 0 (if seq2=...5' then s2_rc=3'...5'?) 
+            // Wait, reverseComplement of 5'-GAT-3' is 3'-CTA-5'. So base index 0 of s2_rc is its 3' end.
+            if (i === s1.length - 1 || j === 0) {
+              shiftIs3Prime = true;
+            }
+          } else {
+            currentRun = 0;
+          }
+        }
+      }
+
+      if (maxRunInShift >= 4) {
+        // Add initiation parameters for this run (simplified: one initiation per binding site)
+        // We use the terminal bases of the run for initiation
+        // For simplicity, we use the first match of the run
+        dH += NN_INIT['G'].dH; // Approximation
+        dS += NN_INIT['G'].dS;
+
+        const dG = (dH * 1000 - temp_K * dS) / 1000;
+        if (dG < minDeltaG) {
+          minDeltaG = dG;
+          bestRun = maxRunInShift;
+          is3Prime = shiftIs3Prime;
+        }
       }
     }
 
-    return res;
+    return { 
+      deltaG: minDeltaG.toFixed(2), 
+      maxRun: bestRun, 
+      is3PrimeTerminal: is3Prime 
+    };
+  };
+
+  /**
+   * Assesses the stability and quality of the 3' end.
+   * Identifies excessive GC sequences (over-clamping) or loose A/T ends.
+   */
+  BioMath.assess3PrimeStability = function(seq) {
+    const s = seq.toUpperCase();
+    const last5 = s.slice(-5);
+    const gcCount = (last5.match(/[GC]/g) || []).length;
+    
+    let verdict = 'STABLE';
+    let message = 'Optimal 3\' terminus complexity.';
+
+    if (gcCount >= 4) {
+      verdict = 'CRITICAL';
+      message = 'Excessive 3\' GC content: High risk of mispriming.';
+    } else if (gcCount <= 1) {
+      verdict = 'WEAK';
+      message = 'Terminal 3\' AT-richness may reduce priming efficiency.';
+    }
+
+    return { verdict, message, gcCount };
   };
 
   // ==========================================================
@@ -861,17 +955,22 @@
     };
 
     const fwd = results[0], rev = results[1];
-    const diff = metrics.tmDiff, maxHetero = metrics.maxHetero;
+    const diff = metrics.tmDiff;
+    const heteroDg = parseFloat(metrics.heteroDg);
 
     const fwdStats = {
       len: BioMath.validateLength(fwd.seq, constraints),
       tm: BioMath.validateTm(fwd.tm, constraints),
-      homo: BioMath.validateHomopolymer(fwd.seq, constraints)
+      homo: BioMath.validateHomopolymer(fwd.seq, constraints),
+      dg: parseFloat(fwd.selfDg),
+      terminal: BioMath.assess3PrimeStability(fwd.seq)
     };
     const revStats = {
       len: BioMath.validateLength(rev.seq, constraints),
       tm: BioMath.validateTm(rev.tm, constraints),
-      homo: BioMath.validateHomopolymer(rev.seq, constraints)
+      homo: BioMath.validateHomopolymer(rev.seq, constraints),
+      dg: parseFloat(rev.selfDg),
+      terminal: BioMath.assess3PrimeStability(rev.seq)
     };
 
     const tmDiffOk = BioMath.validateTmDifference(fwd.tm, rev.tm, constraints);
@@ -880,11 +979,18 @@
       verdict.actionItems.push("Adjust sequences to equalize melting temperatures.");
     }
 
-    if (maxHetero >= 5) {
-      verdict.failures.push(`Critical heterodimer risk (${maxHetero}bp)`);
+    // ΔG Thresholds: -6.0 kcal/mol is a common cutoff for concern, -9.0 is critical.
+    if (heteroDg <= -9.0) {
+      verdict.failures.push(`Critical heterodimer stability (ΔG: ${heteroDg} kcal/mol)`);
       verdict.actionItems.push("Redesign primers to eliminate extensive complementarity.");
-    } else if (maxHetero >= 4) {
-      verdict.warnings.push(`Moderate complementary risk (${maxHetero}bp)`);
+    } else if (heteroDg <= -6.0) {
+      verdict.warnings.push(`Significant heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
+    }
+
+    // 3' Terminal Integrity
+    if (fwdStats.terminal.verdict === 'CRITICAL' || revStats.terminal.verdict === 'CRITICAL') {
+      verdict.failures.push("Excessive 3' GC clamping: High mispriming risk.");
+      verdict.actionItems.push("Reduce terminal G/C bases at the 3' end.");
     }
 
     let ampVerdict = 'PASS';
@@ -914,7 +1020,8 @@
       { label: 'Length/Tm Specifications', pass: fwdStats.len && fwdStats.tm && revStats.len && revStats.tm },
       { label: 'Thermodynamic Symmetry', pass: tmDiffOk },
       { label: 'Biological & Target Specificity', pass: ampVerdict === 'PASS' && !verdict.failures.some(f => f.includes('mapping') || f.includes('specific')) },
-      { label: 'Secondary Structures', pass: fwdStats.homo && revStats.homo && maxHetero < 4 }
+      { label: 'Secondary Structures (ΔG)', pass: fwdStats.homo && revStats.homo && fwdStats.dg > -6.0 && revStats.dg > -6.0 && heteroDg > -6.0 },
+      { label: '3\' Terminal Integrity', pass: fwdStats.terminal.verdict !== 'CRITICAL' && revStats.terminal.verdict !== 'CRITICAL' }
     ];
 
     if (verdict.failures.length > 0) { verdict.status = "🔴 FAIL"; verdict.class = "status-fail"; }
