@@ -170,6 +170,7 @@ def fetch_external():
                 "id": acc_id,
                 "rettype": "gb",
                 "retmode": "text"
+            }
             # Determine which API Key to use (Header > ENV)
             user_key = request.headers.get("X-NCBI-API-Key", "").strip()
             effective_key = user_key or NCBI_API_KEY
