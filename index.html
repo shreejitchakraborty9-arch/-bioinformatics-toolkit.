@@ -514,7 +514,149 @@
           <p class="panel-desc">Evaluate PCR primers — compute melting temperature (Tm), GC content, check for hairpins, self-dimers, and GC clamp.</p>
         </div>
       </div>
-      <div class="two-col-inputs">
+      <!-- TEMPLATE & ASSAY SETTINGS (PROMPT 2) -->
+      <div class="collapsible-settings" id="primerTemplateSettings">
+        <div class="collapsible-header" id="templateSettingsToggle">
+          <i data-lucide="chevron-right" class="toggle-icon" id="primerSettingsChevron"></i>
+          <span>Template &amp; Assay Settings</span>
+        </div>
+        <div class="collapsible-content hidden" id="templateSettingsContent">
+          <!-- Template Source -->
+          <div class="form-row">
+            <label class="input-label">Template Source:</label>
+            <div class="radio-group" id="templateSourceGroup">
+              <label><input type="radio" name="templateSource" value="paste" checked> Paste Sequence</label>
+              <label><input type="radio" name="templateSource" value="fetch"> Fetch from DB</label>
+            </div>
+          </div>
+          
+          <!-- Paste Area -->
+          <div id="pasteTemplateGroup">
+            <textarea class="seq-input" id="primerTemplate" placeholder="Paste genomic or transcript sequence here..." rows="4" style="font-family:var(--mono);"></textarea>
+            <div class="input-meta" id="templateMeta">Length: 0 bp</div>
+          </div>
+          
+          <!-- Fetch Area -->
+          <div id="fetchTemplateGroup" class="hidden">
+            <div class="fetch-row" style="display:flex; gap:8px; margin-bottom:12px;">
+              <select class="num-input" id="primerTemplateDb" style="width:120px;">
+                <option value="ncbi">NCBI</option>
+                <option value="ensembl">Ensembl</option>
+              </select>
+              <input type="text" class="seq-input-line" id="primerTemplateId" placeholder="e.g. NM_007294">
+              <button class="btn-primary" id="primerFetchBtn">Fetch</button>
+            </div>
+          </div>
+
+          <div class="two-col-inputs" style="margin-top:16px;">
+            <div class="input-block">
+              <label class="input-label">Organism</label>
+              <select class="num-input" id="organism" style="width:100%;">
+                <option value="human">Homo sapiens</option>
+                <option value="mouse">Mus musculus</option>
+                <option value="yeast">S. cerevisiae</option>
+                <option value="ecoli">E. coli</option>
+                <option value="arabidopsis">Arabidopsis</option>
+              </select>
+            </div>
+            <div class="input-block">
+              <label class="input-label">Template Type</label>
+              <div class="radio-group" style="margin-top:8px;" id="templateTypeGroup">
+                <label><input type="radio" name="templateType" value="genomic" checked> Genomic DNA</label>
+                <label><input type="radio" name="templateType" value="cdna"> cDNA/Transcript</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="input-block" style="margin-top:16px;">
+            <label class="input-label">Assay Type</label>
+            <div class="radio-group assay-grid" id="assayTypeGroup">
+              <label><input type="radio" name="assayType" value="pcr" checked> Standard PCR</label>
+              <label><input type="radio" name="assayType" value="qpcr"> qPCR/RT-PCR</label>
+              <label><input type="radio" name="assayType" value="cloning"> Cloning/Seq</label>
+              <label><input type="radio" name="assayType" value="multiplex"> Multiplex</label>
+            </div>
+          </div>
+
+          <div class="checkbox-group">
+            <label><input type="checkbox" id="avoidExonJunction"> Avoid Exon-Junction</label>
+            <label><input type="checkbox" id="intronSpanning"> Intron-Spanning</label>
+            <label><input type="checkbox" id="excludeSnp"> Exclude SNP Regions</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADVANCED CONSTRAINTS (PROMPT 4) -->
+      <div class="collapsible-settings" id="primerConstraintsSettings" style="margin-top: -12px; border-top: none; border-radius: 0 0 var(--radius) var(--radius);">
+        <div class="collapsible-header" id="constraintsToggle">
+          <i data-lucide="chevron-right" class="toggle-icon"></i>
+          <span>Advanced Constraints</span>
+          <div style="margin-left:auto; display:flex; gap:12px;">
+             <button class="btn-text-sm" id="editConstraintsBtn">[Edit]</button>
+             <button class="btn-text-sm" id="resetConstraintsBtn">[Reset to Preset]</button>
+          </div>
+        </div>
+        <div class="collapsible-content hidden" id="constraintsContent">
+          <div id="constraintsDisplay" class="constraints-summary-grid">
+            <!-- Populated by JS -->
+          </div>
+          
+          <div id="constraintsEditForm" class="hidden" style="margin-top:16px; padding-top:16px; border-top:1px dashed var(--border);">
+            <div class="settings-grid">
+              <div class="input-block">
+                <label>Min Length</label>
+                <input type="number" id="conMinLen" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Max Length</label>
+                <input type="number" id="conMaxLen" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Min Tm (°C)</label>
+                <input type="number" id="conMinTm" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Max Tm (°C)</label>
+                <input type="number" id="conMaxTm" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Max Tm Diff</label>
+                <input type="number" id="conTmDiff" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Min GC (%)</label>
+                <input type="number" id="conMinGC" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Max GC (%)</label>
+                <input type="number" id="conMaxGC" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Polymer Limit</label>
+                <input type="number" id="conHomoLimit" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Min Amplicon</label>
+                <input type="number" id="conMinProd" class="num-input">
+              </div>
+              <div class="input-block">
+                <label>Max Amplicon</label>
+                <input type="number" id="conMaxProd" class="num-input">
+              </div>
+              <div class="input-block" style="display:flex; align-items:center; gap:8px; padding-top:24px;">
+                <input type="checkbox" id="conGC3" style="width:18px; height:18px;">
+                <label>3' GC Clamp</label>
+              </div>
+            </div>
+            <div style="margin-top:12px; display:flex; gap:10px;">
+              <button class="btn-primary btn-sm" id="saveConstraintsBtn">Save Changes</button>
+              <button class="btn-secondary btn-sm" id="cancelConstraintsBtn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="two-col-inputs" style="margin-top:20px;">
         <div class="input-block">
           <label class="input-label">Forward Primer (5'→3')</label>
           <input type="text" class="seq-input-line" id="fwdPrimer" placeholder="GCTTAAGCGCTATCAAGCC"/>
@@ -526,6 +668,7 @@
           <div class="input-meta" id="revMeta">Length: 0 nt</div>
         </div>
       </div>
+
       <div class="align-options">
             <div class="settings-grid">
               <div class="input-block">

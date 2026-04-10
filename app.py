@@ -141,24 +141,29 @@ def send_css(path):
 # API Endpoints
 # ─────────────────────────────────────────────────────────────
 
-@app.route("/api/fetch", methods=["GET"])
+@app.route("/api/fetch", methods=["GET", "POST"])
 @cache.cached(timeout=86400, query_string=True)
 def fetch_external():
     """Proxy for external bioinformatics databases."""
-    db_type = request.args.get("db")
-    acc_id = request.args.get("id")
+    if request.method == "POST":
+        data = request.get_json() or {}
+        db_type = data.get("db", "ncbi")
+        acc_id = data.get("id") or data.get("accession")
+    else:
+        db_type = request.args.get("db")
+        acc_id = request.args.get("id")
     
     if not db_type or not acc_id:
-        return jsonify({"error": "Missing db or id parameter"}), 400
+        return jsonify({"error": "Missing db or id/accession parameter"}), 400
 
     try:
         if db_type == "ncbi":
             enforce_rate_limit("ncbi")
-            is_nt = db_type == "ncbi" and request.args.get("db", "nucleotide") == "nucleotide"
+            # For primer design, we usually want nucleotide
             params = {
-                "db": "nucleotide" if is_nt else "protein",
+                "db": "nucleotide",
                 "id": acc_id,
-                "rettype": "gb" if is_nt else "fasta",
+                "rettype": "gb",
                 "retmode": "text",
                 "api_key": NCBI_API_KEY
             }
@@ -166,14 +171,24 @@ def fetch_external():
             resp.raise_for_status()
             raw_data = resp.text
 
-            if is_nt and _BIOPYTHON_AVAILABLE:
+            if _BIOPYTHON_AVAILABLE:
                 try:
                     record = SeqIO.read(io.StringIO(raw_data), "genbank")
+                    features = []
                     transcripts = {}
                     
-                    # 1. Primary pass: Discover all mRNA/transcript models
                     for feat in record.features:
-                        if feat.type in ["mRNA", "transcript", "mRNA"]:
+                        # Prompt 3 flat features
+                        if feat.type in ["exon", "CDS", "variation", "SNP"]:
+                            f_type = "SNP" if feat.type in ["variation", "SNP"] else feat.type
+                            features.append({
+                                "type": f_type,
+                                "start": int(feat.location.start) + 1,
+                                "end": int(feat.location.end)
+                            })
+                        
+                        # Legacy transcript parsing
+                        if feat.type in ["mRNA", "transcript"]:
                             tid = feat.qualifiers.get("transcript_id", [None])[0] or \
                                   feat.qualifiers.get("locus_tag", [None])[0] or \
                                   str(feat.location)
@@ -186,18 +201,16 @@ def fetch_external():
                                 "description": feat.qualifiers.get("product", [record.description])[0]
                             }
 
-                    # 2. Association pass: Link exons and CDS to transcripts
+                    # Association for legacy transcripts
                     for feat in record.features:
                         if feat.type in ["exon", "CDS"]:
                             tid = feat.qualifiers.get("transcript_id", [None])[0]
                             if not tid:
-                                # Fallback: Positional overlap with known transcript
                                 for mtid, mdata in transcripts.items():
                                     if int(feat.location.start) >= mdata["gene_range"][0]-1 and \
                                        int(feat.location.end) <= mdata["gene_range"][1]:
                                         tid = mtid
                                         break
-                            
                             if tid in transcripts:
                                 if feat.type == "exon":
                                     transcripts[tid]["exon_list"].append([int(feat.location.start) + 1, int(feat.location.end)])
@@ -205,38 +218,23 @@ def fetch_external():
                                     parts = feat.location.parts if hasattr(feat.location, 'parts') else [feat.location]
                                     transcripts[tid]["cds_regions"] = [[int(p.start) + 1, int(p.end)] for p in parts]
 
-                    # 3. Finalize transcript list with TSS and sorting
                     tx_list = list(transcripts.values())
-                    for tx in tx_list:
-                        if tx["exon_list"]:
-                            tx["exon_list"].sort(key=lambda x: x[0])
-                            tx["tss"] = tx["exon_list"][0][0] if tx["strand"] == "+" else tx["exon_list"][-1][1]
-                        else:
-                            tx["tss"] = tx["gene_range"][0] if tx["strand"] == "+" else tx["gene_range"][1]
-                    
-                    # If no transcripts found (prokaryotic or simple FASTA-like GB), fallback to gene-level
                     if not tx_list:
-                        metadata = {
-                            "strand": "+", "tss": 1, "exon_list": [], "cds_regions": [],
-                            "gene_range": [1, len(record.seq)], "description": record.description
-                        }
-                        for feat in record.features:
-                            if feat.type == "gene":
-                                metadata["gene_range"] = [int(feat.location.start) + 1, int(feat.location.end)]
-                                metadata["strand"] = "+" if feat.location.strand >= 0 else "-"
-                            elif feat.type == "CDS":
-                                parts = feat.location.parts if hasattr(feat.location, 'parts') else [feat.location]
-                                metadata["cds_regions"] = [[int(p.start) + 1, int(p.end)] for p in parts]
-                        tx_list = [metadata]
+                        tx_list = [{"exon_list": [], "cds_regions": [], "gene_range": [1, len(record.seq)], "strand": "+"}]
 
                     return jsonify({
                         "sequence": str(record.seq),
-                        "metadata": tx_list[0], # Primary transcript for backward compat
+                        "accession": acc_id,
+                        "organism": record.annotations.get("organism", "Unknown"),
+                        "length": len(record.seq),
+                        "features": features,
+                        "metadata": tx_list[0],
                         "transcripts": tx_list
                     })
                 except Exception as e:
-                    logger.warning("Isoform parsing failed: %s", e)
-
+                    logger.warning("Parsing failed: %s", e)
+                    # Fallback to plain text if parsing fails
+            
             return Response(raw_data, mimetype="text/plain")
         
         elif db_type == "ncbiprotein":

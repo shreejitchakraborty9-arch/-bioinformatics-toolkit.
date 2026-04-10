@@ -16,6 +16,52 @@
   const BioMath = window.BioKit.core.BioMath;
 
   // ==========================================================
+  // ASSAY PRESETS (PROMPT 4)
+  // ==========================================================
+  BioMath.ASSAY_PRESETS = {
+    "pcr": {
+      name: "Standard PCR",
+      length: { min: 18, max: 25 },
+      tm: { min: 58, max: 65 },
+      tmDifference: 5,
+      gc: { min: 40, max: 60 },
+      gc3prime: true,
+      homopolymerLimit: 5,
+      productSize: { min: 200, max: 5000 }
+    },
+    "qpcr": {
+      name: "qPCR/RT-PCR",
+      length: { min: 18, max: 25 },
+      tm: { min: 59, max: 61 },
+      tmDifference: 2,
+      gc: { min: 45, max: 55 },
+      gc3prime: true,
+      homopolymerLimit: 4,
+      productSize: { min: 50, max: 500 }
+    },
+    "cloning": {
+      name: "Cloning/Sequencing",
+      length: { min: 20, max: 30 },
+      tm: { min: 60, max: 70 },
+      tmDifference: 5,
+      gc: { min: 35, max: 65 },
+      gc3prime: true,
+      homopolymerLimit: 5,
+      productSize: { min: 500, max: 10000 }
+    },
+    "multiplex": {
+      name: "Multiplex PCR",
+      length: { min: 19, max: 24 },
+      tm: { min: 60, max: 65 },
+      tmDifference: 1,
+      gc: { min: 45, max: 55 },
+      gc3prime: true,
+      homopolymerLimit: 4,
+      productSize: { min: 100, max: 1000 }
+    }
+  };
+
+  // ==========================================================
   // 0. PWM (Position Weight Matrix) Engine
   // ==========================================================
   BioMath.scoreSequenceWithPWM = function(seq, pwm, threshold = 0.8) {
@@ -113,6 +159,253 @@
           gcSum += gcContrib[s[i]];
       }
       return ((gcSum / s.length) * 100).toFixed(1);
+  };
+
+  /**
+   * Validates primer length against assay constraints.
+   * @param {string} primer - The nucleotide sequence.
+   * @param {Object} constraints - The active assay constraints.
+   * @returns {boolean}
+   */
+  BioMath.validateLength = function(primer, constraints) {
+    if (!primer || !constraints.length) return false;
+    const len = primer.length;
+    return len >= constraints.length.min && len <= constraints.length.max;
+  };
+
+  /**
+   * Validates primer Tm against assay constraints.
+   * @param {number|string} tm - The computed melting temperature.
+   * @param {Object} constraints - The active assay constraints.
+   * @returns {boolean}
+   */
+  BioMath.validateTm = function(tm, constraints) {
+    if (tm === undefined || !constraints.tm) return false;
+    const val = parseFloat(tm);
+    return val >= constraints.tm.min && val <= constraints.tm.max;
+  };
+
+  /**
+   * Validates primer GC content against assay constraints.
+   * @param {number|string} gc - The GC percentage.
+   * @param {Object} constraints - The active assay constraints.
+   * @returns {boolean}
+   */
+  BioMath.validateGC = function(gc, constraints) {
+    if (gc === undefined || !constraints.gc) return false;
+    const val = parseFloat(gc);
+    return val >= constraints.gc.min && val <= constraints.gc.max;
+  };
+
+  /**
+   * Validates 3' GC clamp existence if required by constraints.
+   * @param {string} primer - The nucleotide sequence.
+   * @param {Object} constraints - The active assay constraints.
+   * @returns {boolean}
+   */
+  BioMath.validateGCClamp = function(primer, constraints) {
+    if (!constraints.gc3prime) return true;
+    const lastBase = primer.slice(-1).toUpperCase();
+    return lastBase === 'G' || lastBase === 'C';
+  };
+
+  /**
+   * Detect runs of identical consecutive bases.
+   * @param {string} primer - DNA sequence
+   * @param {number} maxAllowed - Max consecutive identical bases allowed
+   * @returns {object} { hasViolation, violations, summary }
+   */
+  BioMath.detectHomopolymerRuns = function(primer, maxAllowed) {
+    const result = { hasViolation: false, violations: [], summary: 'None' };
+    if (!primer) return result;
+
+    const s = primer.toUpperCase();
+    let currentRun = 1;
+
+    for (let i = 1; i <= s.length; i++) {
+      if (i < s.length && s[i] === s[i-1]) {
+        currentRun++;
+      } else {
+        if (currentRun > maxAllowed) {
+          result.hasViolation = true;
+          result.violations.push({
+            base: s[i-1],
+            position: i - currentRun + 1,
+            length: currentRun
+          });
+        }
+        currentRun = 1;
+      }
+    }
+
+    if (result.hasViolation) {
+      result.summary = result.violations.map(v => `${v.base.repeat(v.length)} (${v.length} bp at pos ${v.position})`).join(', ');
+    }
+    return result;
+  };
+
+  /**
+   * Validates that homopolymer runs do not exceed constraints.
+   * @param {string} primer - The nucleotide sequence.
+   * @param {Object} constraints - The active assay constraints.
+   * @returns {boolean}
+   */
+  BioMath.validateHomopolymer = function(primer, constraints) {
+    const limit = constraints.homopolymerLimit || 5;
+    const res = BioMath.detectHomopolymerRuns(primer, limit);
+    return !res.hasViolation;
+  };
+
+  /**
+   * Validates the Tm difference between a primer pair.
+   * @param {number|string} tm1 - First primer Tm.
+   * @param {number|string} tm2 - Second primer Tm.
+   * @param {Object} constraints - The active assay constraints.
+   * @returns {boolean}
+   */
+  BioMath.validateTmDifference = function(tm1, tm2, constraints) {
+    if (!constraints.tmDifference) return true;
+    const diff = Math.abs(parseFloat(tm1) - parseFloat(tm2));
+    return diff <= constraints.tmDifference;
+  };
+
+  /**
+   * Scans a template for primer binding sites to determine local specificity.
+   * @param {string} primer - The primer sequence.
+   * @param {string} template - The target DNA sequence.
+   * @param {boolean} isReverse - Whether to search for the reverse complement.
+   * @returns {Object} { primarySite, specificity }
+   */
+  BioMath.checkTemplateSpecificity = function(primer, template, isReverse = false) {
+    const res = {
+      primarySite: { position: -1, count: 0 },
+      specificity: "UNIQUE"
+    };
+    if (!primer || !template) return res;
+
+    const p = isReverse ? BioMath.reverseComplement(primer).toUpperCase() : primer.toUpperCase();
+    const t = template.toUpperCase();
+
+    let pos = t.indexOf(p);
+    while (pos !== -1) {
+      res.primarySite.count++;
+      if (res.primarySite.position === -1) res.primarySite.position = pos + 1;
+      pos = t.indexOf(p, pos + 1);
+    }
+
+    if (res.primarySite.count > 1) res.specificity = "MULTIPLE";
+    else if (res.primarySite.count === 0) res.specificity = "NOT_FOUND";
+
+    return res;
+  };
+
+  /**
+   * Validates if primers or amplicons span exon-exon junctions or introns.
+   * @param {number} fwdStart - Forward 1-based start
+   * @param {number} fwdEnd - Forward 1-based end
+   * @param {number} revStart - Reverse 1-based start
+   * @param {number} revEnd - Reverse 1-based end
+   * @param {Array} features - Feature list from template metadata.
+   * @param {Object} prefs - { intronSpanningRequired, avoidExonJunction }
+   * @returns {Object} { fwdSpans, revSpans, ampliconSpans, verdict, reason }
+   */
+  BioMath.checkExonSpanning = function(fwdStart, fwdEnd, revStart, revEnd, features, prefs) {
+    const res = {
+      fwdSpans: false, revSpans: false, ampliconSpans: false, verdict: "PASS", reason: ""
+    };
+    if (!features || features.length === 0) return res;
+
+    const exons = features.filter(f => f.type.toLowerCase() === 'exon').sort((a,b) => a.start - b.start);
+    if (exons.length < 2) return res;
+
+    const checkSpans = (s, e) => {
+      for (let i = 0; i < exons.length - 1; i++) {
+        const boundary = exons[i].end;
+        if (s <= boundary && e > boundary) return true;
+      }
+      return false;
+    };
+
+    res.fwdSpans = checkSpans(fwdStart, fwdEnd);
+    res.revSpans = checkSpans(revStart, revEnd);
+
+    const getExonIdx = (p) => exons.findIndex(e => p >= e.start && p <= e.end);
+    const fEx = getExonIdx(fwdStart);
+    const rEx = getExonIdx(revStart);
+    if (fEx !== -1 && rEx !== -1 && fEx !== rEx) res.ampliconSpans = true;
+
+    if (prefs.intronSpanningRequired) {
+      if (!res.fwdSpans && !res.revSpans && !res.ampliconSpans) {
+        res.verdict = "FAIL";
+        res.reason = "Primers do not span an exon-junction or intron (qPCR optimization required).";
+      }
+    } else if (prefs.avoidExonJunction) {
+      if (res.fwdSpans || res.revSpans) {
+        res.verdict = "FAIL";
+        res.reason = "Primer overlaps an exon-junction (Avoid Junction selected).";
+      }
+    }
+
+    return res;
+  };
+   
+  /**
+   * Calculates amplicon information (coordinates, size, sequence) from template and primers.
+
+  /**
+   * Calculates amplicon information (coordinates, size, sequence) from template and primers.
+   * @param {string} template - The target DNA sequence.
+   * @param {string} fwdSeq - Forward primer sequence (5'->3').
+   * @param {string} revSeq - Reverse primer sequence (5'->3').
+   * @param {Object} constraints - Active assay constraints for size validation.
+   * @returns {Object} { amplicon: { sequence, size, start, end }, warnings: [] }
+   */
+  BioMath.calculateAmpliconInfo = function(template, fwdSeq, revSeq, constraints = {}) {
+    const res = {
+      amplicon: { sequence: '', size: 0, start: 0, end: 0 },
+      warnings: []
+    };
+
+    if (!template || !fwdSeq || !revSeq) return res;
+
+    const t = template.toUpperCase();
+    const f = fwdSeq.toUpperCase();
+    const r = revSeq.toUpperCase();
+    const r_rc = BioMath.reverseComplement(r).toUpperCase();
+
+    // 1. Find Primer Sites
+    const fwdIdx = t.indexOf(f);
+    const revIdx = t.lastIndexOf(r_rc);
+
+    if (fwdIdx === -1) res.warnings.push("Forward primer binding site not found in template.");
+    if (revIdx === -1) res.warnings.push("Reverse primer binding site not found in template.");
+
+    if (fwdIdx === -1 || revIdx === -1) return res;
+
+    // 2. Map Boundaries
+    const ampliconStart = fwdIdx;
+    const ampliconEnd = revIdx + r.length;
+    const size = ampliconEnd - ampliconStart;
+
+    res.amplicon.start = ampliconStart + 1; // 1-based
+    res.amplicon.end = ampliconEnd;         // 1-based
+    res.amplicon.size = size;
+
+    if (size <= 0) {
+      res.warnings.push(`Primers oriented incorrectly or overlap significantly (computed size: ${size}bp).`);
+      return res;
+    }
+
+    res.amplicon.sequence = t.substring(ampliconStart, ampliconEnd);
+
+    // 3. Constraint Validation
+    if (constraints.productSize) {
+      if (size < constraints.productSize.min || size > constraints.productSize.max) {
+        res.warnings.push(`Amplicon size (${size}bp) falls outside target range (${constraints.productSize.min}-${constraints.productSize.max}bp).`);
+      }
+    }
+
+    return res;
   };
 
   // ==========================================================
@@ -549,6 +842,86 @@
     if (trailing > 0) protein += ' (truncated)';
 
     return protein || (requireStart ? 'No ATG start found' : '');
+  };
+
+  /**
+   * Aggregates all QC metrics into a final laboratory verdict.
+   * @param {Object} results - [{seq, tm, gc}, {seq, tm, gc}]
+   * @param {Object} metrics - { tmDiff, maxHetero }
+   * @param {Object} constraints - The active assay thresholds.
+   * @param {string} template - The template DNA sequence.
+   * @param {Array} features - Feature list from template.
+   * @param {Object} bioOptions - { intronSpanning, avoidExonJunction }
+   * @returns {Object} { status, class, failures, warnings, checklist, actionItems }
+   */
+  BioMath.generatePrimerPairVerdict = function(results, metrics, constraints, template, features, bioOptions) {
+    const verdict = { 
+      status: "PASS", class: "status-pass", failures: [], warnings: [], 
+      checklist: [], actionItems: [] 
+    };
+
+    const fwd = results[0], rev = results[1];
+    const diff = metrics.tmDiff, maxHetero = metrics.maxHetero;
+
+    const fwdStats = {
+      len: BioMath.validateLength(fwd.seq, constraints),
+      tm: BioMath.validateTm(fwd.tm, constraints),
+      homo: BioMath.validateHomopolymer(fwd.seq, constraints)
+    };
+    const revStats = {
+      len: BioMath.validateLength(rev.seq, constraints),
+      tm: BioMath.validateTm(rev.tm, constraints),
+      homo: BioMath.validateHomopolymer(rev.seq, constraints)
+    };
+
+    const tmDiffOk = BioMath.validateTmDifference(fwd.tm, rev.tm, constraints);
+    if (!tmDiffOk) {
+      verdict.warnings.push(`Tm difference (${diff}°C) exceeds tolerance (max ${constraints.tmDifference}°C)`);
+      verdict.actionItems.push("Adjust sequences to equalize melting temperatures.");
+    }
+
+    if (maxHetero >= 5) {
+      verdict.failures.push(`Critical heterodimer risk (${maxHetero}bp)`);
+      verdict.actionItems.push("Redesign primers to eliminate extensive complementarity.");
+    } else if (maxHetero >= 4) {
+      verdict.warnings.push(`Moderate complementary risk (${maxHetero}bp)`);
+    }
+
+    let ampVerdict = 'PASS';
+    if (template) {
+      const amp = BioMath.calculateAmpliconInfo(template, fwd.seq, rev.seq, constraints);
+      if (amp.amplicon.size > 0) {
+        const sizeWarn = amp.warnings.find(w => w.includes('size'));
+        if (sizeWarn) { ampVerdict = 'CAUTION'; verdict.warnings.push(sizeWarn); }
+        
+        if (features && features.length > 0 && (bioOptions.intronSpanning || bioOptions.avoidExonJunction)) {
+          const exonRes = BioMath.checkExonSpanning(amp.amplicon.start, amp.amplicon.start + fwd.seq.length - 1, amp.amplicon.end - rev.seq.length + 1, amp.amplicon.end, features, { intronSpanningRequired: bioOptions.intronSpanning, avoidExonJunction: bioOptions.avoidExonJunction });
+          if (exonRes.verdict === 'FAIL') verdict.failures.push(exonRes.reason);
+        }
+
+        const fwdSpec = BioMath.checkTemplateSpecificity(fwd.seq, template, false);
+        const revSpec = BioMath.checkTemplateSpecificity(rev.seq, template, true);
+        if (fwdSpec.specificity === 'MULTIPLE' || revSpec.specificity === 'MULTIPLE') {
+          verdict.failures.push("Non-specific binding detected (Multiple sites)");
+          verdict.actionItems.push("Relocate primers to more specific genomic regions.");
+        }
+      } else {
+        verdict.failures.push("Amplicon mapping failed (Orientation mismatch)");
+      }
+    }
+
+    verdict.checklist = [
+      { label: 'Length/Tm Specifications', pass: fwdStats.len && fwdStats.tm && revStats.len && revStats.tm },
+      { label: 'Thermodynamic Symmetry', pass: tmDiffOk },
+      { label: 'Biological & Target Specificity', pass: ampVerdict === 'PASS' && !verdict.failures.some(f => f.includes('mapping') || f.includes('specific')) },
+      { label: 'Secondary Structures', pass: fwdStats.homo && revStats.homo && maxHetero < 4 }
+    ];
+
+    if (verdict.failures.length > 0) { verdict.status = "🔴 FAIL"; verdict.class = "status-fail"; }
+    else if (verdict.warnings.length > 0) { verdict.status = "🟡 PASS WITH CAUTION"; verdict.class = "status-caution"; }
+    else { verdict.status = "🟢 PASS"; verdict.class = "status-pass"; }
+
+    return verdict;
   };
 
 })();
