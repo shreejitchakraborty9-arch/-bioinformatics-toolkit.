@@ -27,7 +27,8 @@
       gc: { min: 40, max: 60 },
       gc3prime: true,
       homopolymerLimit: 5,
-      productSize: { min: 200, max: 5000 }
+      productSize: { min: 200, max: 5000 },
+      dimerDeltaGLimit: -6.0
     },
     "qpcr": {
       name: "qPCR/RT-PCR",
@@ -37,7 +38,8 @@
       gc: { min: 45, max: 55 },
       gc3prime: true,
       homopolymerLimit: 4,
-      productSize: { min: 50, max: 500 }
+      productSize: { min: 50, max: 500 },
+      dimerDeltaGLimit: -5.0
     },
     "cloning": {
       name: "Cloning/Sequencing",
@@ -47,7 +49,8 @@
       gc: { min: 35, max: 65 },
       gc3prime: true,
       homopolymerLimit: 5,
-      productSize: { min: 500, max: 10000 }
+      productSize: { min: 500, max: 10000 },
+      dimerDeltaGLimit: -7.0
     },
     "multiplex": {
       name: "Multiplex PCR",
@@ -57,7 +60,8 @@
       gc: { min: 45, max: 55 },
       gc3prime: true,
       homopolymerLimit: 4,
-      productSize: { min: 100, max: 1000 }
+      productSize: { min: 100, max: 1000 },
+      dimerDeltaGLimit: -4.0
     }
   };
 
@@ -204,9 +208,9 @@
    * @returns {boolean}
    */
   BioMath.validateGCClamp = function(primer, constraints) {
-    if (!constraints.gc3prime) return true;
-    const lastBase = primer.slice(-1).toUpperCase();
-    return lastBase === 'G' || lastBase === 'C';
+    if (!constraints.gc3prime || !primer) return true;
+    const last3 = primer.slice(-3).toUpperCase();
+    return last3.includes('G') || last3.includes('C');
   };
 
   /**
@@ -271,12 +275,16 @@
 
   /**
    * Scans a template for primer binding sites to determine local specificity.
+   * Uses mismatch-aware scanning: counts sites where the primer aligns with
+   * at most `maxMismatch` mismatches over its full length. This catches
+   * realistic mispriming events that pure indexOf would miss.
    * @param {string} primer - The primer sequence.
    * @param {string} template - The target DNA sequence.
    * @param {boolean} isReverse - Whether to search for the reverse complement.
+   * @param {number} maxMismatch - Maximum allowed mismatches for a "binding" hit (default 2).
    * @returns {Object} { primarySite, specificity }
    */
-  BioMath.checkTemplateSpecificity = function(primer, template, isReverse = false) {
+  BioMath.checkTemplateSpecificity = function(primer, template, isReverse = false, maxMismatch = 2) {
     const res = {
       primarySite: { position: -1, count: 0 },
       specificity: "UNIQUE"
@@ -285,12 +293,23 @@
 
     const p = isReverse ? BioMath.reverseComplement(primer).toUpperCase() : primer.toUpperCase();
     const t = template.toUpperCase();
+    const pLen = p.length;
 
-    let pos = t.indexOf(p);
-    while (pos !== -1) {
-      res.primarySite.count++;
-      if (res.primarySite.position === -1) res.primarySite.position = pos + 1;
-      pos = t.indexOf(p, pos + 1);
+    if (pLen === 0 || t.length < pLen) return res;
+
+    // Slide the primer across the template and count mismatches at each position
+    for (let i = 0; i <= t.length - pLen; i++) {
+      let mismatches = 0;
+      for (let j = 0; j < pLen; j++) {
+        if (t[i + j] !== p[j]) {
+          mismatches++;
+          if (mismatches > maxMismatch) break; // Early exit for this window
+        }
+      }
+      if (mismatches <= maxMismatch) {
+        res.primarySite.count++;
+        if (res.primarySite.position === -1) res.primarySite.position = i + 1;
+      }
     }
 
     if (res.primarySite.count > 1) res.specificity = "MULTIPLE";
@@ -351,6 +370,7 @@
    
   /**
    * Calculates amplicon information (coordinates, size, sequence) from template and primers.
+   *
 
   /**
    * Calculates amplicon information (coordinates, size, sequence) from template and primers.
@@ -373,14 +393,26 @@
     const r = revSeq.toUpperCase();
     const r_rc = BioMath.reverseComplement(r).toUpperCase();
 
-    // 1. Find Primer Sites
-    const fwdIdx = t.indexOf(f);
-    const revIdx = t.lastIndexOf(r_rc);
+    // 1. Find Primer Sites (Specificity Check)
+    const fIdx = [];
+    let posF = t.indexOf(f);
+    while (posF !== -1) { fIdx.push(posF); posF = t.indexOf(f, posF + 1); }
 
-    if (fwdIdx === -1) res.warnings.push("Forward primer binding site not found in template.");
-    if (revIdx === -1) res.warnings.push("Reverse primer binding site not found in template.");
+    const rIdx = [];
+    let posR = t.indexOf(r_rc);
+    while (posR !== -1) { rIdx.push(posR); posR = t.indexOf(r_rc, posR + 1); }
 
-    if (fwdIdx === -1 || revIdx === -1) return res;
+    if (fIdx.length === 0) res.warnings.push("Forward primer binding site not found in template.");
+    if (rIdx.length === 0) res.warnings.push("Reverse primer binding site not found in template.");
+
+    if (fIdx.length > 1) res.warnings.push("FLAG (Multiple binding sites): Forward primer binds at multiple positions.");
+    if (rIdx.length > 1) res.warnings.push("FLAG (Multiple binding sites): Reverse primer binds at multiple positions.");
+
+    if (fIdx.length === 0 || rIdx.length === 0) return res;
+
+    // Use the first Fwd and last Rev to determine the maximum span for diagnostic reporting
+    const fwdIdx = fIdx[0];
+    const revIdx = rIdx[rIdx.length - 1];
 
     // 2. Map Boundaries
     const ampliconStart = fwdIdx;
@@ -457,11 +489,28 @@
       }
 
       if (maxRunInShift >= 4) {
-        // Add initiation parameters for this run (simplified: one initiation per binding site)
-        // We use the terminal bases of the run for initiation
-        // For simplicity, we use the first match of the run
-        dH += NN_INIT['G'].dH; // Approximation
-        dS += NN_INIT['G'].dS;
+        // Add initiation parameters using the actual terminal bases of the
+        // complementary run (SantaLucia 1998 convention: initiation depends
+        // on the identity of the terminal base pair, not a fixed G).
+        // Find the first and last matched bases in this shift to pick the
+        // correct initiation parameters.
+        let firstMatchBase = 'G', lastMatchBase = 'G';
+        for (let k = 0; k < s1.length; k++) {
+          const kj = k + shift;
+          if (kj >= 0 && kj < s2_rc.length && s1[k] === s2_rc[kj]) {
+            firstMatchBase = s1[k]; break;
+          }
+        }
+        for (let k = s1.length - 1; k >= 0; k--) {
+          const kj = k + shift;
+          if (kj >= 0 && kj < s2_rc.length && s1[k] === s2_rc[kj]) {
+            lastMatchBase = s1[k]; break;
+          }
+        }
+        const initStart = NN_INIT[firstMatchBase] || NN_INIT['G'];
+        const initEnd   = NN_INIT[lastMatchBase]  || NN_INIT['G'];
+        dH += initStart.dH + initEnd.dH;
+        dS += initStart.dS + initEnd.dS;
 
         const dG = (dH * 1000 - temp_K * dS) / 1000;
         if (dG < minDeltaG) {
@@ -979,11 +1028,12 @@
       verdict.actionItems.push("Adjust sequences to equalize melting temperatures.");
     }
 
-    // ΔG Thresholds: -6.0 kcal/mol is a common cutoff for concern, -9.0 is critical.
-    if (heteroDg <= -9.0) {
+    // Dimerization Thresholds from constraints
+    const dLimit = constraints.dimerDeltaGLimit || -9.0;
+    if (heteroDg <= dLimit) {
       verdict.failures.push(`Critical heterodimer stability (ΔG: ${heteroDg} kcal/mol)`);
       verdict.actionItems.push("Redesign primers to eliminate extensive complementarity.");
-    } else if (heteroDg <= -6.0) {
+    } else if (heteroDg <= (dLimit + 3.0)) {
       verdict.warnings.push(`Significant heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
     }
 
@@ -1016,11 +1066,12 @@
       }
     }
 
+    const dLimitSelf = constraints.dimerDeltaGLimit || -6.0;
     verdict.checklist = [
       { label: 'Length/Tm Specifications', pass: fwdStats.len && fwdStats.tm && revStats.len && revStats.tm },
       { label: 'Thermodynamic Symmetry', pass: tmDiffOk },
       { label: 'Biological & Target Specificity', pass: ampVerdict === 'PASS' && !verdict.failures.some(f => f.includes('mapping') || f.includes('specific')) },
-      { label: 'Secondary Structures (ΔG)', pass: fwdStats.homo && revStats.homo && fwdStats.dg > -6.0 && revStats.dg > -6.0 && heteroDg > -6.0 },
+      { label: 'Secondary Structures (ΔG)', pass: fwdStats.homo && revStats.homo && fwdStats.dg > dLimitSelf && revStats.dg > dLimitSelf && heteroDg > dLimitSelf },
       { label: '3\' Terminal Integrity', pass: fwdStats.terminal.verdict !== 'CRITICAL' && revStats.terminal.verdict !== 'CRITICAL' }
     ];
 
@@ -1033,19 +1084,40 @@
 
   /**
    * Internal helper: Detects hairpin secondary structures.
-   * Logic: Finds inverted segments that can hybridize with a loop in between.
+   * Scans every possible starting position within the primer for an inverted
+   * repeat separated by a loop of at least 3 nt. The original implementation
+   * only checked stems anchored at index 0; this version scans all positions.
+   * To stay fast on typical primer lengths (18–30 nt) the search is bounded
+   * by maxStem=8 and maxLoop=8 which covers all biologically relevant
+   * hairpins without O(n^4) blowup.
    */
   BioMath.detectHairpin = function(seq) {
     if (!seq || seq.length < 10) return { found: false };
     const comp = { A:'T', T:'A', G:'C', C:'G' };
     const s = seq.toUpperCase();
-    const minStem = 4, minLoop = 3;
-    for (let stemLen = minStem; stemLen <= Math.floor((s.length - minLoop) / 2); stemLen++) {
-      const stem5 = s.slice(0, stemLen);
-      for (let loop = minLoop; loop <= s.length - 2 * stemLen; loop++) {
-        const stem3 = s.slice(stemLen + loop, stemLen + loop + stemLen);
-        const rc3   = stem3.split('').reverse().map(b => comp[b] || 'N').join('');
-        if (stem5 === rc3) return { found: true, stemLen, loop };
+    const minStem = 4, maxStem = 8;
+    const minLoop = 3, maxLoop = 8;
+    const len = s.length;
+
+    // Iterate over every possible stem start position
+    for (let start = 0; start <= len - (2 * minStem + minLoop); start++) {
+      const stemLimit = Math.min(maxStem, Math.floor((len - start - minLoop) / 2));
+      for (let stemLen = minStem; stemLen <= stemLimit; stemLen++) {
+        const stem5 = s.substring(start, start + stemLen);
+        const loopLimit = Math.min(maxLoop, len - start - 2 * stemLen);
+        for (let loop = minLoop; loop <= loopLimit; loop++) {
+          const stem3Start = start + stemLen + loop;
+          const stem3 = s.substring(stem3Start, stem3Start + stemLen);
+          // Build reverse complement of the 3' stem
+          let match = true;
+          for (let k = 0; k < stemLen; k++) {
+            if (stem5[k] !== (comp[stem3[stemLen - 1 - k]] || 'N')) {
+              match = false;
+              break;
+            }
+          }
+          if (match) return { found: true, stemLen, loop, position: start };
+        }
       }
     }
     return { found: false };
@@ -1054,8 +1126,9 @@
   /**
    * Automatically suggests optimal primer pairs from a template sequence.
    * Uses a research-grade scoring system (Integrity + Performance).
+   * ASYNC: Yields to the event loop during heavy scanning to keep UI responsive.
    */
-  BioMath.suggestPrimerPairs = function(template, constraints, options = {}) {
+  BioMath.suggestPrimerPairs = async function(template, constraints, options = {}) {
     if (!template || template.length < 50) return [];
     const t = template.toUpperCase();
     const scanLimit = 15000;
@@ -1108,7 +1181,7 @@
       return { seq, tm, gc, score, warnings, selfDg: dg };
     };
 
-    const doScan = (activeConstraints) => {
+    const doScan = async (activeConstraints) => {
       const fCands = [];
       const rCands = [];
       const minL = activeConstraints.length.min || 18;
@@ -1116,19 +1189,26 @@
 
       // Scan Fwd (Start)
       const fLimit = Math.min(scanArea.length * 0.4, 3000);
-      for (let i = 0; i < fLimit; i++) {
+      const fStep = fLimit > 1500 ? 3 : 1;
+      for (let i = 0; i < fLimit; i += fStep) {
+        // Yield every 500 iterations to keep UI alive
+        if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+
         for (let l = minL; l <= maxL; l++) {
           const s = scanArea.substring(i, i + l);
           if (s.length < l) break;
           const res = evaluatePrimer(s, activeConstraints);
           if (res && res.score >= 40) fCands.push({ ...res, pos: i + 1 });
         }
-        if (fCands.length > 80) break;
+        if (fCands.length > 60) break;
       }
 
       // Scan Rev (End)
       const rStart = Math.max(0, scanArea.length - Math.min(scanArea.length * 0.4, 3000));
-      for (let i = scanArea.length; i >= rStart; i--) {
+      const rStep = (scanArea.length - rStart) > 1500 ? 3 : 1;
+      for (let i = scanArea.length; i >= rStart; i -= rStep) {
+        if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+
         for (let l = minL; l <= maxL; l++) {
           const sr = scanArea.substring(i - l, i);
           if (sr.length < l) continue;
@@ -1136,27 +1216,31 @@
           const res = evaluatePrimer(s, activeConstraints);
           if (res && res.score >= 40) rCands.push({ ...res, pos: i });
         }
-        if (rCands.length > 80) break;
+        if (rCands.length > 60) break;
       }
       return { fCands, rCands };
     };
 
     // ── Primary Scan ───────────────
-    let { fCands, rCands } = doScan(constraints);
+    let { fCands, rCands } = await doScan(constraints);
 
     // ── Fallback: Relaxed Scan ───────
     if (fCands.length === 0 || rCands.length === 0) {
       const relaxed = JSON.parse(JSON.stringify(constraints));
       relaxed.tm.min -= 2; relaxed.tm.max += 2;
       relaxed.gc.min -= 5; relaxed.gc.max += 5;
-      const secondTry = doScan(relaxed);
+      const secondTry = await doScan(relaxed);
       fCands = secondTry.fCands;
       rCands = secondTry.rCands;
     }
 
     const pairs = [];
+    let pairCount = 0;
     for (const f of fCands) {
       for (const r of rCands) {
+        pairCount++;
+        if (pairCount % 1000 === 0) await new Promise(r => setTimeout(r, 0));
+
         const size = r.pos - f.pos + 1;
         if (size >= constraints.productSize.min && size <= constraints.productSize.max) {
           const tmDiff = Math.abs(f.tm - r.tm);
@@ -1165,9 +1249,8 @@
             const hdg = parseFloat(hetero.deltaG);
             
             if (hdg > -8.0) {
-              // Final Pair Score
               let pairScore = (f.score + r.score) / 2;
-              pairScore -= tmDiff * 4; // Extra penalty for Tm mismatch
+              pairScore -= tmDiff * 4;
               if (hdg <= -6.0) pairScore -= 10; 
               
               pairs.push({ fwd: f, rev: r, size, tmDiff, heteroDg: hdg, score: pairScore });

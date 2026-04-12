@@ -14,34 +14,6 @@
     return { tm: "0.0", confidence: "", warning: null };
   }
 
-  function gcFrac(seq) {
-    return (seq.match(/[GC]/g) || []).length / seq.length;
-  }
-  function gcPct(seq) { return (gcFrac(seq) * 100).toFixed(1); }
-
-  function hasGCClamp(seq) {
-    const last3 = seq.slice(-3);
-    const gcCount = (last3.match(/[GC]/g) || []).length;
-    return gcCount >= 1 && gcCount <= 3;
-  }
-
-  function detectHairpin(seq) {
-    const BioMath = window.BioKit && window.BioKit.core && window.BioKit.core.BioMath;
-    if (BioMath && BioMath.detectHairpin) {
-      return BioMath.detectHairpin(seq);
-    }
-    return { found: false };
-  }
-
-  function complement(seq) {
-    const comp = { A:'T', T:'A', G:'C', C:'G' };
-    return seq.split('').map(b => comp[b] || 'N').join('');
-  }
-
-  function reverseComplement(seq) {
-    return complement(seq).split('').reverse().join('');
-  }
-
   function tmDiff(tm1, tm2) {
     return Math.abs(parseFloat(tm1) - parseFloat(tm2)).toFixed(1);
   }
@@ -246,9 +218,13 @@
 
   if (fwdInput) fwdInput.addEventListener('input', () => {
     const s = window.cleanSeq(fwdInput.value);
-    const tmRes = calcTm(s, { naConc_mM: 50, oligoConc_nM: 250 });
+    const na = parseFloat(document.getElementById('saltConc').value) || 50;
+    const k = parseFloat(document.getElementById('kConc').value) || 0;
+    const options = { naConc_mM: na + k, oligoConc_nM: 250 };
+    const tmRes = calcTm(s, options);
     const validation = window.validateSequence(s, 'dna');
-    let metaText = `Length: ${s.length} nt  |  GC: ${gcPct(s)}%  |  Tm ≈ ${tmRes.tm} °C`;
+    const gc = window.BioKit.core.BioMath.calculateGC(s);
+    let metaText = `Length: ${s.length} nt  |  GC: ${gc}%  |  Tm ≈ ${tmRes.tm} °C`;
     if (!validation.valid || tmRes.warning) {
       metaText = `⚠ ${metaText} ${tmRes.warning ? '(Warning)' : '(Limit Exceeded)'}`;
       if (fwdMeta) fwdMeta.style.color = 'var(--rose)';
@@ -259,9 +235,13 @@
   });
   if (revInput) revInput.addEventListener('input', () => {
     const s = window.cleanSeq(revInput.value);
-    const tmRes = calcTm(s, { naConc_mM: 50, oligoConc_nM: 250 });
+    const na = parseFloat(document.getElementById('saltConc').value) || 50;
+    const k = parseFloat(document.getElementById('kConc').value) || 0;
+    const options = { naConc_mM: na + k, oligoConc_nM: 250 };
+    const tmRes = calcTm(s, options);
     const validation = window.validateSequence(s, 'dna');
-    let metaText = `Length: ${s.length} nt  |  GC: ${gcPct(s)}%  |  Tm ≈ ${tmRes.tm} °C`;
+    const gc = window.BioKit.core.BioMath.calculateGC(s);
+    let metaText = `Length: ${s.length} nt  |  GC: ${gc}%  |  Tm ≈ ${tmRes.tm} °C`;
     if (!validation.valid || tmRes.warning) {
       metaText = `⚠ ${metaText} ${tmRes.warning ? '(Warning)' : '(Limit Exceeded)'}`;
       if (revMeta) revMeta.style.color = 'var(--rose)';
@@ -342,7 +322,7 @@
       // Small delay to ensure spinner renders
       await new Promise(r => setTimeout(r, 100));
 
-      const pairs = BioMath.suggestPrimerPairs(template, state.constraints, options);
+      const pairs = await BioMath.suggestPrimerPairs(template, state.constraints, options);
 
       if (!pairs || pairs.length === 0) {
         suggestionsGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 40px; text-align:center; color:var(--rose);">No pairs found matching constraints. Try relaxing Tm or Product Size limits.</div>';
@@ -441,9 +421,9 @@
         const results = primers.map(({ label, seq }) => {
           const tmRes = calcTm(seq, options);
           const tm = tmRes.tm;
-          const gc = gcPct(seq);
+          const gc = BioMath.calculateGC(seq);
           const len = seq.length;
-          const hairpin = detectHairpin(seq);
+          const hairpin = BioMath.detectHairpin(seq);
           const dimer = BioMath.calculateDimerThermodynamics(seq, seq);
           const terminal = BioMath.assess3PrimeStability(seq);
           const homoRes = BioMath.detectHomopolymerRuns(seq, thresholds.homopolymerLimit);
@@ -454,7 +434,7 @@
           const gcOk  = BioMath.validateGC(gc, thresholds);
           const clampOk = BioMath.validateGCClamp(seq, thresholds);
           const homoOk  = !homoRes.hasViolation;
-          const dgOk = parseFloat(dimer.deltaG) > -6.0;
+          const dgOk = parseFloat(dimer.deltaG) > (thresholds.dimerDeltaGLimit || -6.0);
 
           let failReasons = [];
           if (!lenOk) failReasons.push(`Length (${len}nt) outside ${thresholds.length.min}-${thresholds.length.max} range`);
@@ -462,7 +442,7 @@
           if (!tmOk) failReasons.push(`Tm (${tm}°C) outside ${thresholds.tm.min}-${thresholds.tm.max}°C range`);
           if (hairpin.found) failReasons.push(`Hairpin risk detected`);
           if (!homoOk) failReasons.push(`Homopolymer detected: ${homoRes.summary}`);
-          if (!clampOk) failReasons.push(`Missing 3' GC clamp (G or C at end)`);
+          if (!clampOk) failReasons.push(`Missing 3' GC clamp (G or C within terminal 3nt)`);
           if (terminal.verdict === 'CRITICAL') failReasons.push(terminal.message);
 
           const cardHtml = `
@@ -522,8 +502,9 @@
           const pairWarnings = [];
           
           if (!diffOk) pairWarnings.push(`Tm difference (${diff}°C) exceeds assay tolerance (max ${thresholds.tmDifference}°C)`);
-          if (parseFloat(heteroDg) <= -9.0) pairFailures.push(`High heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
-          else if (parseFloat(heteroDg) <= -6.0) pairWarnings.push(`Moderate heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
+          const dLimit = thresholds.dimerDeltaGLimit || -9.0;
+          if (parseFloat(heteroDg) <= dLimit) pairFailures.push(`High heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
+          else if (parseFloat(heteroDg) <= (dLimit + 3.0)) pairWarnings.push(`Moderate heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
 
           // ── Specificity Section ──────────────────────
           let specificityHtml = '';
