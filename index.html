@@ -17,6 +17,15 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="css/style.css"/>
   <script src="https://unpkg.com/dompurify@latest/dist/purify.min.js"></script>
+  <script>
+    (function() {
+      const savedTheme = localStorage.getItem('biokit-theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
 </head>
 <body>
 
@@ -89,16 +98,6 @@
       </button>
 
       <div class="sidebar-divider"></div>
-
-      <button class="nav-item" id="openSettingsBtn">
-        <span class="nav-icon"><i data-lucide="settings"></i></span>
-        <span class="nav-label">Settings</span>
-      </button>
-
-      <button class="nav-item" id="themeToggleBtn">
-        <span class="nav-icon"><i data-lucide="sun-moon"></i></span>
-        <span class="nav-label">Toggle Theme</span>
-      </button>
     </nav>
 
     <div class="sidebar-footer">
@@ -118,7 +117,12 @@
         <span class="save-indicator">STABLE_INSTANCE</span>
       </div>
       <div class="header-right">
-        <button class="header-action"><i data-lucide="share-2"></i></button>
+        <button class="header-action" id="themeToggleBtn" title="Toggle Theme" aria-label="Toggle Dark/Light Mode">
+          <i data-lucide="sun-moon"></i>
+        </button>
+        <button class="header-action" title="Share Analysis" data-action="share">
+          <i data-lucide="share-2"></i>
+        </button>
         <div class="divider-v"></div>
         <div class="user-profile">
           <div class="avatar">JD</div>
@@ -955,25 +959,6 @@
 
   </main>
 
-  <!-- SETTINGS MODAL -->
-  <div class="settings-overlay hidden" id="settingsOverlay">
-    <div class="settings-content">
-      <div class="settings-header">
-        <h2 class="settings-title">API Settings</h2>
-        <button class="settings-close" id="closeSettingsBtn"><i data-lucide="x"></i></button>
-      </div>
-      <div class="settings-section">
-        <label>NCBI API Key (Optional)</label>
-        <input type="text" class="seq-input" id="ncbiApiKey" placeholder="Entrez API Key..." style="margin-bottom:8px;"/>
-        <p class="panel-desc" style="font-size:0.75rem;">Providing an API key increases your rate limit to 10 requests per second. <a href="https://ncbiinsights.ncbi.nlm.nih.gov/2017/11/02/new-api-keys-for-the-e-utilities/" target="_blank" style="color:var(--teal);">Get a key here.</a></p>
-      </div>
-      <div class="settings-section">
-        <label>Ensembl Rate Limit</label>
-        <p class="panel-desc" style="font-size:0.75rem;">BioKit automatically enforces a 1-second delay between requests to comply with Ensembl and NCBI guidelines.</p>
-      </div>
-      <button class="btn-primary" id="saveSettingsBtn" style="width:100%;">Save &amp; Close</button>
-    </div>
-  </div>
 
   <!-- Shortcut Help Modal (Loophole #16) -->
   <div id="shortcutModal" class="settings-overlay hidden">
@@ -1041,19 +1026,6 @@
             backdrop.classList.remove('visible');
           }
         });
-      });
-    }
-
-    // Theme logic
-    const themeBtn = document.getElementById('themeToggleBtn');
-    if (themeBtn) {
-      themeBtn.addEventListener('click', () => {
-        const doc = document.documentElement;
-        if (doc.getAttribute('data-theme') === 'dark') {
-          doc.removeAttribute('data-theme');
-        } else {
-          doc.setAttribute('data-theme', 'dark');
-        }
       });
     }
   })();

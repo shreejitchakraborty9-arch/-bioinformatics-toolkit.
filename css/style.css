@@ -40,7 +40,7 @@
   --space-unit: 8px;
 }
 
-[data-theme="dark"] {
+.dark {
   --bg-base: #101214;
   --bg-sidebar: #17191c;
   --bg-surface: #17191c;

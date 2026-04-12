@@ -488,43 +488,6 @@
     }
   };
 
-  // ── API Settings Management ────────────────────────────────
-  const settingsOverlay = document.getElementById('settingsOverlay');
-  const openSettingsBtn = document.getElementById('openSettingsBtn');
-  const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-  const ncbiKeyInput = document.getElementById('ncbiApiKey');
-
-  if (ncbiKeyInput) {
-    ncbiKeyInput.value = localStorage.getItem('biokit_ncbi_key') || '';
-  }
-
-  if (openSettingsBtn) {
-    openSettingsBtn.addEventListener('click', () => {
-      settingsOverlay.classList.add('visible');
-    });
-  }
-
-  const closeSettings = () => {
-    settingsOverlay.classList.remove('visible');
-  };
-
-  if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettings);
-
-  if (saveSettingsBtn) {
-    saveSettingsBtn.addEventListener('click', () => {
-      const key = ncbiKeyInput.value.trim();
-      localStorage.setItem('biokit_ncbi_key', key);
-      showToast('Settings saved successfully!');
-      closeSettings();
-    });
-  }
-
-  if (settingsOverlay) {
-    settingsOverlay.addEventListener('click', (e) => {
-      if (e.target === settingsOverlay) closeSettings();
-    });
-  }
 
   // ── Session & Persistence ──────────────────────────────
   window.BioKit.core.SessionManager = {
@@ -728,54 +691,52 @@
     window.BioKit.core.SessionManager.init();
     window.BioKit.core.ShortcutManager.init();
 
-    // ── Header Actions & Logic ────────────────────────────────
-  document.addEventListener('click', (e) => {
-    const shareBtn = e.target.closest('.header-action i[data-lucide="share-2"]')?.parentNode || e.target.closest('.header-action[data-action="share"]');
-    if (shareBtn) {
-      const url = window.location.href;
-      navigator.clipboard.writeText(url).then(() => showToast('🔗 Analysis link copied!'));
-    }
+      // ── Theme Management ────────────────────────────────────
+    const ThemeManager = {
+      STORAGE_KEY: 'biokit-theme',
 
-    const setBtn = e.target.closest('.header-action i[data-lucide="settings"]')?.parentNode || e.target.closest('.header-action[data-action="settings"]');
-    if (setBtn) {
-      document.getElementById('settingsOverlay')?.classList.remove('hidden');
-    }
-  });
+      init() {
+        const toggleBtn = document.getElementById('themeToggleBtn');
+        if (!toggleBtn) return;
 
-  // Track session name changes
-  const sessionName = document.querySelector('.session-name');
-  if (sessionName) {
-    sessionName.addEventListener('input', () => window.BioKit.core.SessionManager.markChanged());
-  }
-    const settingsOverlay = document.getElementById('settingsOverlay');
-    const ncbiKeyInput = document.getElementById('ncbiApiKey');
-    
-    // Load existing key from localStorage
-    if (ncbiKeyInput) {
-      ncbiKeyInput.value = localStorage.getItem('btk_ncbi_api_key') || '';
-    }
+        toggleBtn.addEventListener('click', () => this.toggle());
 
-    // Toggle Settings
-    document.getElementById('openSettingsBtn')?.addEventListener('click', () => {
-      settingsOverlay?.classList.remove('hidden');
-    });
+        // Initial setup already happened in head script to prevent FOUC,
+        // but we ensure consistency here.
+        this.apply(this.getStoredTheme() || this.getSystemTheme());
+      },
 
-    document.getElementById('closeSettingsBtn')?.addEventListener('click', () => {
-      settingsOverlay?.classList.add('hidden');
-    });
+      getStoredTheme() {
+        return localStorage.getItem(this.STORAGE_KEY);
+      },
 
-    document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
-      if (ncbiKeyInput) {
-        localStorage.setItem('btk_ncbi_api_key', ncbiKeyInput.value.trim());
-        window.showToast('API Settings Saved');
+      getSystemTheme() {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      },
+
+      toggle() {
+        const current = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        this.apply(next);
+      },
+
+      apply(theme) {
+        const isDark = theme === 'dark';
+        document.documentElement.classList.toggle('dark', isDark);
+        localStorage.setItem(this.STORAGE_KEY, theme);
+        
+        // Dispatch global event for canvas re-rendering
+        window.dispatchEvent(new CustomEvent('biokit-theme-change', { detail: { theme } }));
+        
+        // Update tooltip if present (accessibility)
+        const toggleBtn = document.getElementById('themeToggleBtn');
+        if (toggleBtn) {
+          toggleBtn.setAttribute('aria-pressed', isDark);
+        }
       }
-      settingsOverlay?.classList.add('hidden');
-    });
-
-    // Close on backdrop click
-    settingsOverlay?.addEventListener('click', (e) => {
-      if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden');
-    });
+    };
+    ThemeManager.init();
+    window.BioKit.core.ThemeManager = ThemeManager;
 
     // Mark changes on input
     document.querySelectorAll('input, textarea, select, [contenteditable]').forEach(el => {

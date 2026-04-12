@@ -10,6 +10,18 @@
   let sequence = "";
   let cdsData = [];
   let motifData = [];
+
+  function getThemeColors() {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      bg: style.getPropertyValue('--bg-base').trim() || '#111827',
+      surface: style.getPropertyValue('--bg-sidebar').trim() || '#1e293b',
+      text: style.getPropertyValue('--text-primary').trim() || '#f8f9fa',
+      muted: style.getPropertyValue('--text-muted').trim() || '#94a3b8',
+      border: style.getPropertyValue('--border').trim() || '#334155',
+      grid: style.getPropertyValue('--border-muted').trim() || '#1e293b'
+    };
+  }
   
   // Viewport
   let bpStart = 0;       // Leftmost base pair visible
@@ -231,15 +243,14 @@
   function render() {
     if (!ctx || !canvas) return;
     
-    const cw = canvas.clientWidth;
-    const ch = 400; // nominal height
+    const colors = getThemeColors();
 
     // 1. Draw Background
-    ctx.fillStyle = '#111827'; // var(--panel-bg)
+    ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, cw, ch);
 
     if (!sequence) {
-      ctx.fillStyle = '#64748b';
+      ctx.fillStyle = colors.muted;
       ctx.font = '14px Inter';
       ctx.textAlign = 'center';
       ctx.fillText('No sequence loaded. Analyze a sequence to view.', cw / 2, ch / 2);
@@ -278,10 +289,11 @@
   }
 
   function drawRuler(cw) {
-    ctx.fillStyle = '#1e293b';
+    const colors = getThemeColors();
+    ctx.fillStyle = colors.surface;
     ctx.fillRect(0, 0, cw, HEADER_HEIGHT);
     
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = colors.muted;
     ctx.font = '11px JetBrains Mono';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -304,7 +316,7 @@
       ctx.beginPath();
       ctx.moveTo(x, HEADER_HEIGHT - 6);
       ctx.lineTo(x, HEADER_HEIGHT);
-      ctx.strokeStyle = '#475569';
+      ctx.strokeStyle = colors.border;
       ctx.stroke();
 
       // Draw label
@@ -314,13 +326,14 @@
     ctx.beginPath();
     ctx.moveTo(0, HEADER_HEIGHT);
     ctx.lineTo(cw, HEADER_HEIGHT);
-    ctx.strokeStyle = '#334155';
+    ctx.strokeStyle = colors.border;
     ctx.stroke();
   }
 
   function drawTrackBackground(t, cw) {
+    const colors = getThemeColors();
     // Track Label
-    ctx.fillStyle = '#475569';
+    ctx.fillStyle = colors.muted;
     ctx.font = '12px Inter';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
@@ -330,7 +343,7 @@
     ctx.beginPath();
     ctx.moveTo(0, t.y + TRACK_HEIGHT);
     ctx.lineTo(cw, t.y + TRACK_HEIGHT);
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = colors.grid;
     ctx.stroke();
   }
 
@@ -364,7 +377,8 @@
         }
     } else {
         // Render a density map or solid block representing sequence presence
-        ctx.fillStyle = '#334155';
+        const colors = getThemeColors();
+        ctx.fillStyle = colors.border;
         ctx.fillRect(0, t.y + 10, cw, TRACK_HEIGHT - 20);
     }
   }
@@ -504,6 +518,14 @@
              window.loadGenomeData(seq, mockCds, 200, mockMotifs);
          });
      }
+  });
+
+  // ── Theme Sync ──────────────────────────────────────────
+  window.addEventListener('biokit-theme-change', () => {
+    const isVisible = !document.getElementById('panel-genome-viewer').classList.contains('hidden');
+    if (isVisible) {
+      requestAnimationFrame(render);
+    }
   });
 
 })();

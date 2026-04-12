@@ -9,6 +9,19 @@
   window.BioKit = window.BioKit || { utils: {}, core: {}, tools: {}, data: {} };
   const BioMath = window.BioKit.core.BioMath;
 
+  let currentSequence = "";
+
+  function getThemeColors() {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      bg: style.getPropertyValue('--bg-card').trim() || '#17191c',
+      text: style.getPropertyValue('--text-primary').trim() || '#f8f9fa',
+      muted: style.getPropertyValue('--text-muted').trim() || '#868e96',
+      border: style.getPropertyValue('--border').trim() || '#2c3035',
+      teal: style.getPropertyValue('--teal').trim() || '#14b8a6'
+    };
+  }
+
   // ── Amino Acid Data ────────────────────────────────────
   const AA_NAMES = {
     A:'Ala',R:'Arg',N:'Asn',D:'Asp',C:'Cys',E:'Glu',Q:'Gln',G:'Gly',
@@ -55,6 +68,7 @@
     }
 
     const seq = validation.clean.replace(/\*/g, '');
+    currentSequence = seq;
 
     window.withLoading('panel-protein', () => {
       const hydro = BioMath.calculateHydrophobicity(seq);
@@ -112,10 +126,10 @@
     const pad = { top: 20, right: 20, bottom: 50, left: 50 };
     const plotW = W - pad.left - pad.right;
     const plotH = H - pad.top - pad.bottom;
-    const maxVal = comp[0][1];
+    const colors = getThemeColors();
     const barW = Math.floor(plotW / comp.length) - 4;
 
-    ctx.fillStyle = '#0a1020';
+    ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, W, H);
 
     comp.forEach(([aa, cnt], i) => {
@@ -126,12 +140,12 @@
       ctx.fillStyle = AA_COLORS[aa] || '#94a3b8';
       ctx.fillRect(x, y, barW, h);
 
-      ctx.fillStyle = '#e8f0fe';
+      ctx.fillStyle = colors.text;
       ctx.font = '10px "JetBrains Mono"';
       ctx.textAlign = 'center';
       if (h > 14) ctx.fillText(cnt, x + barW / 2, y - 3);
 
-      ctx.fillStyle = '#8899bb';
+      ctx.fillStyle = colors.muted;
       ctx.font = '11px "JetBrains Mono"';
       ctx.fillText(aa, x + barW / 2, H - pad.bottom + 14);
     });
@@ -194,29 +208,30 @@
 
     const minVal = Math.min(...values, -2);
     const maxVal = Math.max(...values, 2);
+    const colors = getThemeColors();
     const range = maxVal - minVal || 1;
 
     // Background
-    ctx.fillStyle = '#0a1020';
+    ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, W, H);
 
     // Zero line
     const zeroY = pad.top + plotH - ((-minVal) / range) * plotH;
-    ctx.strokeStyle = '#334155';
+    ctx.strokeStyle = colors.border;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(pad.left, zeroY);
     ctx.lineTo(W - pad.right, zeroY);
     ctx.stroke();
 
-    ctx.fillStyle = '#8899bb';
+    ctx.fillStyle = colors.muted;
     ctx.font = '10px Inter';
     ctx.textAlign = 'right';
     ctx.fillText('0', pad.left - 5, zeroY + 3);
 
     // Draw line
     ctx.beginPath();
-    ctx.strokeStyle = '#14b8a6';
+    ctx.strokeStyle = colors.teal;
     ctx.lineWidth = 1.5;
     values.forEach((v, i) => {
       const x = pad.left + (i / values.length) * plotW;
@@ -269,5 +284,15 @@
       pMeta.textContent = `Length: ${seq.length} aa`;
     });
   }
+
+  // ── Theme Sync ──────────────────────────────────────────
+  window.addEventListener('biokit-theme-change', () => {
+    const isVisible = !document.getElementById('panel-protein').classList.contains('hidden') && 
+                      !document.querySelector('#proteinResults .results-content').classList.contains('hidden');
+    if (isVisible && currentSequence) {
+      renderAAChart(currentSequence);
+      renderHydroPlot(currentSequence);
+    }
+  });
 
 })();
