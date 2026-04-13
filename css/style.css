@@ -1949,3 +1949,208 @@ canvas {
      print-color-adjust: exact !important;
    }
  }
+
+/* ============================================================
+   Scientific Grade Upgrade — Unified styles
+   ============================================================ */
+
+.scientific-params-drawer {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.scientific-toggle-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: var(--bg-sidebar);
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transition: var(--transition);
+}
+
+.scientific-toggle-btn:hover {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.toggle-icon {
+  font-size: 0.8rem;
+  transition: transform 0.2s ease;
+}
+
+.toggle-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.scientific-params-content {
+  padding: 20px 18px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+}
+
+.scientific-params-content.hidden {
+  display: none;
+}
+
+.params-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+/* Scientific Metrics Grid */
+.scientific-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.scientific-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  transition: var(--transition);
+}
+
+.scientific-card:hover {
+  border-color: var(--teal);
+  box-shadow: var(--shadow-elevated);
+}
+
+.metric-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 6px;
+}
+
+.metric-body {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.mass-range {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  margin-top: 4px;
+}
+
+.formula-block {
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.result-block {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+.metric-note {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-top: 10px;
+  font-style: italic;
+}
+
+/* ORF Systematic Map Styles */
+.orf-results-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+
+.orf-block {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: var(--transition);
+}
+
+.orf-block:hover {
+  border-color: var(--protein-blue);
+  background: rgba(59, 130, 246, 0.02);
+}
+
+.orf-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.orf-id {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--protein-blue);
+  font-size: 0.9rem;
+}
+
+.orf-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
+.kozak-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.kozak-badge.strong { background: rgba(34, 197, 94, 0.1); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.2); }
+.kozak-badge.weak   { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
+.kozak-badge.none   { background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border); }
+
+.orf-seq {
+  color: var(--protein-blue);
+  font-size: 0.82rem;
+  padding: 10px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  max-height: 100px;
+}
+
+.orf-indices {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+  font-family: var(--mono);
+}
+
+.no-results {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}

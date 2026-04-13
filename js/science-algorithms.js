@@ -132,14 +132,16 @@
   };
   
   BioMath.reverseComplement = function(seq) {
-      if (!seq) return '';
+      if (typeof seq !== 'string' || !seq) return '';
       const comp = { 
-          'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C', 'N': 'N',
-          'a': 't', 't': 'a', 'c': 'g', 'g': 'c', 'n': 'n',
+          'A': 'T', 'T': 'A', 'U': 'A', 'C': 'G', 'G': 'C', 'N': 'N',
+          'a': 't', 't': 'a', 'u': 'a', 'c': 'g', 'g': 'c', 'n': 'n',
           'R': 'Y', 'Y': 'R', 'S': 'S', 'W': 'W', 'K': 'M', 'M': 'K',
-          'B': 'V', 'V': 'B', 'D': 'H', 'H': 'D'
+          'B': 'V', 'V': 'B', 'D': 'H', 'H': 'D',
+          'r': 'y', 'y': 'r', 's': 's', 'w': 'w', 'k': 'm', 'm': 'k',
+          'b': 'v', 'v': 'b', 'd': 'h', 'h': 'd'
       };
-      return seq.split('').reverse().map(b => comp[b] || b).join('');
+      return seq.split('').reverse().map(b => comp[b] !== undefined ? comp[b] : b).join('');
   };
 
   // ==========================================================
@@ -1148,334 +1150,256 @@
   // ==========================================================
   // 6. Standard Codon Translation
   // ==========================================================
-  // ── Standard & Alternative Genetic Codes ─────────────────
-  const GENETIC_CODES = {
-    1: { // Standard
-      'ATA': 'I', 'ATC': 'I', 'ATT': 'I', 'ATG': 'M', 'ACA': 'T', 'ACC': 'T', 'ACG': 'T', 'ACT': 'T',
-      'AAC': 'N', 'AAT': 'N', 'AAA': 'K', 'AAG': 'K', 'AGC': 'S', 'AGT': 'S', 'AGA': 'R', 'AGG': 'R',
-      'CTA': 'L', 'CTC': 'L', 'CTG': 'L', 'CTT': 'L', 'CCA': 'P', 'CCC': 'P', 'CCG': 'P', 'CCT': 'P',
-      'CAC': 'H', 'CAT': 'H', 'CAA': 'Q', 'CAG': 'Q', 'CGA': 'R', 'CGC': 'R', 'CGG': 'R', 'CGT': 'R',
-      'GTA': 'V', 'GTC': 'V', 'GTG': 'V', 'GTT': 'V', 'GCA': 'A', 'GCC': 'A', 'GCG': 'A', 'GCT': 'A',
-      'GAC': 'D', 'GAT': 'D', 'GAA': 'E', 'GAG': 'E', 'GGA': 'G', 'GGC': 'G', 'GGG': 'G', 'GGT': 'G',
-      'TCA': 'S', 'TCC': 'S', 'TCG': 'S', 'TCT': 'S', 'TTC': 'F', 'TTT': 'F', 'TTA': 'L', 'TTG': 'L',
-      'TAC': 'Y', 'TAT': 'Y', 'TAA': '*', 'TAG': '*', 'TGC': 'C', 'TGT': 'C', 'TGA': '*', 'TGG': 'W',
-    },
-    2: { // Vertebrate Mitochondrial
-      'AGA': '*', 'AGG': '*', 'AUA': 'M', 'UGA': 'W' // overrides only
+  // ==========================================================
+  // 3. SECIENTIFIC UPGRADE: Molecular Weight & Extinction
+  // ==========================================================
+
+  /**
+   * Scientific-Grade RNA Molecular Mass Engine
+   * Uses monoresidue weights: AMP(329.21), UMP(306.17), CMP(305.18), GMP(345.21)
+   */
+  BioMath.calculateScientificRNA_MW = function(seq, options = {}) {
+    if (!seq) return { avg: 0, min: 0, max: 0 };
+    const s = seq.toUpperCase().replace(/T/g, 'U');
+    const table = window.BioKit.data.RNA_MONORESIDUE_MASS;
+    const termTable = window.BioKit.data.RNA_TERMINAL_GROUPS;
+    
+    let avg = 0, min = 0, max = 0;
+    let validLen = 0;
+
+    for (let i = 0; i < s.length; i++) {
+        const char = s[i];
+        if (table[char]) {
+            if (typeof table[char] === 'object') {
+                avg += table[char].avg;
+                min += table[char].min;
+                max += table[char].max;
+            } else {
+                avg += table[char];
+                min += table[char];
+                max += table[char];
+            }
+            validLen++;
+        }
     }
+
+    if (validLen === 0) return { avg: 0, min: 0, max: 0 };
+
+    // Apply Topology & Terminal Groups
+    const topology = options.topology || 'linear'; // 'linear' or 'circular'
+    const terminal = options.terminal || 'OH';     // 'OH', 'MONO', 'TRI'
+    const termWeight = termTable[terminal] || 18.015;
+
+    avg += termWeight;
+    min += termWeight;
+    max += termWeight;
+
+    if (topology === 'circular') {
+        avg -= 18.015;
+        min -= 18.015;
+        max -= 18.015;
+    }
+
+    return {
+        avg: parseFloat(avg.toFixed(2)),
+        min: parseFloat(min.toFixed(2)),
+        max: parseFloat(max.toFixed(2)),
+        unit: 'Da'
+    };
   };
 
-  BioMath.translateDNA = function (seq, options = {}) {
+  /**
+   * Advanced Thermodynamic Stability (Nearest-Neighbor)
+   * Turner 2004 for RNA-RNA, Sugimoto 1995 for RNA-DNA hybrids.
+   */
+  BioMath.calculateScientificTm = function(seq, options = {}) {
+    if (!seq || seq.length < 2) return null;
+    const s = seq.toUpperCase().replace(/T/g, 'U');
     const { 
-        tableId = 1, 
-        stopAtFirst = false, 
-        requireStart = false 
+        type = 'rna-rna', // 'rna-rna' or 'rna-dna'
+        Ct = 0.5e-6,      // Molar concentration (default 0.5 uM)
+        Na = 0.05,       // Molar salt (default 50 mM)
     } = options;
-    
-    const table = Object.assign({}, GENETIC_CODES[1], GENETIC_CODES[tableId] || {});
-    const s = seq.toUpperCase().replace(/U/g, 'T').replace(/[^ATCG]/g, 'N');
-    
-    let protein = '';
-    let started = !requireStart;
 
-    for (let i = 0; i < s.length - 2; i += 3) {
-      const codon = s.substring(i, i + 3);
-      if (!started) {
-        if (codon === 'ATG') started = true;
-        else continue;
-      }
+    const data = window.BioKit.data;
+    const params = (type === 'rna-dna') ? data.SUGIMOTO_1995 : data.TURNER_2004;
+    const R = 1.987; // Gas constant in cal/mol·K
 
-      const aa = table[codon] || 'X';
-      if (aa === '*') {
-        protein += '*';
-        if (stopAtFirst) break;
-      } else {
-        protein += aa;
-      }
+    let sumH = params.init.dH * 1000; // Convert kcal to cal
+    let sumS = params.init.dS;
+
+    for (let i = 0; i < s.length - 1; i++) {
+        const pair = s.substring(i, i + 2);
+        if (params[pair]) {
+            sumH += params[pair].dH * 1000;
+            sumS += params[pair].dS;
+        } else {
+            // Approximation for ambiguity codes in thermodynamics
+            sumH += -10.0 * 1000; // Median value
+            sumS += -25.0;
+        }
     }
 
-    // Mark trailing nucleotides
-    const trailing = s.length % 3;
-    if (trailing > 0) protein += ' (truncated)';
+    // Formula: Tm = dH / (dS + R * ln(Ct/4)) - 273.15
+    // Note: Ct/4 is for non-self-complementary duplexes. For self-complementary, use Ct.
+    const isSelfComp = (s === BioMath.reverseComplement(seq.replace(/T/g, 'U')));
+    const ctAdjustment = isSelfComp ? Ct : (Ct / 4);
+    
+    let tm = (sumH / (sumS + R * Math.log(ctAdjustment))) - 273.15;
 
-    return protein || (requireStart ? 'No ATG start found' : '');
+    // Salt Correction: Tm(corrected) = Tm(1M) + 16.6 * log10[Na+]
+    // For standard NN, we adjust the Tm based on deviation from 1M Na+
+    const saltAdj = 16.6 * Math.log10(Na);
+    tm += saltAdj;
+
+    return {
+      tm: tm.toFixed(2),
+      dH: (sumH / 1000).toFixed(2),
+      dS: sumS.toFixed(2),
+      formula: `T_m = \\frac{\\Delta H}{\\Delta S + R \\ln(\\frac{C_t}{4})} - 273.15`,
+      latex: `T_m = ${tm.toFixed(2)} ^\\circ\\text{C}`
+    };
   };
 
   /**
-   * Aggregates all QC metrics into a final laboratory verdict.
-   * @param {Object} results - [{seq, tm, gc}, {seq, tm, gc}]
-   * @param {Object} metrics - { tmDiff, maxHetero }
-   * @param {Object} constraints - The active assay thresholds.
-   * @param {string} template - The template DNA sequence.
-   * @param {Array} features - Feature list from template.
-   * @param {Object} bioOptions - { intronSpanning, avoidExonJunction }
-   * @returns {Object} { status, class, failures, warnings, checklist, actionItems }
+   * Industrial Metrics & Molar Calculations
    */
-  BioMath.generatePrimerPairVerdict = function(results, metrics, constraints, template, features, bioOptions) {
-    const verdict = { 
-      status: "PASS", class: "status-pass", failures: [], warnings: [], 
-      checklist: [], actionItems: [] 
-    };
-
-    const fwd = results[0], rev = results[1];
-    const diff = metrics.tmDiff;
-    const heteroDg = parseFloat(metrics.heteroDg);
-
-    const fwdStats = {
-      len: BioMath.validateLength(fwd.seq, constraints),
-      tm: BioMath.validateTm(fwd.tm, constraints),
-      homo: BioMath.validateHomopolymer(fwd.seq, constraints),
-      dg: parseFloat(fwd.selfDg),
-      terminal: BioMath.assess3PrimeStability(fwd.seq)
-    };
-    const revStats = {
-      len: BioMath.validateLength(rev.seq, constraints),
-      tm: BioMath.validateTm(rev.tm, constraints),
-      homo: BioMath.validateHomopolymer(rev.seq, constraints),
-      dg: parseFloat(rev.selfDg),
-      terminal: BioMath.assess3PrimeStability(rev.seq)
-    };
-
-    const tmDiffOk = BioMath.validateTmDifference(fwd.tm, rev.tm, constraints);
-    if (!tmDiffOk) {
-      verdict.warnings.push(`Tm difference (${diff}°C) exceeds tolerance (max ${constraints.tmDifference}°C)`);
-      verdict.actionItems.push("Adjust sequences to equalize melting temperatures.");
-    }
-
-    // Dimerization Thresholds from constraints
-    const dLimit = constraints.dimerDeltaGLimit || -9.0;
-    if (heteroDg <= dLimit) {
-      verdict.failures.push(`Critical heterodimer stability (ΔG: ${heteroDg} kcal/mol)`);
-      verdict.actionItems.push("Redesign primers to eliminate extensive complementarity.");
-    } else if (heteroDg <= (dLimit + 3.0)) {
-      verdict.warnings.push(`Significant heterodimer risk (ΔG: ${heteroDg} kcal/mol)`);
-    }
-
-    // 3' Terminal Integrity
-    if (fwdStats.terminal.verdict === 'CRITICAL' || revStats.terminal.verdict === 'CRITICAL') {
-      verdict.failures.push("Excessive 3' GC clamping: High mispriming risk.");
-      verdict.actionItems.push("Reduce terminal G/C bases at the 3' end.");
-    }
-
-    let ampVerdict = 'PASS';
-    if (template) {
-      const amp = BioMath.calculateAmpliconInfo(template, fwd.seq, rev.seq, constraints);
-      if (amp.amplicon.size > 0) {
-        const sizeWarn = amp.warnings.find(w => w.includes('size'));
-        if (sizeWarn) { ampVerdict = 'CAUTION'; verdict.warnings.push(sizeWarn); }
-        
-        if (features && features.length > 0 && (bioOptions.intronSpanning || bioOptions.avoidExonJunction)) {
-          const exonRes = BioMath.checkExonSpanning(amp.amplicon.start, amp.amplicon.start + fwd.seq.length - 1, amp.amplicon.end - rev.seq.length + 1, amp.amplicon.end, features, { intronSpanningRequired: bioOptions.intronSpanning, avoidExonJunction: bioOptions.avoidExonJunction });
-          if (exonRes.verdict === 'FAIL') verdict.failures.push(exonRes.reason);
-        }
-
-        const fwdSpec = BioMath.checkTemplateSpecificity(fwd.seq, template, false);
-        const revSpec = BioMath.checkTemplateSpecificity(rev.seq, template, true);
-        if (fwdSpec.specificity === 'MULTIPLE' || revSpec.specificity === 'MULTIPLE') {
-          verdict.failures.push("Non-specific binding detected (Multiple sites)");
-          verdict.actionItems.push("Relocate primers to more specific genomic regions.");
-        }
-      } else {
-        verdict.failures.push("Amplicon mapping failed (Orientation mismatch)");
-      }
-    }
-
-    const dLimitSelf = constraints.dimerDeltaGLimit || -6.0;
-    verdict.checklist = [
-      { label: 'Length/Tm Specifications', pass: fwdStats.len && fwdStats.tm && revStats.len && revStats.tm },
-      { label: 'Thermodynamic Symmetry', pass: tmDiffOk },
-      { label: 'Biological & Target Specificity', pass: ampVerdict === 'PASS' && !verdict.failures.some(f => f.includes('mapping') || f.includes('specific')) },
-      { label: 'Secondary Structures (ΔG)', pass: fwdStats.homo && revStats.homo && fwdStats.dg > dLimitSelf && revStats.dg > dLimitSelf && heteroDg > dLimitSelf },
-      { label: '3\' Terminal Integrity', pass: fwdStats.terminal.verdict !== 'CRITICAL' && revStats.terminal.verdict !== 'CRITICAL' }
-    ];
-
-    if (verdict.failures.length > 0) { verdict.status = "🔴 FAIL"; verdict.class = "status-fail"; }
-    else if (verdict.warnings.length > 0) { verdict.status = "🟡 PASS WITH CAUTION"; verdict.class = "status-caution"; }
-    else { verdict.status = "🟢 PASS"; verdict.class = "status-pass"; }
-
-    return verdict;
-  };
-
-  /**
-   * Internal helper: Detects hairpin secondary structures.
-   * Scans every possible starting position within the primer for an inverted
-   * repeat separated by a loop of at least 3 nt. The original implementation
-   * only checked stems anchored at index 0; this version scans all positions.
-   * To stay fast on typical primer lengths (18–30 nt) the search is bounded
-   * by maxStem=8 and maxLoop=8 which covers all biologically relevant
-   * hairpins without O(n^4) blowup.
-   */
-  BioMath.detectHairpin = function(seq) {
-    if (!seq || seq.length < 10) return { found: false };
-    const comp = { A:'T', T:'A', G:'C', C:'G' };
+  BioMath.calculateIndustrialMetrics = function(seq, options = {}) {
+    if (!seq) return null;
     const s = seq.toUpperCase();
-    const minStem = 4, maxStem = 8;
-    const minLoop = 3, maxLoop = 8;
-    const len = s.length;
-
-    // Iterate over every possible stem start position
-    for (let start = 0; start <= len - (2 * minStem + minLoop); start++) {
-      const stemLimit = Math.min(maxStem, Math.floor((len - start - minLoop) / 2));
-      for (let stemLen = minStem; stemLen <= stemLimit; stemLen++) {
-        const stem5 = s.substring(start, start + stemLen);
-        const loopLimit = Math.min(maxLoop, len - start - 2 * stemLen);
-        for (let loop = minLoop; loop <= loopLimit; loop++) {
-          const stem3Start = start + stemLen + loop;
-          const stem3 = s.substring(stem3Start, stem3Start + stemLen);
-          // Build reverse complement of the 3' stem
-          let match = true;
-          for (let k = 0; k < stemLen; k++) {
-            if (stem5[k] !== (comp[stem3[stemLen - 1 - k]] || 'N')) {
-              match = false;
-              break;
-            }
-          }
-          if (match) return { found: true, stemLen, loop, position: start };
+    const mw = parseFloat(BioMath.calculateScientificRNA_MW(s, options).avg);
+    
+    // Molar Extinction Coefficient (e260) NN model
+    const e260 = BioMath.calculateExtinctionCoefficient(s, 'rna');
+    
+    // Mass Conc: 1 A260 = 40 ug/ml for RNA
+    const massConcPerA260 = 40; // ug/ml
+    
+    // Molar Conc at 1 A260: (MassConc / MW)
+    // 40 ug/ml = 0.04 g/L. Molar = (0.04 / MW) mol/L
+    const molarConcPerA260 = (0.04 / mw); 
+    
+    // Copy Numbers (Avogadro's Number: 6.022e23)
+    const Na = 6.02214076e23;
+    const copiesPerUg = (1e-6 / mw) * Na;
+    
+    return {
+        mw: mw,
+        e260: e260,
+        molarConc: molarConcPerA260.toExponential(3),
+        copies: copiesPerUg.toExponential(3),
+        latex: {
+            e260: `\\epsilon_{260} = ${e260.toLocaleString()} \\text{ L mol}^{-1} \\text{ cm}^{-1}`,
+            copies: `N = ${copiesPerUg.toExponential(2)} \\text{ copies/\\mu g}`
         }
-      }
-    }
-    return { found: false };
+    };
   };
 
   /**
-   * Automatically suggests optimal primer pairs from a template sequence.
-   * Uses a research-grade scoring system (Integrity + Performance).
-   * ASYNC: Yields to the event loop during heavy scanning to keep UI responsive.
+   * Enhanced 6-Frame Translation & ORF Detection
+   * Supports all 33 NCBI genetic codes, alternative starts, and Kozak flagging.
    */
-  BioMath.suggestPrimerPairs = async function(template, constraints, options = {}) {
-    if (!template || template.length < 50) return [];
-    const t = template.toUpperCase();
-    const scanLimit = 15000;
-    const scanArea = t.substring(0, Math.min(t.length, scanLimit));
+  BioMath.analyzeORFs = function(dnaSeq, options = {}) {
+    const { 
+        codeId = 1, 
+        minLen = 30, // nt
+        findAltStarts = true 
+    } = options;
+
+    const data = window.BioKit.data;
+    const config = data.GENETIC_CODES[codeId] || data.GENETIC_CODES[1];
+    const sequence = dnaSeq.toUpperCase();
+    const strands = [sequence, BioMath.reverseComplement(sequence)];
     
-    // Internal helper to score a single candidate
-    const evaluatePrimer = (seq, currentConstraints) => {
-      const tm = parseFloat(BioMath.calculateTmNN(seq, options).tm);
-      const gc = parseFloat(BioMath.calculateGC(seq));
-      
-      // HARD FILTERS (Researcher Must-Haves)
-      if (tm < currentConstraints.tm.min - 2 || tm > currentConstraints.tm.max + 2) return null;
-      if (gc < currentConstraints.gc.min - 5 || gc > currentConstraints.gc.max + 5) return null;
-
-      let score = 100;
-      let warnings = [];
-
-      // Tm/GC Penalties (if outside narrow preferred range)
-      if (tm < currentConstraints.tm.min || tm > currentConstraints.tm.max) {
-        score -= 10; warnings.push("Tm slightly outside preferred range");
-      }
-      if (gc < currentConstraints.gc.min || gc > currentConstraints.gc.max) {
-        score -= 10; warnings.push("GC slightly outside preferred range");
-      }
-
-      // INTEGRITY PENALTIES (Research-Grade)
-      if (BioMath.validateGCClamp && !BioMath.validateGCClamp(seq, currentConstraints)) {
-        score -= 15; warnings.push("No 3' GC Clamp");
-      }
-      
-      const homoRes = BioMath.detectHomopolymerRuns(seq, currentConstraints.homopolymerLimit || 5);
-      if (homoRes.hasViolation) {
-        score -= 25; warnings.push("Homopolymer run detected");
-      }
-
-      if (BioMath.detectHairpin(seq).found) {
-        score -= 30; warnings.push("Hairpin secondary structure");
-      }
-
-      const stability = BioMath.assess3PrimeStability(seq);
-      if (stability.verdict === 'CRITICAL') {
-        score -= 20; warnings.push("Poor 3' terminal stability");
-      }
-
-      const dimer = BioMath.calculateDimerThermodynamics(seq, seq);
-      const dg = parseFloat(dimer.deltaG);
-      if (dg <= -9.0) { score -= 30; warnings.push("Critical self-dimer risk"); }
-      else if (dg <= -6.0) { score -= 15; warnings.push("Self-dimer risk"); }
-
-      return { seq, tm, gc, score, warnings, selfDg: dg };
-    };
-
-    const doScan = async (activeConstraints) => {
-      const fCands = [];
-      const rCands = [];
-      const minL = activeConstraints.length.min || 18;
-      const maxL = activeConstraints.length.max || 25;
-
-      // Scan Fwd (Start)
-      const fLimit = Math.min(scanArea.length * 0.4, 3000);
-      const fStep = fLimit > 1500 ? 3 : 1;
-      for (let i = 0; i < fLimit; i += fStep) {
-        // Yield every 500 iterations to keep UI alive
-        if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
-
-        for (let l = minL; l <= maxL; l++) {
-          const s = scanArea.substring(i, i + l);
-          if (s.length < l) break;
-          const res = evaluatePrimer(s, activeConstraints);
-          if (res && res.score >= 40) fCands.push({ ...res, pos: i + 1 });
-        }
-        if (fCands.length > 60) break;
-      }
-
-      // Scan Rev (End)
-      const rStart = Math.max(0, scanArea.length - Math.min(scanArea.length * 0.4, 3000));
-      const rStep = (scanArea.length - rStart) > 1500 ? 3 : 1;
-      for (let i = scanArea.length; i >= rStart; i -= rStep) {
-        if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
-
-        for (let l = minL; l <= maxL; l++) {
-          const sr = scanArea.substring(i - l, i);
-          if (sr.length < l) continue;
-          const s = BioMath.reverseComplement(sr);
-          const res = evaluatePrimer(s, activeConstraints);
-          if (res && res.score >= 40) rCands.push({ ...res, pos: i });
-        }
-        if (rCands.length > 60) break;
-      }
-      return { fCands, rCands };
-    };
-
-    // ── Primary Scan ───────────────
-    let { fCands, rCands } = await doScan(constraints);
-
-    // ── Fallback: Relaxed Scan ───────
-    if (fCands.length === 0 || rCands.length === 0) {
-      const relaxed = JSON.parse(JSON.stringify(constraints));
-      relaxed.tm.min -= 2; relaxed.tm.max += 2;
-      relaxed.gc.min -= 5; relaxed.gc.max += 5;
-      const secondTry = await doScan(relaxed);
-      fCands = secondTry.fCands;
-      rCands = secondTry.rCands;
-    }
-
-    const pairs = [];
-    let pairCount = 0;
-    for (const f of fCands) {
-      for (const r of rCands) {
-        pairCount++;
-        if (pairCount % 1000 === 0) await new Promise(r => setTimeout(r, 0));
-
-        const size = r.pos - f.pos + 1;
-        if (size >= constraints.productSize.min && size <= constraints.productSize.max) {
-          const tmDiff = Math.abs(f.tm - r.tm);
-          if (tmDiff <= constraints.tmDifference + 1) {
-            const hetero = BioMath.calculateDimerThermodynamics(f.seq, r.seq);
-            const hdg = parseFloat(hetero.deltaG);
-            
-            if (hdg > -8.0) {
-              let pairScore = (f.score + r.score) / 2;
-              pairScore -= tmDiff * 4;
-              if (hdg <= -6.0) pairScore -= 10; 
-              
-              pairs.push({ fwd: f, rev: r, size, tmDiff, heteroDg: hdg, score: pairScore });
+    const codonMap = {};
+    const baseOrder = "TCAG";
+    let idx = 0;
+    for (const b1 of baseOrder) {
+        for (const b2 of baseOrder) {
+            for (const b3 of baseOrder) {
+                const codon = b1 + b2 + b3;
+                codonMap[codon] = { aa: config.table[idx], isStart: config.starts[idx] === 'M' };
+                idx++;
             }
-          }
         }
-      }
-      if (pairs.length > 150) break;
     }
 
-    return pairs.sort((a, b) => b.score - a.score).slice(0, 5);
+    const orfs = [];
+    strands.forEach((s, strandIdx) => {
+        const strandSign = strandIdx === 0 ? '+' : '-';
+        for (let frame = 0; frame < 3; frame++) {
+            let currentORF = null;
+            for (let i = frame; i <= s.length - 3; i += 3) {
+                const codon = s.substring(i, i + 3);
+                const info = codonMap[codon] || { aa: 'X', isStart: false };
+
+                if (info.isStart && !currentORF) {
+                    currentORF = { start: i, seq: '', frame: frame + 1, strand: strandSign };
+                }
+
+                if (currentORF) {
+                    currentORF.seq += codon;
+                    if (info.aa === '*') {
+                        if (currentORF.seq.length >= minLen) {
+                            // Kozak consensus check (GCC)RCCAUGG
+                            // Pos -3 (index i_start - 3) and +4 (index i_start + 3)
+                            const context = s.substring(currentORF.start - 6, currentORF.start + 4);
+                            const kozakScore = BioMath.scoreKozak(context);
+                            
+                            orfs.push({
+                                ...currentORF,
+                                end: i + 3,
+                                length: currentORF.seq.length,
+                                translation: BioMath.translateDNA(currentORF.seq, { tableId: codeId }),
+                                kozak: kozakScore
+                            });
+                        }
+                        currentORF = null;
+                    }
+                }
+            }
+        }
+    });
+
+    return orfs.sort((a,b) => b.length - a.length);
+  };
+
+  BioMath.scoreKozak = function(context) {
+    if (context.length < 10) return 'Weak';
+    // Simplified Kozak: R at -3 (index 3) and G at +4 (index 9)
+    const rAtMinus3 = context[3] === 'A' || context[3] === 'G';
+    const gAtPlus4 = context[9] === 'G';
+    if (rAtMinus3 && gAtPlus4) return 'Strong';
+    if (rAtMinus3 || gAtPlus4) return 'Moderate';
+    return 'Weak';
+  };
+
+  /**
+   * Full IUPAC Compliance for Reverse Complement
+   */
+  BioMath.reverseComplement = function(seq) {
+    if (!seq) return '';
+    const map = {
+      'A':'T', 'T':'A', 'G':'C', 'C':'G', 'U':'A',
+      'R':'Y', 'Y':'R', 'S':'S', 'W':'W', 'K':'M', 'M':'K',
+      'B':'V', 'V':'B', 'D':'H', 'H':'D', 'N':'N'
+    };
+    return seq.toUpperCase().split('').reverse().map(b => map[b] || 'N').join('');
+  };
+
+  // Helper for LaTeX formatting
+  BioMath.formatLaTeX = function(element) {
+    if (window.renderMathInElement) {
+        window.renderMathInElement(element, {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '\\[', right: '\\]', display: true}
+            ],
+            throwOnError : false
+        });
+    }
   };
 
 })();
