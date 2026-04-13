@@ -583,15 +583,56 @@
     'N': ['A', 'C', 'G', 'T']
   };
 
+  // RNA-specific IUPAC ambiguity map — uses U, never T (Fix 3B)
+  const IUPAC_RNA = {
+    'R': ['A', 'G'],
+    'Y': ['C', 'U'],   // U not T
+    'S': ['G', 'C'],
+    'W': ['A', 'U'],   // U not T
+    'K': ['G', 'U'],   // U not T
+    'M': ['A', 'C'],
+    'B': ['C', 'G', 'U'],  // U not T
+    'D': ['A', 'G', 'U'],  // U not T
+    'H': ['A', 'C', 'U'],  // U not T
+    'V': ['A', 'C', 'G'],
+    'N': ['A', 'U', 'G', 'C'],  // U not T
+  };
+
   const NN_INIT = {
     'G': { dH: 0.1, dS: -2.8 }, 'C': { dH: 0.1, dS: -2.8 },
     'A': { dH: 2.3, dS: 4.1 }, 'T': { dH: 2.3, dS: 4.1 }
   };
 
+  const RNA_NN_PARAMS = {
+    // Source: Freier et al. (1986) PNAS 83:9373-9377, Table 2
+    // Canonical Watson-Crick RNA nearest-neighbor parameters (1M NaCl)
+    // Format: { dH: kcal/mol, dS: cal/mol·K }
+    'AA': { dH: -6.6,  dS: -18.4 },
+    'UU': { dH: -6.6,  dS: -18.4 },
+    'AU': { dH: -5.7,  dS: -15.5 },
+    'UA': { dH: -8.1,  dS: -22.6 },
+    'CU': { dH: -8.6,  dS: -22.2 },
+    'AG': { dH: -8.6,  dS: -22.2 },
+    'CA': { dH: -10.5, dS: -27.8 },
+    'UG': { dH: -10.5, dS: -27.8 },
+    'CG': { dH: -8.0,  dS: -19.4 },
+    'GC': { dH: -14.2, dS: -34.9 },
+    'GG': { dH: -12.2, dS: -29.7 },
+    'CC': { dH: -12.2, dS: -29.7 },
+    'AC': { dH: -10.2, dS: -26.2 },
+    'GU': { dH: -10.2, dS: -26.2 }
+  };
+
+  const RNA_INIT_PARAMS = {
+    // Initiation parameters for RNA duplexes (Freier 1986)
+    GC: { dH: 0.0,  dS: -10.1 },
+    AU: { dH: 0.0,  dS: -10.1 } // In Freier 1986, initiation was a fixed -10.1 value
+  };
+
   // Helix penalty if self-complementary (approximated)
   const SYM_PENALTY = { dH: 0, dS: -1.4 }; 
 
-  BioMath.calculateTmNN = function (primerSeq, options = {}) {
+  BioMath.calculateTmNN = function (primerSeq, options = {}, sequenceType = 'DNA') {
     const {
       oligoConc_nM = 250,
       naConc_mM = 50,
@@ -601,26 +642,52 @@
       formamide_m = 0
     } = options;
 
-    const seq = primerSeq.toUpperCase().replace(/U/g, 'T').replace(/[^ATGCRYWSKMBDHVN]/g, '');
-    if (seq.length < 2) return { tm: 0, warning: 'Sequence too short' };
+    // Normalize sequence correctly based on strand type
+    const seq = (sequenceType === 'RNA')
+      ? primerSeq.toUpperCase().replace(/T/g, 'U').replace(/[^AUGCYRSWKMBVHDN]/g, '')
+      : primerSeq.toUpperCase().replace(/U/g, 'T').replace(/[^ATGCRYWSKMBDHVN]/g, '');
+
+    const nnParams = (sequenceType === 'RNA') ? RNA_NN_PARAMS : NN_PARAMS;
+    const initParams = (sequenceType === 'RNA') ? RNA_INIT_PARAMS : NN_INIT;
+    if (seq.length < 2) return { tm: 0, confidence: 'N/A', warning: 'Sequence too short', isValid: false };
 
     // Buffer validation and Equivalent Na+ calculation (von Ahsen 2001 / Owczarzy 2008)
-    const salt = Math.min(1000, Math.max(10, naConc_mM));
-    let eqNa_mM = salt;
+    // The Owczarzy (2008) and SantaLucia (1998) salt correction models are empirically 
+    // validated for [Na+] between 50 mM and 1000 mM. Below this, phosphate-phosphate 
+    // electrostatic repulsion destabilizes the duplex in ways simplistic log equations cannot resolve.
+    const SALT_MODEL_MIN_MM = 50;
+    
+    // Prevent Math.log(0) crashes, but do not silently clamp the calculation bounds
+    const safeNa = Math.max(1e-5, naConc_mM);
+    let eqNa_mM = safeNa;
+    
+    // Apply Mg2+ equivalent Na+ calculation (von Ahsen 2001)
     if (mgConc_mM > dntpConc_mM) {
         eqNa_mM += 120 * Math.sqrt(mgConc_mM - dntpConc_mM);
     }
     const na_M = eqNa_mM / 1000;
+    
+    let modelWarning = null;
+    if (eqNa_mM < SALT_MODEL_MIN_MM) {
+        modelWarning = `Salt concentration (${eqNa_mM.toFixed(1)} mM eq. Na⁺) is below the validated range of the Owczarzy 2008 model (≥ ${SALT_MODEL_MIN_MM} mM). Result is an extrapolation — interpret with caution.`;
+    }
 
     let dH = 0, dS = 0;
 
-    // Resolve IUPAC for initiation
-    const resolveBase = (b) => IUPAC_DNA[b] || [b];
+    // Resolve IUPAC ambiguity codes — selects the correct alphabet by strand type
+    const ambiguityMap = (sequenceType === 'RNA') ? IUPAC_RNA : IUPAC_DNA;
+    const resolveBase = (b) => ambiguityMap[b] || [b];
     const avgInit = (base) => {
       const variants = resolveBase(base);
       let th = 0, ts = 0;
       variants.forEach(v => {
-        const p = NN_INIT[v] || NN_INIT['G']; // Fallback to G if base not in NN_INIT (e.g., N)
+        let p;
+        if (sequenceType === 'RNA') {
+            const rnaKey = (v === 'G' || v === 'C') ? 'GC' : 'AU';
+            p = initParams[rnaKey] || initParams['GC'];
+        } else {
+            p = initParams[v] || initParams['G'];
+        }
         th += p.dH; ts += p.dS;
       });
       return { dH: th / variants.length, dS: ts / variants.length };
@@ -640,9 +707,9 @@
       b1s.forEach(v1 => {
         b2s.forEach(v2 => {
           const pair = v1 + v2;
-          if (NN_PARAMS[pair]) {
-            pairH += NN_PARAMS[pair][0];
-            pairS += NN_PARAMS[pair][1];
+          if (nnParams[pair]) {
+            pairH += nnParams[pair].dH !== undefined ? nnParams[pair].dH : nnParams[pair][0];
+            pairS += nnParams[pair].dS !== undefined ? nnParams[pair].dS : nnParams[pair][1];
             count++;
           }
         });
@@ -658,19 +725,86 @@
     
     // Physical Corrections
     Tm += (16.6 * Math.log10(na_M)); // Salt
-    Tm -= (0.6 * dmso_pct);          // DMSO (approx)
-    Tm -= (0.65 * formamide_m);     // Formamide (approx)
+    Tm -= (0.6 * dmso_pct);          // DMSO
+    Tm -= (0.65 * formamide_m);     // Formamide
 
-    // Range warning
-    let warning = '';
-    if (seq.length < 14 || seq.length > 50) warning = 'Sequence length outside validated NN model range (14-50bp).';
-    if (salt < 10 || salt > 1000) warning += ' Salt concentration outside validated range (10-1000mM).';
+    // Range validity check (SantaLucia 1998)
+    let warnings = [];
+    let isValid = true;
+    if (seq.length < 14 || seq.length > 50) {
+      warnings.push(`CRITICAL: Sequence length (${seq.length} bp) outside validated NN model range (14-50 bp).`);
+      isValid = false;
+    }
+    if (modelWarning) {
+      warnings.push(modelWarning);
+    } // High salt warning
+    else if (eqNa_mM > 1000) {
+      warnings.push('Salt concentration > 1000mM is outside validated range.');
+    }
 
     return {
       tm: Math.max(0, Tm).toFixed(1),
-      confidence: '±1.5°C',
-      warning: warning || null
+      confidence: isValid && !modelWarning ? '±1.5°C' : 'UNCERTAIN',
+      method: 'SantaLucia (1998) NN',
+      warning: warnings.length > 0 ? warnings.join(' ') : null,
+      isValid: isValid
     };
+  };
+
+  /**
+   * Calculates Tm using the GC% formula (Schildkraut & Lifson, 1965).
+   * Valid for long DNA sequences (>50 bp).
+   * Includes salt corrections (von Ahsen, 2001).
+   */
+  BioMath.calculateTmGC = function (seq, options = {}) {
+    const { naConc_mM = 50, mgConc_mM = 1.5, dntpConc_mM = 0.8 } = options;
+    const cleanSeq = seq.toUpperCase().replace(/[^ATGC]/g, '');
+    const len = cleanSeq.length;
+    if (len === 0) return { tm: 0, confidence: 'N/A', isValid: false };
+
+    const gc = parseFloat(BioMath.calculateGC(cleanSeq));
+    
+    // Equivalent Sodium calculation for laboratory-grade accuracy
+    let eqNa_mM = naConc_mM;
+    if (mgConc_mM > dntpConc_mM) {
+      eqNa_mM += 120 * Math.sqrt(mgConc_mM - dntpConc_mM);
+    }
+    const na_M = Math.max(1e-5, eqNa_mM / 1000);
+
+    // Schildkraut & Lifson (1965) formula
+    // Tm = 81.5 + 16.6 * log10[Na+] + 0.41 * %GC - 675/length
+    const tm = 81.5 + 16.6 * Math.log10(na_M) + 0.41 * gc - (675 / len);
+
+    return {
+      tm: Math.max(0, tm).toFixed(1),
+      confidence: '±2.0°C',
+      method: 'Schildkraut & Lifson (1965) GC%',
+      warning: len < 50 ? 'GC% formula is less accurate for short sequences (<50bp).' : null,
+      isValid: true
+    };
+  };
+
+  /**
+   * High-level Tm routing engine.
+   * Automatically selects the most scientifically accurate model based on sequence length.
+   */
+  BioMath.calculateTm = function (seq, options = {}, sequenceType = 'DNA') {
+    const s = seq.toUpperCase().replace(/[^ATGCNU]/g, '');
+    if (s.length < 8) {
+      return {
+        tm: 'N/A',
+        confidence: 'N/A',
+        method: 'None',
+        warning: 'Sequence too short for reliable Tm calculation.',
+        isValid: false
+      };
+    }
+
+    if (s.length <= 50) {
+      return BioMath.calculateTmNN(s, options, sequenceType);
+    } else {
+      return BioMath.calculateTmGC(s, options); // We will assume calculateTmGC does not need RNA specifics for now, per prompt instructions.
+    }
   };
 
   // ==========================================================
@@ -688,6 +822,15 @@
           'H': 302.20, 'V': 310.53, 'N': 308.95
       };
 
+      // Named constants — do not inline these
+      const WATER_MW = 18.0153; // g/mol — H₂O molecular weight
+
+      // Complement base map for dsDNA strand 2
+      const COMPLEMENT = { 'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'U': 'A',
+                           'R': 'Y', 'Y': 'R', 'S': 'S', 'W': 'W', 'K': 'M',
+                           'M': 'K', 'B': 'V', 'V': 'B', 'D': 'H', 'H': 'D', 'N': 'N' };
+
+      // ── Strand 1 (input sequence) ─────────────────────────────
       let ss_mw = 0;
       let validLen = 0;
       for (let i = 0; i < s.length; i++) {
@@ -696,16 +839,47 @@
               validLen++;
           }
       }
-      
+
       if (validLen === 0) return 0;
-      
+
+      const PHOSPHATE_OFFSET = 61.965; // PO3- minus H (offset from OH to phosphate)
+      const TERMINAL_WATER = 18.0153; // H on 5', OH on 3'
+
+      ss_mw += TERMINAL_WATER;
+
+      if (options.fivePrimePhosphate) {
+          ss_mw += PHOSPHATE_OFFSET;
+      }
+
       let saltAdj = 0;
       if (saltForm === 'Free') saltAdj = -21.99; // Remove Na, add H
       else if (saltForm === 'K') saltAdj = 17.10; // Swap Na (22.99) for K (39.1)
-      
-      ss_mw += (validLen * saltAdj) - 61.96; // Adjust salt and terminal water
-      
-      return (isDoubleStranded ? (ss_mw * 2) / 1000 : ss_mw / 1000).toFixed(2);
+
+      ss_mw += (validLen * saltAdj); // Adjust for salt form counter-ions
+
+      if (isDoubleStranded) {
+          // ── Strand 2 (reverse complement) ───────────────────────
+          // MW_dsDNA = MW_strand1 + MW_strand2. No water term at duplex level.
+          let comp_mw = 0;
+          let compLen = 0;
+          for (let i = 0; i < s.length; i++) {
+              const cb = COMPLEMENT[s[i]] || 'N';
+              if (monoisotopic[cb]) {
+                  comp_mw += monoisotopic[cb];
+                  compLen++;
+              }
+          }
+          comp_mw += TERMINAL_WATER;
+          if (options.fivePrimePhosphate) {
+              comp_mw += PHOSPHATE_OFFSET;
+          }
+          comp_mw += (compLen * saltAdj);
+
+          const ds_mw = ss_mw + comp_mw;
+          return (ds_mw / 1000).toFixed(2);
+      } else {
+          return (ss_mw / 1000).toFixed(2);
+      }
   };
 
   BioMath.calculateExtinctionCoefficient = function(seq, type='dna') {
@@ -762,19 +936,59 @@
       return false;
   };
 
-  BioMath.calculateA260_A280 = function(seq) {
-      if (!seq || seq.length === 0) return 1.8;
+  /**
+   * Calculate theoretical A260/A280 ratio based on extinction coefficients.
+   * NOTE: This is a THEORETICAL prediction, not a measured value.
+   * Actual A260/A280 ratios are measured via UV spectrophotometry (Nanodrop, etc.)
+   */
+  BioMath.calculateA260_A280_Theoretical = function(seq) {
+      if (!seq || seq.length === 0) return { ratio: '1.80', note: '', expectedRange: {} };
+      
+      // Method: Use Nearest-Neighbor extinction coefficients
+      // This gives ε260 and ε280 for the duplex
       const s = seq.toUpperCase();
-      // Bases extinction at 260 and 280 (L/(mol·cm))
-      const e260 = { 'A': 15300, 'C': 7400, 'G': 11800, 'T': 9300, 'U': 10200 };
-      const e280 = { 'A': 2500,  'C': 1500, 'G': 5800,  'T': 1500, 'U': 2800  };
+      
+      // NN extinction coefficients (per base pair) at 260 and 280 nm
+      const NN_EC_260 = {
+          'AA': 27400, 'AC': 21200, 'AG': 25000, 'AT': 22800,
+          'CA': 21200, 'CC': 14600, 'CG': 18000, 'CT': 15200,
+          'GA': 25200, 'GC': 17600, 'GG': 21600, 'GT': 20000,
+          'TA': 23400, 'TC': 16200, 'TG': 19000, 'TT': 16800
+      };
+      
+      const NN_EC_280 = {
+          'AA': 3900,  'AC': 2900,  'AG': 3600,  'AT': 2900,
+          'CA': 2900,  'CC': 2100,  'CG': 2500,  'CT': 2000,
+          'GA': 3600,  'GC': 2500,  'GG': 2900,  'GT': 2500,
+          'TA': 2900,  'TC': 2000,  'TG': 2400,  'TT': 2100
+      };
       
       let sum260 = 0, sum280 = 0;
-      for (const char of s) {
-        sum260 += e260[char] || 0;
-        sum280 += e280[char] || 0;
+      
+      // Sum nearest-neighbor pairs
+      for (let i = 0; i < s.length - 1; i++) {
+          const pair = s.substring(i, i + 2);
+          if (NN_EC_260[pair]) {
+              sum260 += NN_EC_260[pair];
+              sum280 += NN_EC_280[pair];
+          }
       }
-      return (sum280 === 0) ? 1.8 : (sum260 / sum280).toFixed(2);
+      
+      // Fallback if no valid pairs (e.g., sequence too short)
+      if (sum280 === 0) return { ratio: '1.80', note: '', expectedRange: { pureDNA: '1.8–1.9', contaminated: '1.5–1.6' } };
+      
+      const ratio = (sum260 / sum280).toFixed(2);
+      
+      return {
+          ratio: ratio,
+          method: 'Theoretical (Nearest-Neighbor extinction coefficients)',
+          note: 'This is NOT a measured A260/A280. ' +
+                'For actual measurements, use Nanodrop or UV spectrophotometry.',
+          expectedRange: {
+              pureDNA: '1.8–1.9',
+              contaminated: '1.5–1.6'
+          }
+      };
   };
 
   BioMath.calculateProtein_MW = function(seq) {

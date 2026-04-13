@@ -9,9 +9,9 @@
   function calcTm(seq, options) {
     const BioMath = window.BioKit && window.BioKit.core && window.BioKit.core.BioMath;
     if (BioMath) {
-      return BioMath.calculateTmNN(seq, options);
+      return BioMath.calculateTm(seq, options);
     }
-    return { tm: "0.0", confidence: "", warning: null };
+    return { tm: "0.0", confidence: "N/A", method: "None", warning: null, isValid: false };
   }
 
   function tmDiff(tm1, tm2) {
@@ -456,8 +456,8 @@
               <div class="primer-stat-grid">
                 <div class="primer-stat-item"><span class="primer-stat-key">Length</span>
                   <span class="primer-stat-val ${lenOk?'pass':'warn'}">${len} nt</span></div>
-                <div class="primer-stat-item"><span class="primer-stat-key">Tm (SantaLucia NN)</span>
-                  <span class="primer-stat-val ${tmOk?'pass':'warn'}">${tm} °C</span></div>
+                <div class="primer-stat-item"><span class="primer-stat-key">Tm (${tmRes.method})</span>
+                  <span class="primer-stat-val ${tmOk?'pass':'warn'}">${tmRes.isValid ? '' : '⚠ '}${tm} °C</span></div>
                 <div class="primer-stat-item"><span class="primer-stat-key">GC Content</span>
                   <span class="primer-stat-val ${gcOk?'pass':'warn'}">${gc}%</span></div>
                 <div class="primer-stat-item"><span class="primer-stat-key">3′ Integrity</span>
@@ -479,7 +479,7 @@
               <div class="thermo-transparency-section">
                 <div class="thermo-header">Thermodynamic Transparency</div>
                 <div class="thermo-grid">
-                  <div class="thermo-item"><span>Model</span><span>SantaLucia 1998 NN</span></div>
+                  <div class="thermo-item"><span>Model</span><span>${tmRes.method}</span></div>
                   <div class="thermo-item"><span>Salt [Na⁺/K⁺]</span><span>${na + k} mM</span></div>
                   <div class="thermo-item"><span>Mg²⁺</span><span>${mg} mM</span></div>
                   <div class="thermo-item"><span>dNTPs</span><span>${dntp} mM</span></div>
@@ -682,7 +682,7 @@
       verdict: state.lastAnalysis.verdict,
       constraints: state.constraints,
       meta: {
-        model: "SantaLucia 1998 NN",
+        model: state.lastAnalysis.forward.tmRes?.method || "SantaLucia 1998 NN",
         buffer: {
           na: document.getElementById('saltConc').value,
           k: document.getElementById('kConc').value,

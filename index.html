@@ -275,12 +275,20 @@
           
           <div class="settings-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 16px;">
             <div class="input-block">
-              <label class="input-label">Salt Form For Analysis</label>
+              <label class="input-label">Salt Condition (affects Tm)</label>
               <select class="num-input" id="dnaSaltForm" style="width: 100%;">
-                <option value="Na">Sodium Salt (Na+)</option>
-                <option value="K">Potassium Salt (K+)</option>
-                <option value="Free">Free Acid (H+)</option>
+                <option value="Na_50">Na⁺ — 50 mM (Standard PCR)</option>
+                <option value="Na_100">Na⁺ — 100 mM</option>
+                <option value="Na_200">Na⁺ — 200 mM (High-salt)</option>
+                <option value="Na_1000">Na⁺ — 1000 mM (Saturated)</option>
+                <option value="K_50">K⁺ — 50 mM (Potassium Salt)</option>
+                <option value="Free">Free Acid — ~1 mM (Low salt)</option>
+                <option value="custom">Custom Na⁺ concentration…</option>
               </select>
+            </div>
+            <div class="input-block" id="dnaCustomSaltBlock" style="display:none;">
+              <label class="input-label">Custom Na⁺ (mM)</label>
+              <input type="number" class="num-input" id="dnaCustomSaltConc" value="50" min="1" max="1000" style="width:100%;" />
             </div>
           </div>
           
@@ -307,6 +315,7 @@
           <div class="results-content hidden">
             <div class="results-header">Reference Metrics</div>
             <div class="result-stat-row" id="dnaStatRow"></div>
+            <div id="dnaA260A280Display" style="margin-bottom: 20px;"></div>
             
             <div class="result-tabs">
               <button class="result-tab active" data-rtab="rc">RevComp</button>

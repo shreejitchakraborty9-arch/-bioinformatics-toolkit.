@@ -1443,6 +1443,15 @@ canvas {
 .validation-alert-msg   { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.5; }
 .validation-suggestion  { margin-top: 8px; font-size: 0.82rem; color: var(--teal); font-weight: 500; }
 
+/* Soft advisory variant — amber, non-blocking (seq length 2-9 bp) */
+.validation-advisory {
+  background: rgba(245, 158, 11, 0.05);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.validation-advisory .validation-alert-icon { color: #f59e0b; }
+.validation-advisory .validation-alert-title { color: #f59e0b; font-size: 0.82rem; letter-spacing: 0.02em; }
+
+
 /* ── Browser Warning Banner ────────────────────────────── */
 .browser-warning {
   position: sticky;

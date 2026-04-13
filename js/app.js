@@ -119,6 +119,10 @@
   window.BioKit.utils.detectFormat = detectFormat;
 
   // ── Sequence Validation ───────────────────────────────────
+  // Minimum length thresholds (DNA only)
+  const SEQ_MIN_HARD  = 2;   // absolute floor — reject outright
+  const SEQ_MIN_SOFT  = 10;  // soft floor — proceed with inline warning
+
   function validateSequence(seq, type) {
     const raw = seq || '';
     const clean = raw.toUpperCase().replace(/\s/g, '');
@@ -159,6 +163,25 @@
       };
     }
 
+    // ── Minimum length checks (DNA/RNA path only) ─────────────
+    if (type !== 'protein') {
+      if (clean.length < SEQ_MIN_HARD) {
+        return {
+          valid: false,
+          msg: `Sequence too short (${clean.length} bp). Minimum is ${SEQ_MIN_HARD} bp.`,
+          suggestion: 'At least 2 bases are required to perform any calculation.'
+        };
+      }
+      if (clean.length < SEQ_MIN_SOFT) {
+        // Allow, but tag result with a warning for the UI to display
+        return {
+          valid: true,
+          clean: clean.replace(/[^A-Z\*]/g, ''),
+          warning: `Short sequence (${clean.length} bp). Results — especially Tm — may be unreliable. Recommended minimum: ${SEQ_MIN_SOFT} bp.`
+        };
+      }
+    }
+
     return { valid: true, clean: clean.replace(/[^A-Z\*]/g, '') };
   }
   window.validateSequence = validateSequence;
@@ -168,12 +191,16 @@
     const panel = document.getElementById(panelId);
     if (!panel) return;
     clearValidationAlert(panelId);
+
+    const isSoft = validation.valid === true; // soft advisory vs hard error
     const alert = document.createElement('div');
-    alert.className = 'validation-alert';
+    alert.className = isSoft ? 'validation-alert validation-advisory' : 'validation-alert';
     alert.innerHTML = `
-      <div class="validation-alert-icon"><i data-lucide="alert-triangle"></i></div>
+      <div class="validation-alert-icon">
+        <i data-lucide="${isSoft ? 'alert-circle' : 'alert-triangle'}"></i>
+      </div>
       <div class="validation-alert-content">
-        <div class="validation-alert-title">Input Validation Error</div>
+        <div class="validation-alert-title">${isSoft ? '⚠ Advisory' : 'Input Validation Error'}</div>
         <div class="validation-alert-msg">${escapeHTML(validation.msg)}</div>
         ${validation.suggestion ? `<div class="validation-suggestion">${escapeHTML(validation.suggestion)}</div>` : ''}
       </div>
@@ -181,8 +208,12 @@
     const inputBlock = panel.querySelector('.input-block');
     if (inputBlock) inputBlock.parentNode.insertBefore(alert, inputBlock);
     if (window.lucide) window.lucide.createIcons();
-    const resultsArea = panel.querySelector('.results-area');
-    if (resultsArea) resultsArea.classList.add('hidden');
+
+    // Only hide results on a hard error — soft warnings let results remain visible
+    if (!isSoft) {
+      const resultsArea = panel.querySelector('.results-area');
+      if (resultsArea) resultsArea.classList.add('hidden');
+    }
   }
   window.showValidationWarning = showValidationWarning;
   window.BioKit.utils.showValidationWarning = showValidationWarning;
@@ -246,7 +277,7 @@
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('.result-tab');
     if (!tab) return;
-    const panel = e.target.closest('.results-area');
+    const panel = e.target.closest('.results-area, .workspace-results');
     if (!panel) return;
     panel.querySelectorAll('.result-tab').forEach(t => t.classList.remove('active'));
     panel.querySelectorAll('.result-tab-content').forEach(c => c.classList.add('hidden'));

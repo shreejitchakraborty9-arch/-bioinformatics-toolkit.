@@ -47,28 +47,93 @@
       return;
     }
 
+    // Non-blocking soft warning for short sequences (2–9 bp)
+    window.clearValidationAlert('panel-dna');
+    if (validation.warning) {
+      window.showValidationWarning('panel-dna', {
+        valid: true,
+        msg: validation.warning,
+        suggestion: 'Analysis will proceed, but treat Tm values with caution.'
+      });
+    }
+
+    // ── Surface any pending fetch warnings (e.g., ambiguous IUPAC bases) ──
+    if (window.BioKit.pendingWarnings?.length > 0) {
+      window.BioKit.pendingWarnings.forEach(w => {
+        if (w.type === 'AMBIGUOUS_BASES') {
+          window.showToast(
+            `⚠️ Ambiguous bases detected: ${w.ambiguousTypes.join(', ')} ` +
+            `(${w.ambiguousCount} total, ${w.canonicalPercent}% canonical). ` +
+            `Tm and MW calculations may be approximate.`,
+            5000
+          );
+        }
+      });
+      window.BioKit.pendingWarnings = []; // clear after display — do not repeat on next run
+    }
+
     const seq = validation.clean;
     const BioMath = window.BioKit.core.BioMath;
     const readThrough = document.getElementById('dnaReadThrough')?.checked !== false;
-    const saltForm = document.getElementById('dnaSaltForm')?.value || 'Na';
+    const saltFormVal = document.getElementById('dnaSaltForm')?.value || 'Na_50';
+
+    // ── Salt Condition Map (affects both Tm and MW) ───────
+    const SALT_MAP = {
+      'Na_50':   { naConc_mM: 50,   saltFormKey: 'Na', label: '50 mM Na⁺' },
+      'Na_100':  { naConc_mM: 100,  saltFormKey: 'Na', label: '100 mM Na⁺' },
+      'Na_200':  { naConc_mM: 200,  saltFormKey: 'Na', label: '200 mM Na⁺' },
+      'Na_1000': { naConc_mM: 1000, saltFormKey: 'Na', label: '1000 mM Na⁺ (Saturated)' },
+      'K_50':    { naConc_mM: 50,   saltFormKey: 'K',  label: '50 mM K⁺' }, // K+ uses same eqNa correction in NN model
+      'Free':    { naConc_mM: 1,    saltFormKey: 'Free', label: 'Free Acid (~1 mM)' },
+      'custom':  { naConc_mM: parseFloat(document.getElementById('dnaCustomSaltConc')?.value) || 50, saltFormKey: 'Na', label: 'Custom' }
+    };
+    const saltConfig = SALT_MAP[saltFormVal] || SALT_MAP['Na_50'];
+    const tmOptions = { naConc_mM: saltConfig.naConc_mM };
 
     window.withLoading('panel-dna', () => {
       const gc = BioMath.calculateGC(seq);
-      const tmRes = BioMath.calculateTmNN(seq);
-      const ss_mw = BioMath.calculateDNA_MW(seq, false, { saltForm: saltForm });
-      const ds_mw = BioMath.calculateDNA_MW(seq, true, { saltForm: saltForm });
+      const tmRes = BioMath.calculateTm(seq, tmOptions);
+      const ss_mw = BioMath.calculateDNA_MW(seq, false, { saltForm: saltConfig.saltFormKey });
+      const ds_mw = BioMath.calculateDNA_MW(seq, true,  { saltForm: saltConfig.saltFormKey });
       const ext = BioMath.calculateExtinctionCoefficient(seq);
-      const ratio = BioMath.calculateA260_A280(seq);
+      const ratioRes = BioMath.calculateA260_A280_Theoretical(seq);
 
       // Stat cards
       window.buildStatCards('dnaStatRow', [
         { val: seq.length.toLocaleString(), label: 'Length (bp)' },
         { val: gc + '%', label: 'GC Content' },
-        { val: tmRes.tm + '°C', label: 'Melting Temp' },
-        { val: ratio, label: 'A260/A280 Ratio' },
+        { 
+          val: tmRes.isValid ? tmRes.tm + '°C' : '⚠ ' + tmRes.tm + '°C', 
+          label: `Tm at ${saltConfig.label}` 
+        },
         { val: ss_mw + ' kDa', label: 'ssDNA MW' },
         { val: ds_mw + ' kDa', label: 'dsDNA MW' }
       ]);
+
+      // A260/A280 Theoretical Disclaimer
+      const ratioDisplay = document.getElementById('dnaA260A280Display');
+      if (ratioDisplay) {
+        let htmlContent = `
+          <div style="background: rgba(255,170,0,0.05); border: 1px solid rgba(255,170,0,0.2); padding: 12px; border-radius: 6px; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">
+            <strong style="color: var(--text-primary);">A260/A280 Ratio (Theoretical):</strong> ${ratioRes.ratio}
+            <div style="color: #f59e0b; margin-top: 4px;">⚠️ ${ratioRes.note}</div>
+            <div style="margin-top: 4px; font-size: 0.75rem;">Expected range for pure DNA: ${ratioRes.expectedRange.pureDNA || '1.8-1.9'}</div>
+          </div>
+        `;
+        
+        // Add Tm Model Warning if present (e.g. low salt extrapolation)
+        if (tmRes.warning) {
+            htmlContent += `
+              <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.35); padding: 12px; border-radius: 6px; font-size: 0.8rem; color: var(--text-secondary);">
+                <strong style="color: #f59e0b;">⚠️ Thermodynamic Model Warning</strong>
+                <div style="margin-top: 4px;">${tmRes.warning}</div>
+              </div>
+            `;
+            window.showToast("⚠️ Tm Model Warning: Salt condition extrapolates beyond mathematical validation.", 5000);
+        }
+        
+        ratioDisplay.innerHTML = window.sanitizeHTML(htmlContent);
+      }
 
       // Reverse complement
       const rc = reverseComplement(seq);
@@ -80,10 +145,12 @@
       const rnaEl = document.getElementById('rnaDisplay');
       if (rnaEl) rnaEl.textContent = rna;
 
-      // Protein translation (3 frames)
+      // Protein translation (6 frames)
       const framesEl = document.getElementById('proteinFrames');
       if (framesEl) {
         let framesHtml = '';
+        
+        // Forward Frames (+1, +2, +3)
         for (let f = 0; f < 3; f++) {
           const frameSeq = seq.substring(f);
           const protein = BioMath.translateDNA(frameSeq, { stopAtFirst: !readThrough });
@@ -91,6 +158,18 @@
             <div class="frame-block">
               <div class="frame-label">Frame +${f + 1}</div>
               <div class="seq-display" style="color:var(--violet);max-height:120px;">${window.escapeHTML(protein)}</div>
+            </div>`;
+        }
+
+        // Reverse Frames (-1, -2, -3)
+        const rcSeq = rc; // Already computed above at line 139
+        for (let f = 0; f < 3; f++) {
+          const frameSeq = rcSeq.substring(f);
+          const protein = BioMath.translateDNA(frameSeq, { stopAtFirst: !readThrough });
+          framesHtml += `
+            <div class="frame-block">
+              <div class="frame-label">Frame -${f + 1} (Reverse Strand)</div>
+              <div class="seq-display" style="color:var(--blue);max-height:120px;">${window.escapeHTML(protein)}</div>
             </div>`;
         }
         framesEl.innerHTML = window.sanitizeHTML(framesHtml);
@@ -199,6 +278,15 @@
     input.addEventListener('input', () => {
       const seq = window.cleanSeq(input.value);
       meta.textContent = `Length: ${seq.length} bp`;
+    });
+  }
+
+  // ── Custom Salt Input Toggle ────────────────────────────
+  const saltFormEl = document.getElementById('dnaSaltForm');
+  const customSaltBlock = document.getElementById('dnaCustomSaltBlock');
+  if (saltFormEl && customSaltBlock) {
+    saltFormEl.addEventListener('change', () => {
+      customSaltBlock.style.display = saltFormEl.value === 'custom' ? 'block' : 'none';
     });
   }
 
