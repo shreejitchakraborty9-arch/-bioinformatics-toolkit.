@@ -401,11 +401,10 @@
     }
   };
 
-  // Enzyme DB Initialization
-  document.addEventListener('DOMContentLoaded', () => {
+  const initEnzymes = () => {
     const allEnzymes = window.BioKit.data.RESTRICTION_ENZYMES || window.RESTRICTION_ENZYMES || [];
     const chipsContainer = document.getElementById('enzymeChips');
-    if (chipsContainer) {
+    if (chipsContainer && chipsContainer.children.length === 0) {
       const fragment = document.createDocumentFragment();
       allEnzymes.forEach(e => {
         const chip = document.createElement('div');
@@ -445,7 +444,7 @@
             
             let show = false;
             if (filter === 'all') show = true;
-            else if (filter === 'common') show = enz.common;
+            else if (filter === 'common') show = enz.is_common;
             else if (filter === '6-cutter') show = enz.site.length === 6;
             else if (filter === '4-cutter') show = enz.site.length === 4;
             else if (filter === 'rare') show = enz.site.length >= 8;
@@ -457,7 +456,13 @@
         });
       });
     }
-  });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initEnzymes);
+  } else {
+    initEnzymes();
+  }
 
   document.getElementById('reAnalyzeBtn')?.addEventListener('click', window.debounce(() => window.BioKit.tools.restriction.run(), 300));
   document.getElementById('reSampleBtn')?.addEventListener('click', () => {
