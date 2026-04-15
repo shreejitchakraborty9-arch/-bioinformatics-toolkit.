@@ -408,20 +408,145 @@
                 <button class="btn-fetch fetch-btn">Fetch Record</button>
               </div>
             </div>
-            <textarea class="seq-input" id="proteinInput" placeholder="Enter protein single-letter code..." rows="10"></textarea>
+
+            <!-- UniProt canonical name label (hidden until a fetch confirms it) -->
+            <div id="uniprotNameLabel" class="hidden" style="
+              font-family: var(--mono);
+              font-size: 0.75rem;
+              color: var(--teal);
+              padding: 4px 0 2px;
+              letter-spacing: 0.04em;
+            "></div>
+
+            <!-- Textarea with paste-autocleaning marker -->
+            <div style="position: relative;">
+              <textarea
+                class="seq-input"
+                id="proteinInput"
+                data-fasta-strip="true"
+                placeholder="Enter protein single-letter code, or paste FASTA (headers stripped automatically)..."
+                rows="10"
+              ></textarea>
+              <!-- Clean Sequence button (broom icon) -->
+              <button
+                id="proteinCleanBtn"
+                title="Strip FASTA headers, numbers &amp; whitespace"
+                aria-label="Clean sequence"
+                style="
+                  position: absolute;
+                  bottom: 8px;
+                  right: 8px;
+                  background: var(--bg-surface);
+                  border: 1px solid var(--border);
+                  color: var(--text-muted);
+                  border-radius: var(--radius-sm);
+                  padding: 4px 8px;
+                  font-size: 0.7rem;
+                  cursor: pointer;
+                  display: flex;
+                  align-items: center;
+                  gap: 4px;
+                  transition: var(--transition);
+                "
+              >
+                <i data-lucide="sparkles" style="width:12px;height:12px;"></i>
+                Clean
+              </button>
+            </div>
             <div class="input-meta" id="proteinInputMeta">Length: 0 aa</div>
           </div>
+
+          <!-- Scientific Parameter Toggles -->
+          <div style="
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            padding: 10px 14px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+          ">
+            <div class="input-block" style="flex:1; min-width:160px;">
+              <label class="input-label" style="font-size:0.7rem;">Mass Type</label>
+              <select class="num-input" id="proteinMassType" style="width:100%; font-size:0.8rem;">
+                <option value="average">Average (Solution)</option>
+                <option value="monoisotopic">Monoisotopic (MS)</option>
+              </select>
+            </div>
+            <div class="input-block" style="flex:1; min-width:160px;">
+              <label class="input-label" style="font-size:0.7rem;">Redox State (for ε₂₈₀)</label>
+              <select class="num-input" id="proteinRedoxState" style="width:100%; font-size:0.8rem;">
+                <option value="reduced">Reduced (free –SH)</option>
+                <option value="oxidized">Oxidized (–S–S–)</option>
+              </select>
+            </div>
+          </div>
+
           <div class="btn-row">
             <button class="btn-primary" id="proteinAnalyzeBtn">Compute Metrics</button>
             <button class="btn-secondary" id="proteinSampleBtn">Load Example Dataset</button>
+            <button class="btn-secondary" id="proteinClearBtn">Clear</button>
           </div>
         </div>
 
         <div class="workspace-results" id="proteinResults">
+          <!-- Skeleton empty state with metric preview -->
           <div class="results-empty" id="proteinEmptyState">
             <i data-lucide="beaker"></i>
-            <span>No sequence analyzed. Load dataset to compute metrics.</span>
+            <span>No sequence analyzed. Load a sequence to compute metrics.</span>
+            <div style="
+              margin-top: 20px;
+              width: 100%;
+              max-width: 340px;
+              text-align: left;
+            ">
+              <div style="
+                font-size: 0.65rem;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                color: var(--text-muted);
+                margin-bottom: 10px;
+                font-weight: 700;
+              ">Metrics that will be computed</div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Skeleton metric rows -->
+                <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
+                  <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Molecular Weight (Average / Monoisotopic)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
+                  <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Isoelectric Point (pI)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
+                  <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Extinction Coefficient ε₂₈₀ (Reduced / Oxidized)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
+                  <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">GRAVY Hydrophobicity Index</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
+                  <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Aliphatic Index</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
+                  <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Instability Index</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
+                  <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">AA Composition Chart &amp; Table</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
+                  <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Kyte-Doolittle Hydropathy Plot (window=7)</span>
+                </div>
+              </div>
+            </div>
           </div>
+
           <div class="results-content hidden">
             <div class="results-header">Physicochemical Profile</div>
             <div class="result-stat-row" id="proteinStatRow"></div>
@@ -440,6 +565,7 @@
         </div>
       </div>
     </section>
+
 
     <!-- ALIGNMENT PANEL -->
     <section class="tool-panel" id="panel-alignment">

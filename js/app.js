@@ -101,12 +101,32 @@
   window.debounce = debounce;
   window.BioKit.utils.debounce = debounce;
 
-  // ── Shared Sequence Cleaner ────────────────────────────────
+  // ── Shared Sequence Cleaner ───────────────────────────────────
   function cleanSeq(seq) {
-    return (seq || '').toUpperCase().replace(/[^A-Z\*]/g, '');
+    return stripFastaHeader(seq).replace(/[^A-Z\*]/g, '');
   }
   window.cleanSeq = cleanSeq;
   window.BioKit.utils.cleanSeq = cleanSeq;
+
+  // ── FASTA Header Stripper ─────────────────────────────────
+  /**
+   * Strips FASTA header lines (lines starting with '>') and
+   * collapses all whitespace from the remaining sequence lines.
+   * Safe to call on a plain sequence string with no headers.
+   * @param {string} raw - Raw textarea value, may include one or more FASTA headers.
+   * @returns {string} Pure sequence string (uppercase, no whitespace, no headers).
+   */
+  function stripFastaHeader(raw) {
+    if (!raw) return '';
+    return raw
+      .split('\n')
+      .filter(line => !line.trimStart().startsWith('>'))
+      .join('')
+      .replace(/[\s\r\n]/g, '')
+      .toUpperCase();
+  }
+  window.stripFastaHeader = stripFastaHeader;
+  window.BioKit.utils.stripFastaHeader = stripFastaHeader;
 
   // ── Format Auto-Detection ─────────────────────────────────
   function detectFormat(seq) {
@@ -125,14 +145,17 @@
 
   function validateSequence(seq, type) {
     const raw = seq || '';
-    const clean = raw.toUpperCase().replace(/\s/g, '');
+    // Strip FASTA headers first so a pasted FASTA file never triggers a false rejection
+    const headerStripped = stripFastaHeader(raw);
+    const clean = headerStripped.toUpperCase().replace(/\s/g, '');
     if (!clean) return { valid: false, msg: 'Sequence is empty.' };
 
     let allowed = /^[ATGCNU]+$/;
     let label = 'DNA/RNA';
     let limit = 0;
     if (type === 'protein') {
-      allowed = /^[ACDEFGHIKLMNPQRSTVWY\*]+$/;
+      // IUPAC extended: standard 20 AA + X (unknown) + U (Selenocysteine) + Z (Glx) + stop codon *
+      allowed = /^[ACDEFGHIKLMNPQRSTVWYXUZ\*]+$/;
       label = 'Protein';
       limit = 5000000; // 5MB
     } else {

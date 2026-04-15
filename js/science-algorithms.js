@@ -884,7 +884,16 @@
       }
   };
 
-  BioMath.calculateExtinctionCoefficient = function(seq, type='dna') {
+  /**
+   * Calculates extinction coefficient at 280nm for proteins (Pace 1995)
+   * or at 260nm for nucleic acids (Nearest-Neighbor model).
+   * @param {string} seq - The sequence.
+   * @param {string} type - 'dna' | 'rna' | 'protein'
+   * @param {string} redoxState - For proteins: 'reduced' (default) | 'oxidized'
+   *   Reduced: all Cys are free thiols, ε(Cys)=0.
+   *   Oxidized: Cys form disulfide bonds, ε(half-Cys)=125 M⁻¹cm⁻¹.
+   */
+  BioMath.calculateExtinctionCoefficient = function(seq, type='dna', redoxState='reduced') {
       // Calculates Extinction Coefficient (e) at 260nm for DNA/RNA
       // Useful for A260 -> Concentration conversions
       if (!seq || seq.length === 0) return 0;
@@ -903,13 +912,17 @@
       // Individual bases (for subtracting overlaps)
       const IND_EC = { 'A': 15400, 'C': 7300, 'G': 11700, 'T': 8700, 'U': 10000 };
 
-      // Protein specific extinction (Wetlaufer / Pace model)
+      // Protein specific extinction (Pace 1995, Protein Sci. 4:2411-2423)
+      // ε(280) = nW * 5500 + nY * 1490 + nC_disulfide * 125
+      // Reduced form: free Cys (-SH) contributes ε≈0 at 280nm.
+      // Oxidized form: cystine (disulfide, -S-S-) contributes 125 M⁻¹cm⁻¹ per half-cystine.
       if (type === 'protein') {
           const counts = { 'W': 0, 'Y': 0, 'C': 0 };
           for (const aa of seq.toUpperCase()) {
               if (counts[aa] !== undefined) counts[aa]++;
           }
-          return (counts['W'] * 5500) + (counts['Y'] * 1490) + (counts['C'] * 125);
+          const cysContribution = (redoxState === 'oxidized') ? (counts['C'] * 125) : 0;
+          return (counts['W'] * 5500) + (counts['Y'] * 1490) + cysContribution;
       }
 
       for (let i = 0; i < s.length - 1; i++) {
@@ -993,23 +1006,56 @@
       };
   };
 
-  BioMath.calculateProtein_MW = function(seq) {
-      // Monoisotopic masses or average residues. We use average residue masses here.
-      // H2O is added once at the end.
-      const AAmass = {
-          'A': 71.0788, 'R': 156.1875, 'N': 114.1038, 'D': 115.0886,
+  /**
+   * Calculates protein molecular weight.
+   * @param {string} seq - Canonical protein sequence (no headers, no stop codons).
+   * @param {string} massType - 'average' (default) | 'monoisotopic'
+   *   Average: standard residue masses for solution-phase estimation.
+   *   Monoisotopic: most abundant isotopologue masses for MS applications.
+   * @returns {{ kDa: string, internalStop: boolean }}
+   */
+  BioMath.calculateProtein_MW = function(seq, massType='average') {
+      // Average residue masses — Fasman (1989) CRC Handbook of Biochemistry
+      const averageMass = {
+          'A': 71.0788,  'R': 156.1875, 'N': 114.1038, 'D': 115.0886,
           'C': 103.1388, 'E': 129.1155, 'Q': 128.1307, 'G': 57.0519,
           'H': 137.1411, 'I': 113.1594, 'L': 113.1594, 'K': 128.1741,
           'M': 131.1926, 'F': 147.1766, 'P': 97.1167,  'S': 87.0782,
-          'T': 101.1051, 'W': 186.2132, 'Y': 163.1760, 'V': 99.1326
+          'T': 101.1051, 'W': 186.2132, 'Y': 163.1760, 'V': 99.1326,
+          // Non-canonical: use best available average masses
+          'X': 111.1000, // Unknown — approximate average
+          'U': 150.0388, // Selenocysteine (avg)
+          'Z': 128.6231  // Glx (Glu/Gln avg)
       };
-      
-      let mass = 18.01524; // Water added (N-term H, C-term OH)
-      for (let i = 0; i < seq.length; i++) {
-          const char = seq[i].toUpperCase();
-          if (AAmass[char]) mass += AAmass[char];
+
+      // Monoisotopic residue masses — NIST / Roepstorff & Fohlman (1984)
+      const monoisotopicMass = {
+          'A': 71.03711,  'R': 156.10111, 'N': 114.04293, 'D': 115.02694,
+          'C': 103.00919, 'E': 129.04259, 'Q': 128.05858, 'G': 57.02146,
+          'H': 137.05891, 'I': 113.08406, 'L': 113.08406, 'K': 128.09496,
+          'M': 131.04049, 'F': 147.06841, 'P': 97.05276,  'S': 87.03203,
+          'T': 101.04768, 'W': 186.07931, 'Y': 163.06333, 'V': 99.06841,
+          // Non-canonical
+          'X': 111.00000, // Unknown placeholder
+          'U': 150.95363, // Selenocysteine (monoisotopic)
+          'Z': 128.05858  // Use Gln mass for Glx
+      };
+
+      // Stop codon middleware — strip trailing stops, detect internal stops
+      const trailingStripped = seq.replace(/\*+$/, '');
+      const internalStop = trailingStripped.includes('*');
+      // For mass calculation, truncate at first internal stop
+      const workingSeq = internalStop ? trailingStripped.split('*')[0] : trailingStripped;
+
+      const table = (massType === 'monoisotopic') ? monoisotopicMass : averageMass;
+      // H₂O: N-terminal H + C-terminal OH = 18.01056 (mono) or 18.01524 (avg)
+      let mass = (massType === 'monoisotopic') ? 18.01056 : 18.01524;
+
+      for (let i = 0; i < workingSeq.length; i++) {
+          const char = workingSeq[i].toUpperCase();
+          if (table[char] !== undefined) mass += table[char];
       }
-      return (mass / 1000).toFixed(2); // kDa
+      return { kDa: (mass / 1000).toFixed(2), internalStop };
   };
 
   // ==========================================================

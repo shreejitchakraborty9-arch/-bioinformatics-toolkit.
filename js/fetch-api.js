@@ -191,12 +191,13 @@
   // User-Friendly Error Handling (Issue #5)
   // ─────────────────────────────────────────────────────────────
   const API_ERROR_MESSAGES = {
-      'NETWORK_TIMEOUT': 'The biological database server is not responding. Please check your internet connection and try again.',
-      'INVALID_ACCESSION': 'The accession number format is invalid. Ensure you are using a standard ID like NM_007294 or P04637.',
-      'ACCESSION_NOT_FOUND': 'The requested record was not found in the database. Please verify the accession ID and try again.',
-      'MALFORMED_DATA': 'The sequence data received is corrupted or in an unsupported format.',
-      'RATE_LIMITED': 'Rate limit exceeded. Please wait a moment before fetching again.',
-      'GENERIC_API_ERROR': 'NCBI/Database service error. Please try again in a few moments.'
+      'NETWORK_TIMEOUT':     'Database server not responding. Check your connection and try again.',
+      'INVALID_ACCESSION':   'Invalid accession format. Use a standard ID like NM_007294 or P04637.',
+      'ACCESSION_NOT_FOUND': 'Record not found (404). Verify the accession ID exists in the selected database.',
+      'DB_SERVER_ERROR':     'Database server error (500). Retrying once…',
+      'MALFORMED_DATA':      'Sequence data is corrupted or in an unsupported format.',
+      'RATE_LIMITED':        'Rate limit exceeded. Wait a moment and try again.',
+      'GENERIC_API_ERROR':   'NCBI/Database service error. Please try again shortly.'
   };
 
   /**
@@ -210,6 +211,8 @@
           errorType = 'NETWORK_TIMEOUT';
       } else if (msg.includes('404') || msg.includes('not found') || msg.includes('incorrect') || msg.includes('no sequence')) {
           errorType = 'ACCESSION_NOT_FOUND';
+      } else if (msg.includes('500') || msg.includes('server error') || msg.includes('internal')) {
+          errorType = 'DB_SERVER_ERROR';
       } else if (msg.includes('429') || msg.includes('rate limit') || msg.includes('too many')) {
           errorType = 'RATE_LIMITED';
       } else if (msg.includes('400') || msg.includes('invalid') || msg.includes('accession')) {
@@ -251,15 +254,16 @@
     }
     _lastFetch = now;
 
+    // Context-aware protein mode: if the caller DB is a protein source,
+    // skip the nucleotide-based AUTO alphabet detection entirely.
+    const isProteinDB = ['uniprot', 'ncbiprotein', 'keggprotein'].includes(db);
+
     setLoading(btn, true);
 
-    try {
+    // Internal single-retry helper for 500-class server errors.
+    async function attemptFetch(attempt) {
       const urlFn = ROUTES[db];
-      if (!urlFn) {
-        window.showToast("Unknown database selected.");
-        return;
-      }
-
+      if (!urlFn) throw new Error('Unknown database: ' + db);
       const url = urlFn(cleanId);
       const headers = {};
       const userKey = localStorage.getItem('btk_ncbi_api_key');
@@ -269,16 +273,31 @@
       const text = await res.text();
 
       if (!res.ok) {
-        // Classify the response status through handleAPIError
-        handleAPIError(`${db.toUpperCase()} response: ${res.status} ${text}`, 'Server Response', db);
-        return;
+        if (res.status >= 500 && attempt === 1) {
+          window.showToast('⚠️ Database server error (500). Retrying in 3\u202fs…', 3500);
+          await new Promise(r => setTimeout(r, 3000));
+          return attemptFetch(2);       // single retry
+        }
+        if (res.status === 404) {
+          throw new Error(`404 Not found: the ID '${cleanId}' does not exist in ${db.toUpperCase()}.`);
+        }
+        if (res.status >= 500) {
+          throw new Error(`500 Server error from ${db.toUpperCase()} — database may be temporarily unavailable.`);
+        }
+        throw new Error(`${db.toUpperCase()} response: ${res.status} ${text}`);
       }
+      return { res, text };
+    }
 
-      // Try parsing as JSON first (database-driven metadata mode)
+    try {
+      const { text } = await attemptFetch(1);
+
+      // Parse JSON or fallback to FASTA
       let header = "";
       let sequence = "";
       let metadata = null;
       let transcripts = [];
+      let uniprotName = null;   // confirmed UniProt canonical name
 
       try {
         const jsonData = JSON.parse(text);
@@ -286,20 +305,23 @@
           sequence = jsonData.sequence;
           metadata = jsonData.metadata;
           transcripts = jsonData.transcripts || [metadata];
-          header = metadata.description || "";
+          header = metadata ? (metadata.description || "") : "";
+
+          // UniProt canonical label extraction (addresses isoform confusion)
+          if (db === 'uniprot' && jsonData.proteinDescription?.recommendedName?.fullName?.value) {
+            uniprotName = jsonData.proteinDescription.recommendedName.fullName.value;
+          }
         }
       } catch (e) {
         // Fallback: Validate legacy FASTA
-        if (!text.trim() || text.trim().startsWith("<")) {
-          window.showToast("❌ Unexpected response from server. ID may be incorrect.", 4000);
+        if (!text.trim() || text.trim().startsWith('<')) {
+          window.showToast('❌ Unexpected response from server. ID may be incorrect.', 4000);
           return;
         }
         const parsed = parseFasta(text);
         header = parsed.header;
         sequence = parsed.sequence;
       }
-
-      // NOTE: activeAnalysis is stored after alphabet validation below
 
       if (!sequence) {
         window.showToast("❌ Could not parse a sequence from the response.", 4000);
@@ -310,21 +332,17 @@
       const lengthMatch = header.match(/(\d+)\s*bp/);
       const expectedLength = lengthMatch ? parseInt(lengthMatch[1]) : null;
 
-      // VALIDATION CHECK
       if (expectedLength && sequence.length < expectedLength * 0.95) {
-          const errMsg = `Sequence incomplete: received ${sequence.length.toLocaleString()} bp, expected ~${expectedLength.toLocaleString()} bp. This may indicate network truncation or API error.`;
+          const errMsg = `Sequence incomplete: received ${sequence.length.toLocaleString()} bp, expected ~${expectedLength.toLocaleString()} bp.`;
           window.showToast(`❌ ${errMsg}`, 6000);
-          console.error(`[CRITICAL] Sequence integrity check failed: ${errMsg}`);
-          
+          console.error(`[CRITICAL] Sequence integrity: ${errMsg}`);
           const activePanel = document.querySelector('.tool-panel.active');
           if (activePanel && window.showValidationWarning) {
               window.showValidationWarning(activePanel.id, {
-                  valid: false,
-                  msg: "Data Integrity Error: Partial Sequence Loaded",
-                  suggestion: errMsg
+                  valid: false, msg: "Data Integrity Error: Partial Sequence Loaded", suggestion: errMsg
               });
           }
-          return; // Abort loading
+          return;
       }
 
       if (expectedLength && sequence.length < expectedLength) {
@@ -333,11 +351,29 @@
           console.warn(`[Data Integrity] Minor truncation: ${sequence.length}/${expectedLength} bp`);
       }
 
-      // ── Alphabet integrity check ──────────────────────────────────────────
-      const alphaResult = validateSequenceAlphabet(sequence, 'AUTO');
+      // ── Context-aware alphabet integrity check ────────────────────────────
+      // Protein databases bypass nucleotide AUTO detection, which previously
+      // hard-rejected amino-acid sequences containing L, E, F, etc. as "invalid DNA".
+      let alphaResult;
+      if (isProteinDB) {
+        const proteinValid = /^[ACDEFGHIKLMNPQRSTVWYXUZ*\s\r\n]+$/i.test(sequence);
+        alphaResult = {
+          isValid: proteinValid,
+          sequenceType: 'PROTEIN',
+          hasAmbiguous: false,
+          ambiguousCount: 0,
+          ambiguousTypes: [],
+          invalidChars: [],
+          canonicalPercent: 100,
+          message: proteinValid
+            ? 'Protein sequence validated.'
+            : 'Sequence contains characters outside the IUPAC protein alphabet.'
+        };
+      } else {
+        alphaResult = validateSequenceAlphabet(sequence, 'AUTO');
+      }
 
       if (!alphaResult.isValid) {
-        // Hard reject — do NOT store to activeAnalysis
         throw new SequenceIntegrityError(
           `Alphabet validation failed: ${alphaResult.message}`,
           { invalidChars: alphaResult.invalidChars, source: 'NCBI_FETCH' }
@@ -345,7 +381,6 @@
       }
 
       if (alphaResult.hasAmbiguous) {
-        // Gap 1: Only push warnings if this fetch is still the active one
         if (window.BioKit._activeFetchId === fetchId) {
           window.BioKit.pendingWarnings = window.BioKit.pendingWarnings || [];
           window.BioKit.pendingWarnings.push({
@@ -358,15 +393,10 @@
         }
       }
 
-      // Gap 1: Storage guard — prevents race condition poisoning
-      if (window.BioKit._activeFetchId !== fetchId) {
-        return; 
-      }
+      // Race-condition storage guard
+      if (window.BioKit._activeFetchId !== fetchId) { return; }
 
-      // Gap 2: Normalize to uppercase before storage
       const normalizedSequence = sequence.toUpperCase().replace(/[\s\r\n]/g, '');
-
-      // Only reaches here if isValid === true — commit to global analysis state
       window.BioKit.activeAnalysis = {
         sequence: normalizedSequence,
         sequenceType: alphaResult.sequenceType,
@@ -374,13 +404,21 @@
         metadata,
         transcripts
       };
-      // ─────────────────────────────────────────────────────────────────────
 
       // Populate the target textarea
       const input = document.getElementById(targetInputId);
       if (input) {
         input.value = sequence;
         input.dispatchEvent(new Event("input"));
+      }
+
+      // Show confirmed UniProt canonical name label (isoform verification)
+      if (uniprotName) {
+        const labelEl = document.getElementById('uniprotNameLabel');
+        if (labelEl) {
+          labelEl.textContent = `✔ Canonical: ${uniprotName}`;
+          labelEl.classList.remove('hidden');
+        }
       }
 
       // Update meta label
@@ -397,17 +435,16 @@
 
     } catch (err) {
       if (err instanceof SequenceIntegrityError) {
-        // Do NOT route through handleAPIError — surface directly with correct message
         window.showToast(`❌ ${err.message}`, 6000);
         console.error('[SequenceIntegrityError]', err.metadata);
-        return; // abort — do not store to activeAnalysis
+        return;
       }
-      // All other errors continue to existing handler unchanged
       handleAPIError(err, 'Fetch Exception', db);
     } finally {
       setLoading(btn, false);
     }
   };
+
 
   // ─────────────────────────────────────────────────────────────
   // Wire up all fetch widgets on DOM ready

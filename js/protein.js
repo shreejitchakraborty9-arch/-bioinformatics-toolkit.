@@ -67,28 +67,40 @@
       return;
     }
 
+    // Read scientific parameters from UI toggles
+    const massType  = document.getElementById('proteinMassType')?.value  || 'average';
+    const redoxState = document.getElementById('proteinRedoxState')?.value || 'reduced';
+
     const seq = validation.clean.replace(/\*/g, '');
     currentSequence = seq;
 
     window.withLoading('panel-protein', () => {
-      const hydro = BioMath.calculateHydrophobicity(seq);
-      const mw = BioMath.calculateProtein_MW(seq);
-      const pI = BioMath.calculatePI(seq);
-      const extMatch = BioMath.calculateExtinctionCoefficient(seq, 'protein'); 
-      
-      const aliphatic = BioMath.calculateAliphaticIndex(seq);
+      const mwResult  = BioMath.calculateProtein_MW(seq, massType);
+      const hydro     = BioMath.calculateHydrophobicity(seq);
+      const pI        = BioMath.calculatePI(seq);
+      const extCoeff  = BioMath.calculateExtinctionCoefficient(seq, 'protein', redoxState);
+      const aliphatic   = BioMath.calculateAliphaticIndex(seq);
       const instability = BioMath.calculateInstabilityIndex(seq);
-      
       const instabLabel = instability < 40 ? ' (Stable)' : ' (Unstable)';
+
+      // Surface internal stop-codon warning
+      if (mwResult.internalStop) {
+        const warn = { valid: true, msg: 'Internal stop codon (*) detected. Sequence was truncated at first stop for mass calculation.' };
+        window.showValidationWarning('panel-protein', warn);
+      }
+
+      const massLabel = massType === 'monoisotopic' ? 'MW (Mono, kDa)' : 'Mol. Weight (kDa)';
+      const ecLabel   = redoxState === 'oxidized' ? 'Ext. Coeff [Ox] (M⁻¹cm⁻¹)' : 'Ext. Coeff [Red] (M⁻¹cm⁻¹)';
 
       // Stat cards
       window.buildStatCards('proteinStatRow', [
-        { val: seq.length.toLocaleString(), label: 'Length (aa)' },
-        { val: mw + ' kDa', label: 'Mol. Weight' },
-        { val: pI, label: 'Isoelectric Pt' },
-        { val: extMatch.toLocaleString(), label: 'Ext. Coeff (M⁻¹cm⁻¹)' },
-        { val: hydro, label: 'GRAVY Index' },
-        { val: instability + instabLabel, label: 'Instability Index' }
+        { val: seq.length.toLocaleString(),      label: 'Length (aa)' },
+        { val: mwResult.kDa + ' kDa',            label: massLabel },
+        { val: pI,                               label: 'Isoelectric Pt (pI)' },
+        { val: extCoeff.toLocaleString(),        label: ecLabel },
+        { val: hydro,                            label: 'GRAVY Index' },
+        { val: aliphatic,                        label: 'Aliphatic Index' },
+        { val: instability + instabLabel,        label: 'Instability Index' }
       ]);
 
       // AA Composition chart
@@ -272,15 +284,54 @@
   document.getElementById('proteinClearBtn')?.addEventListener('click', () => {
     const input = document.getElementById('proteinInput');
     if (input) { input.value = ''; input.dispatchEvent(new Event('input')); }
-    document.getElementById('proteinResults')?.classList.add('hidden');
+    const label = document.getElementById('uniprotNameLabel');
+    if (label) { label.textContent = ''; label.classList.add('hidden'); }
+    const empty = document.getElementById('proteinEmptyState');
+    const content = document.querySelector('#proteinResults .results-content');
+    if (empty) empty.classList.remove('hidden');
+    if (content) content.classList.add('hidden');
   });
 
-  // Live meta
+  // ── Clean Sequence Button ──────────────────────────────
+  // Triggers the FASTA header stripper and collapses all whitespace/numbers on demand.
+  document.getElementById('proteinCleanBtn')?.addEventListener('click', () => {
+    const input = document.getElementById('proteinInput');
+    if (!input) return;
+    const cleaned = (window.stripFastaHeader ? window.stripFastaHeader(input.value) : input.value)
+      .replace(/[^ACDEFGHIKLMNPQRSTVWYXUZ*]/gi, '');
+    input.value = cleaned;
+    input.dispatchEvent(new Event('input'));
+    window.showToast('✨ Sequence cleaned');
+  });
+
+  // ── Paste: auto-strip FASTA headers ───────────────────
+  // Intercepts paste events on the protein input and strips FASTA header lines
+  // before they land in the textarea, preventing false "invalid characters" rejections.
+  document.getElementById('proteinInput')?.addEventListener('paste', (e) => {
+    if (!window.stripFastaHeader) return; // guard — app.js not yet loaded
+    const raw = e.clipboardData?.getData('text') || '';
+    if (!raw.trimStart().startsWith('>')) return; // plain sequence — don't interfere
+    e.preventDefault();
+    const stripped = window.stripFastaHeader(raw);
+    const input = e.target;
+    // Insert at cursor position for correct undo/redo behaviour
+    const start = input.selectionStart ?? 0;
+    const end   = input.selectionEnd   ?? 0;
+    const current = input.value;
+    input.value = current.slice(0, start) + stripped + current.slice(end);
+    input.selectionStart = input.selectionEnd = start + stripped.length;
+    input.dispatchEvent(new Event('input'));
+  });
+
+  // ── Live meta counter ──────────────────────────────────
+  // Bound strictly to the sanitized string length so "Length: N aa" always
+  // reflects what the solver will actually receive — eliminates ghost-lengths.
   const pInput = document.getElementById('proteinInput');
-  const pMeta = document.getElementById('proteinInputMeta');
+  const pMeta  = document.getElementById('proteinInputMeta');
   if (pInput && pMeta) {
     pInput.addEventListener('input', () => {
-      const seq = window.cleanSeq(pInput.value);
+      const stripped = window.stripFastaHeader ? window.stripFastaHeader(pInput.value) : pInput.value;
+      const seq = stripped.replace(/[^ACDEFGHIKLMNPQRSTVWYXUZ*]/gi, '');
       pMeta.textContent = `Length: ${seq.length} aa`;
     });
   }
