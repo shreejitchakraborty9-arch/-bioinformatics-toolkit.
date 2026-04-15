@@ -144,6 +144,8 @@
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, W, H);
 
+    const maxVal = Math.max(...comp.map(c => c[1]));
+
     comp.forEach(([aa, cnt], i) => {
       const x = pad.left + i * (barW + 4) + 2;
       const h = (cnt / maxVal) * plotH;
