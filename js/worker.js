@@ -23,6 +23,9 @@ self.onmessage = function (e) {
       case 'THERMO_ANALYSIS':
         runThermoAnalysis(payload, taskId);
         break;
+      case 'PARSE_FASTA':
+        runFastaParse(payload, taskId);
+        break;
       default:
         throw new Error(`Unknown task type: ${type}`);
     }
@@ -617,4 +620,39 @@ async function runThermoAnalysis(data, taskId) {
       length: sequence.length
     }
   });
+}
+
+// ── FASTA Parser (Off-Main-Thread) ──────────────────────────
+//
+// parseFASTA logic migrated from fasta.js to eliminate the
+// synchronous forEach + toUpperCase + replace() call that was
+// blocking the browser's main UI thread for large files.
+//
+// Algorithm is unchanged from the original fasta.js implementation.
+// Only the execution context has changed: Worker thread vs. UI thread.
+//
+function runFastaParse(data, taskId) {
+  const { rawText } = data;
+  if (!rawText) {
+    self.postMessage({ type: 'ERROR', taskId, message: 'No FASTA text provided.' });
+    return;
+  }
+
+  const records = [];
+  const lines   = rawText.split('\n');
+  let current   = null;
+
+  // Exact same logic as original parseFASTA in fasta.js — no changes
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('>')) {
+      if (current) records.push(current);
+      current = { header: trimmed.substring(1), sequence: '' };
+    } else if (current && trimmed) {
+      current.sequence += trimmed.toUpperCase().replace(/\s/g, '');
+    }
+  });
+  if (current) records.push(current);
+
+  self.postMessage({ type: 'RESULT', taskId, result: records });
 }

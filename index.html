@@ -1176,21 +1176,78 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════════════════════════════════════════
+       SCRIPT LOADING STRATEGY
+       ═══════════════════════════════════════════════════════════
+       EAGER  (loaded immediately, blocking): shared global state that
+              every module depends on at parse time.
+       LAZY   (dynamic import on first nav click): heavy tool modules
+              are fetched from the network ONLY when the user first
+              clicks that sidebar item.  Subsequent visits to the same
+              tool use the cached module — no re-fetch.
+       ═══════════════════════════════════════════════════════════ -->
+
+  <!-- EAGER: Global data / algorithm infrastructure ─────────── -->
   <script src="js/restriction-enzyme-db.js"></script>
   <script src="js/scientific-data.js"></script>
   <script src="js/science-algorithms.js"></script>
   <script src="js/fetch-api.js"></script>
+  <!-- EAGER: App shell + ViewManager must exist before modules register hooks -->
   <script src="js/app.js"></script>
-  <script src="js/seq-analyzer.js"></script>
-  <script src="js/protein.js"></script>
-  <script src="js/alignment.js"></script>
-  <script src="js/fasta.js"></script>
-  <script src="js/primer.js"></script>
-  <script src="js/restriction.js"></script>
-  <script src="js/promoter.js"></script>
-  <script src="js/example-genomes.js"></script>
-  <script src="js/sequence-search.js"></script>
-  <script src="js/genome-viewer.js"></script>
+
+  <!-- LAZY: Dynamic module loader ────────────────────────────── -->
+  <script>
+  (function () {
+    'use strict';
+
+    // Map each tool-id to the JS file that drives it.
+    // Add new tools here without touching any other file.
+    const MODULE_MAP = {
+      'dna':           'js/seq-analyzer.js',
+      'protein':       'js/protein.js',
+      'alignment':     'js/alignment.js',
+      'fasta':         'js/fasta.js',
+      'primer':        'js/primer.js',
+      'restriction':   'js/restriction.js',
+      'promoter':      'js/promoter.js',
+      'sequence-search': 'js/sequence-search.js',
+      'genome-viewer': 'js/genome-viewer.js',
+      'example-genomes': 'js/example-genomes.js',
+    };
+
+    // Tracks which modules have already been fetched so we never
+    // double-load a script on repeated navigation to the same tool.
+    const loaded = new Set();
+
+    function loadModule(toolId) {
+      const src = MODULE_MAP[toolId];
+      if (!src || loaded.has(toolId)) return;
+      loaded.add(toolId);
+
+      const script = document.createElement('script');
+      script.src   = src;
+      script.async = true;
+      script.onerror = () => console.error('[LazyLoader] Failed to load module:', src);
+      document.body.appendChild(script);
+    }
+
+    // Intercept every nav-item click BEFORE ViewManager.navigate fires.
+    // Using capture phase so the module script is injected first.
+    document.addEventListener('click', (e) => {
+      const btn  = e.target.closest('.nav-item');
+      const card = e.target.closest('.tool-card');
+      const toolId = (btn || card)?.dataset?.tool;
+      if (toolId) loadModule(toolId);
+    }, true); // capture = true
+
+    // Pre-load the Home panel's linked tools on idle (no network pressure at startup)
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => {
+        ['dna', 'protein', 'restriction'].forEach(loadModule);
+      });
+    }
+  })();
+  </script>
 
   <footer class="app-footer">
     <div class="footer-content">

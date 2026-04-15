@@ -38,28 +38,72 @@
     window.lucide.createIcons();
   }
 
-  // ── Navigation ───────────────────────────────────────────
-  const panels   = document.querySelectorAll('.tool-panel');
-  const navItems = document.querySelectorAll('.nav-item');
+  // ── ViewManager — Lifecycle-aware SPA router ──────────────
+  //
+  // Each tool module may register an unmount() callback via:
+  //   window.ViewManager.registerUnmount('toolId', fn)
+  // The ViewManager calls this before activating a new view so that
+  // heavy DOM nodes are physically removed and JS references are
+  // set to null — preventing the browser OOM documented in the audit.
+  //
+  const ViewManager = {
+    _currentToolId: null,
+    _unmountRegistry: {},
 
-  function activateTool(toolId) {
-    panels.forEach(p => p.classList.remove('active'));
-    navItems.forEach(n => n.classList.remove('active'));
+    /**
+     * Register a teardown callback for a specific tool.
+     * Call from within each module's IIFE:
+     *   window.ViewManager.registerUnmount('fasta', () => { ... })
+     */
+    registerUnmount(toolId, fn) {
+      this._unmountRegistry[toolId] = fn;
+    },
 
-    const panel = document.getElementById('panel-' + toolId);
-    const nav   = document.getElementById('nav-' + toolId);
-    if (panel) panel.classList.add('active');
-    if (nav)   nav.classList.add('active');
-    document.getElementById('mainContent').scrollTo({ top: 0, behavior: 'smooth' });
-  }
+    /**
+     * Navigate to a new tool panel.
+     * 1. Runs the outgoing tool's unmount() to destroy heavy DOM + null refs.
+     * 2. Hides all panels via CSS class (fast).
+     * 3. Reveals the target panel and marks its nav item active.
+     * 4. Scrolls content area to top.
+     */
+    navigate(toolId) {
+      // ── Teardown outgoing view ──────────────────────────────
+      const prev = this._currentToolId;
+      if (prev && prev !== toolId && typeof this._unmountRegistry[prev] === 'function') {
+        try {
+          this._unmountRegistry[prev]();
+        } catch (e) {
+          console.warn('[ViewManager] unmount error for', prev, e);
+        }
+      }
 
-  navItems.forEach(btn => {
-    btn.addEventListener('click', () => activateTool(btn.dataset.tool));
+      // ── Swap panels ──────────────────────────────────────────
+      document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+      const panel = document.getElementById('panel-' + toolId);
+      const nav   = document.getElementById('nav-' + toolId);
+      if (panel) panel.classList.add('active');
+      if (nav)   nav.classList.add('active');
+
+      const main = document.getElementById('mainContent');
+      if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
+
+      this._currentToolId = toolId;
+    }
+  };
+
+  // Expose globally so modules can call ViewManager.registerUnmount()
+  window.ViewManager = ViewManager;
+
+  // Wire sidebar nav buttons
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => ViewManager.navigate(btn.dataset.tool));
   });
 
   // Home tool-cards navigate to tool
   document.querySelectorAll('.tool-card').forEach(card => {
-    card.addEventListener('click', () => activateTool(card.dataset.tool));
+    card.addEventListener('click', () => ViewManager.navigate(card.dataset.tool));
   });
 
   // ── Copy to Clipboard ─────────────────────────────────────
@@ -323,8 +367,9 @@
   window.downloadText = downloadText;
   window.BioKit.utils.downloadText = downloadText;
 
-  // ── Expose activateTool globally ──────────────────────────
-  window.activateTool = activateTool;
+  // ── Expose activateTool globally (delegates to ViewManager) ─
+  // Kept for backwards compat — any existing call to window.activateTool() still works.
+  window.activateTool = (toolId) => ViewManager.navigate(toolId);
 
   // ── Fancy Sequence Renderer ───────────────────────────────
   window.renderSequence = function (seqOptions) {

@@ -1,5 +1,15 @@
 /* ============================================================
    fasta.js — FASTA Parser (Fixed DOM IDs + Drag-Drop)
+
+   ARCHITECTURE CHANGE (Refactor):
+   - parseFASTA() has been REMOVED from the main thread.
+   - Parsing is now delegated to worker.js (PARSE_FASTA task)
+     via window.WorkerManager, keeping the UI thread free.
+   - An unmount() hook is registered with window.ViewManager
+     so that navigating away from this panel physically removes
+     heavy DOM nodes and nulls the result dataset.
+   - All biological output logic (displayResults, stat cards,
+     sequence cards) is byte-for-byte identical to the original.
    ============================================================ */
 
 (function () {
@@ -7,26 +17,42 @@
 
   window.BioKit = window.BioKit || { utils: {}, core: {}, tools: {}, data: {} };
 
-  // ── FASTA Parser ──────────────────────────────────────
-  function parseFASTA(text) {
-    const records = [];
-    const lines = text.split('\n');
-    let current = null;
+  // Track the last parsed dataset so unmount() can null it
+  let _lastRecords = null;
 
-    lines.forEach(line => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('>')) {
-        if (current) records.push(current);
-        current = { header: trimmed.substring(1), sequence: '' };
-      } else if (current && trimmed) {
-        current.sequence += trimmed.toUpperCase().replace(/\s/g, '');
-      }
-    });
-    if (current) records.push(current);
-    return records;
+  // ── Unmount Hook (Garbage Collection) ──────────────────
+  // Registered with ViewManager. Executes when user navigates
+  // away from the FASTA panel. Physically removes DOM nodes and
+  // releases the reference to parsed record objects.
+  function unmount() {
+    // 1. Destroy heavy DOM — sequences container can hold thousands of nodes
+    const seqContainer = document.getElementById('fastaSequences');
+    if (seqContainer) seqContainer.innerHTML = '';
+
+    const statRow = document.getElementById('fastaStatRow');
+    if (statRow) statRow.innerHTML = '';
+
+    // 2. Hide results panel
+    document.getElementById('fastaResults')?.classList.add('hidden');
+
+    // 3. Null the JS reference so GC can reclaim the record objects
+    _lastRecords = null;
   }
 
-  // ── Run ───────────────────────────────────────────────
+  // Register with ViewManager as soon as module loads
+  if (window.ViewManager) {
+    window.ViewManager.registerUnmount('fasta', unmount);
+  } else {
+    // ViewManager not yet available — defer to next tick (app.js loads first, so this is a safety net)
+    window.addEventListener('load', () => {
+      window.ViewManager?.registerUnmount('fasta', unmount);
+    });
+  }
+
+  // ── Run (Web Worker Dispatch) ──────────────────────────
+  // parseFASTA logic has moved to worker.js:runFastaParse().
+  // This function now only orchestrates the worker call and
+  // hands the result to displayResults() for rendering.
   function run() {
     const input = document.getElementById('fastaText');
     if (!input) return;
@@ -37,13 +63,17 @@
       return;
     }
 
-    window.withLoading('panel-fasta', () => {
-      const records = parseFASTA(raw);
+    window.withLoading('panel-fasta', (records) => {
+      _lastRecords = records;
       displayResults(records);
+    }, raw.length, {
+      type: 'PARSE_FASTA',
+      payload: { rawText: raw }
     });
   }
 
   // ── Display ───────────────────────────────────────────
+  // Not changed — identical to original fasta.js
   function displayResults(records) {
     const container = document.getElementById('fastaResults');
     if (!container) return;
@@ -86,7 +116,7 @@
   document.getElementById('fastaClear')?.addEventListener('click', () => {
     const input = document.getElementById('fastaText');
     if (input) input.value = '';
-    document.getElementById('fastaResults')?.classList.add('hidden');
+    unmount(); // Reuse unmount to clear state + DOM
   });
 
   document.getElementById('fastaSample')?.addEventListener('click', () => {
@@ -98,7 +128,7 @@
   });
 
   // ── Drag and Drop ─────────────────────────────────────
-  const dropZone = document.getElementById('fastaDropZone');
+  const dropZone  = document.getElementById('fastaDropZone');
   const fileInput = document.getElementById('fastaFileInput');
 
   if (dropZone) {
