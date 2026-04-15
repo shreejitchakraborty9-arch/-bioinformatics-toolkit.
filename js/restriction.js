@@ -83,7 +83,101 @@
       }
 
       this.renderSequenceMap(seq, results);
+      
+      // Handle Circular Visualization
+      if (document.getElementById('reTopologyToggle')?.value === 'circular') {
+        let plasmidContainer = document.getElementById('rePlasmidMap');
+        if (!plasmidContainer) {
+          plasmidContainer = document.createElement('div');
+          plasmidContainer.id = 'rePlasmidMap';
+          plasmidContainer.style.marginTop = '20px';
+          plasmidContainer.style.display = 'flex';
+          plasmidContainer.style.justifyContent = 'center';
+          plasmidContainer.style.background = 'var(--bg-secondary)';
+          plasmidContainer.style.borderRadius = '8px';
+          plasmidContainer.style.padding = '20px';
+          
+          const seqMap = document.getElementById('reSeqMap');
+          if (seqMap && seqMap.parentNode) {
+            seqMap.parentNode.insertBefore(plasmidContainer, seqMap.nextSibling);
+          }
+        }
+        this.drawPlasmidMap(seq.length, results, 'rePlasmidMap');
+      } else {
+        const plasmidContainer = document.getElementById('rePlasmidMap');
+        if (plasmidContainer) plasmidContainer.remove();
+      }
+
       this.renderTable(results, fragments);
+    },
+
+    drawPlasmidMap: function(sequenceLength, cutResults, containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      
+      const size = 600;
+      const cx = size / 2;
+      const cy = size / 2;
+      const r = 180; // Radius of backbone
+      
+      let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">`;
+      
+      // Backbone (Dark ring)
+      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border-color)" stroke-width="4"/>`;
+      
+      // Group by exact cut position logic to mitigate collision
+      const groups = {};
+      cutResults.forEach(cut => {
+        const cutPos = cut.cut;
+        if (!groups[cutPos]) groups[cutPos] = [];
+        groups[cutPos].push(cut);
+      });
+      
+      for (const pos in groups) {
+        const cuts = groups[pos];
+        const theta = (parseInt(pos) / sequenceLength) * 2 * Math.PI - Math.PI / 2;
+        
+        // Base line crossing circle
+        const x1 = cx + (r - 10) * Math.cos(theta);
+        const y1 = cy + (r - 10) * Math.sin(theta);
+        const x2 = cx + (r + 10) * Math.cos(theta);
+        const y2 = cy + (r + 10) * Math.sin(theta);
+        
+        svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--text-secondary)" stroke-width="2"/>`;
+        
+        // Radially offset labels if multiple enzymes share same coordinates
+        cuts.forEach((cut, idx) => {
+          // Expand radius safely per duplicate site
+          const labelR = r + 20 + (idx * 16);
+          const tx = cx + labelR * Math.cos(theta);
+          const ty = cy + labelR * Math.sin(theta);
+          
+          let fill = "var(--text-primary)";
+          let decoration = "none";
+          let icon = "";
+          
+          // Methylation Interference visual tracking
+          if (cut.isBlocked) {
+            fill = "#dc2626"; // Wet lab Warning red
+            decoration = "line-through";
+            icon = "⛔ ";
+          }
+          
+          let anchor = "middle";
+          if (Math.cos(theta) > 0.05) anchor = "start";
+          else if (Math.cos(theta) < -0.05) anchor = "end";
+          
+          // Using strict SVG markup injection (no frameworks payload)
+          svg += `<text x="${tx}" y="${ty}" font-family="var(--sans)" font-size="12" fill="${fill}" text-anchor="${anchor}" dominant-baseline="middle" style="text-decoration: ${decoration}; font-weight: 600;">${icon}${cut.name}</text>`;
+        });
+      }
+      
+      // Plasmid structural summary in the center
+      svg += `<text x="${cx}" y="${cy - 8}" font-family="var(--sans)" font-size="16" fill="var(--text-primary)" text-anchor="middle" font-weight="bold">Plasmid Map</text>`;
+      svg += `<text x="${cx}" y="${cy + 15}" font-family="var(--sans)" font-size="14" fill="var(--text-secondary)" text-anchor="middle">${sequenceLength.toLocaleString()} bp</text>`;
+      
+      svg += `</svg>`;
+      container.innerHTML = window.BioKit.utils.sanitizeHTML(svg);
     },
 
     renderSequenceMap: function(seq, results) {
