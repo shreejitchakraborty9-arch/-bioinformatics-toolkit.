@@ -103,6 +103,27 @@
           }
         }
         this.drawPlasmidMap(seq.length, results, 'rePlasmidMap');
+        
+        // --- Publication Export Module ---
+        let exportBtn = document.getElementById('reExportPdfBtn');
+        if (!exportBtn) {
+          exportBtn = document.createElement('button');
+          exportBtn.id = 'reExportPdfBtn';
+          exportBtn.className = 'btn-primary';
+          exportBtn.style.marginTop = '15px';
+          exportBtn.style.alignSelf = 'center';
+          exportBtn.innerHTML = 'Export Publication PDF';
+          exportBtn.addEventListener('click', () => {
+             const svgNode = plasmidContainer.querySelector('svg');
+             if (svgNode) {
+               const seqNameMatch = document.querySelector('.session-name')?.textContent || 'plasmid';
+               const cleanName = seqNameMatch.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+               this.exportPlasmidPDF(svgNode, cleanName);
+             }
+          });
+          plasmidContainer.style.flexDirection = 'column';
+          plasmidContainer.appendChild(exportBtn);
+        }
       } else {
         const plasmidContainer = document.getElementById('rePlasmidMap');
         if (plasmidContainer) plasmidContainer.remove();
@@ -115,15 +136,29 @@
       const container = document.getElementById(containerId);
       if (!container) return;
       
+      // Aggressively clear to prevent memory leaks
+      container.innerHTML = '';
+      
       const size = 600;
       const cx = size / 2;
       const cy = size / 2;
       const r = 180; // Radius of backbone
+      const xmlns = "http://www.w3.org/2000/svg";
       
-      let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">`;
+      const svg = document.createElementNS(xmlns, 'svg');
+      svg.setAttribute('width', size);
+      svg.setAttribute('height', size);
+      svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
       
       // Backbone (Dark ring)
-      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border-color)" stroke-width="4"/>`;
+      const circle = document.createElementNS(xmlns, 'circle');
+      circle.setAttribute('cx', cx);
+      circle.setAttribute('cy', cy);
+      circle.setAttribute('r', r);
+      circle.setAttribute('fill', 'none');
+      circle.setAttribute('stroke', 'var(--border-color)');
+      circle.setAttribute('stroke-width', '4');
+      svg.appendChild(circle);
       
       // Group by exact cut position logic to mitigate collision
       const groups = {};
@@ -143,7 +178,14 @@
         const x2 = cx + (r + 10) * Math.cos(theta);
         const y2 = cy + (r + 10) * Math.sin(theta);
         
-        svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--text-secondary)" stroke-width="2"/>`;
+        const line = document.createElementNS(xmlns, 'line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('stroke', 'var(--text-secondary)');
+        line.setAttribute('stroke-width', '2');
+        svg.appendChild(line);
         
         // Radially offset labels if multiple enzymes share same coordinates
         cuts.forEach((cut, idx) => {
@@ -154,30 +196,148 @@
           
           let fill = "var(--text-primary)";
           let decoration = "none";
-          let icon = "";
+          let labelText = cut.name;
           
           // Methylation Interference visual tracking
           if (cut.isBlocked) {
             fill = "#dc2626"; // Wet lab Warning red
             decoration = "line-through";
-            icon = "⛔ ";
+            labelText = "*" + cut.name;
           }
           
           let anchor = "middle";
           if (Math.cos(theta) > 0.05) anchor = "start";
           else if (Math.cos(theta) < -0.05) anchor = "end";
           
-          // Using strict SVG markup injection (no frameworks payload)
-          svg += `<text x="${tx}" y="${ty}" font-family="var(--sans)" font-size="12" fill="${fill}" text-anchor="${anchor}" dominant-baseline="middle" style="text-decoration: ${decoration}; font-weight: 600;">${icon}${cut.name}</text>`;
+          const text = document.createElementNS(xmlns, 'text');
+          text.setAttribute('x', tx);
+          text.setAttribute('y', ty);
+          text.setAttribute('font-family', 'var(--sans)');
+          text.setAttribute('font-size', '12');
+          text.setAttribute('fill', fill);
+          text.setAttribute('text-anchor', anchor);
+          text.setAttribute('dominant-baseline', 'middle');
+          text.setAttribute('style', `text-decoration: ${decoration}; font-weight: 600;`);
+          text.textContent = labelText;
+          svg.appendChild(text);
         });
       }
       
       // Plasmid structural summary in the center
-      svg += `<text x="${cx}" y="${cy - 8}" font-family="var(--sans)" font-size="16" fill="var(--text-primary)" text-anchor="middle" font-weight="bold">Plasmid Map</text>`;
-      svg += `<text x="${cx}" y="${cy + 15}" font-family="var(--sans)" font-size="14" fill="var(--text-secondary)" text-anchor="middle">${sequenceLength.toLocaleString()} bp</text>`;
+      const titleText = document.createElementNS(xmlns, 'text');
+      titleText.setAttribute('x', cx);
+      titleText.setAttribute('y', cy - 8);
+      titleText.setAttribute('font-family', 'var(--sans)');
+      titleText.setAttribute('font-size', '16');
+      titleText.setAttribute('fill', 'var(--text-primary)');
+      titleText.setAttribute('text-anchor', 'middle');
+      titleText.setAttribute('font-weight', 'bold');
+      titleText.textContent = 'Plasmid Map';
+      svg.appendChild(titleText);
       
-      svg += `</svg>`;
-      container.innerHTML = window.BioKit.utils.sanitizeHTML(svg);
+      const subtitleText = document.createElementNS(xmlns, 'text');
+      subtitleText.setAttribute('x', cx);
+      subtitleText.setAttribute('y', cy + 15);
+      subtitleText.setAttribute('font-family', 'var(--sans)');
+      subtitleText.setAttribute('font-size', '14');
+      subtitleText.setAttribute('fill', 'var(--text-secondary)');
+      subtitleText.setAttribute('text-anchor', 'middle');
+      subtitleText.textContent = `${sequenceLength.toLocaleString()} bp`;
+      svg.appendChild(subtitleText);
+      
+      container.appendChild(svg);
+    },
+
+    exportPlasmidPDF: async function(svgNode, sequenceName) {
+      const btn = document.getElementById('reExportPdfBtn');
+      if (btn) btn.textContent = 'Generating PDF... Loading Heavy Modules...';
+
+      // 1. Lazy load dependencies dynamically
+      const loadScript = (src, checkGlobal) => {
+        return new Promise((resolve, reject) => {
+          if (window[checkGlobal]) return resolve(window[checkGlobal]);
+          const existing = document.querySelector(`script[src="\${src}"]`);
+          if (existing) {
+            const interval = setInterval(() => {
+              if (window[checkGlobal]) {
+                clearInterval(interval);
+                resolve(window[checkGlobal]);
+              }
+            }, 100);
+            return;
+          }
+          const s = document.createElement('script');
+          s.src = src;
+          s.onload = () => resolve(window[checkGlobal]);
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      };
+
+      try {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/svg2pdf.js/2.2.4/svg2pdf.umd.min.js', 'svg2pdf');
+        
+        const { jsPDF } = window.jspdf;
+
+        // 2. Inline CSS Serialization
+        const clone = svgNode.cloneNode(true);
+        const originalElements = svgNode.querySelectorAll('*');
+        const cloneElements = clone.querySelectorAll('*');
+        
+        for (let i = 0; i < originalElements.length; i++) {
+           const computed = window.getComputedStyle(originalElements[i]);
+           const cloneEl = cloneElements[i];
+           
+           // Forcibly resolve CSS variables (e.g. var(--sans)) to absolute computed styling
+           cloneEl.style.fill = computed.fill;
+           cloneEl.style.stroke = computed.stroke;
+           cloneEl.style.strokeWidth = computed.strokeWidth;
+           cloneEl.style.fontFamily = computed.fontFamily;
+           cloneEl.style.fontSize = computed.fontSize;
+           cloneEl.style.fontWeight = computed.fontWeight;
+           cloneEl.style.textAnchor = computed.textAnchor;
+           cloneEl.style.dominantBaseline = computed.dominantBaseline;
+           cloneEl.style.textDecoration = computed.textDecorationLine || computed.textDecoration;
+           cloneEl.style.color = computed.color;
+        }
+
+        // 3. Canvas Dimensions (Standard US Letter: 612x792 pt, orientation: portrait)
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+        
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        
+        const svgW = parseInt(clone.getAttribute('width')) || 600;
+        const svgH = parseInt(clone.getAttribute('height')) || 600;
+
+        // Center map with scientific margins
+        const xOffset = (pageWidth - svgW) / 2;
+        const yOffset = (pageHeight - svgH) / 2;
+
+        // 4. Vector preservation API (svg2pdf hooks into jsPDF via doc.svg)
+        await doc.svg(clone, {
+           x: xOffset,
+           y: yOffset,
+           width: svgW,
+           height: svgH
+        });
+
+        // 5. Provenance Metadata
+        const dateStr = new Date().toISOString().split('T')[0];
+        doc.setFontSize(9);
+        doc.setTextColor(120);
+        const footerText = `Generated by BioToolkit \${dateStr} - Bionised Engine`;
+        doc.text(footerText, pageWidth - 30, pageHeight - 30, { align: 'right' });
+
+        doc.save(`\${sequenceName}_plasmid_map.pdf`);
+
+      } catch (err) {
+        console.error('PDF generation failed:', err);
+        window.showToast('Failed to export PDF.');
+      } finally {
+        if (btn) btn.textContent = 'Export Publication PDF';
+      }
     },
 
     renderSequenceMap: function(seq, results) {
