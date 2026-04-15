@@ -29,12 +29,15 @@
         return;
       }
 
+      // Read topology toggle — default to linear if toggle element absent
+      const isCircular = document.getElementById('reTopologyToggle')?.value === 'circular';
+
       window.withLoading(toolId, (results) => {
         this.displayResults(seq, results);
       }, seq.length, {
         type: 'RESTRICTION_SEARCH',
         strategy: 'auto',
-        payload: { sequence: seq, enzymes: selectedEnzymes }
+        payload: { sequence: seq, enzymes: selectedEnzymes, isCircular }
       });
     },
 
@@ -103,9 +106,9 @@
       } else {
         html += `
           <table class="data-table">
-            <thead><tr><th>Enzyme</th><th>Site</th><th>Strand</th><th>Position</th><th>Cut</th></tr></thead>
+            <thead><tr><th>Enzyme</th><th>Site</th><th>Strand</th><th>Position</th><th>5' Cut</th><th>End Type</th><th>Overhang (bp)</th></tr></thead>
             <tbody>
-              ${results.map(r => `<tr><td>${r.name}</td><td>${r.site}</td><td>${r.strand || '+'}</td><td>${r.pos}</td><td>${r.cut}</td></tr>`).join('')}
+              ${results.map(r => `<tr><td>${r.name}</td><td>${r.site}</td><td>${r.strand || '+'}</td><td>${r.pos}</td><td>${r.cut}</td><td>${r.endType || '—'}</td><td>${r.overhang !== undefined ? r.overhang : '—'}</td></tr>`).join('')}
             </tbody>
           </table>
         `;

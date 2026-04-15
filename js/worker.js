@@ -329,36 +329,94 @@ function hasSeedMatch(query, subject, wordSize = 7) {
 }
 
 // ── Restriction Mapping (Optimized for scale) ───────────────
+
+/**
+ * Classifies the overhang type produced by a restriction enzyme cut.
+ * Based on the difference between sense and antisense cut positions
+ * relative to the 5' end of the recognition site.
+ * @param {number} cut_sense - Cut position on the sense (top) strand.
+ * @param {number} cut_antisense - Cut position on the antisense (bottom) strand.
+ * @returns {string} "Blunt End", "5' Overhang", or "3' Overhang"
+ */
+function determineEndType(cut_sense, cut_antisense) {
+  const diff = cut_antisense - cut_sense;
+  if (diff === 0) return "Blunt End";
+  if (diff > 0)  return "5' Overhang";   // e.g. EcoRI: cut_antisense(5) - cut_sense(1) = +4
+  return "3' Overhang";                  // e.g. KpnI:  cut_antisense(1) - cut_sense(5) = -4
+}
+
 async function runRestrictionSearch(data, taskId) {
-  const { seq, enzymes } = data;
+  // FIX: payload uses 'sequence' key — destructure with alias to avoid seq=undefined crash
+  const { sequence: seq, enzymes, isCircular = false } = data;
   const results = [];
   const seqLen = seq.length;
-  
-  // Pre-calculate Reverse Complement once
+
+  // Pre-calculate Reverse Complement once for bottom-strand scanning
   const comp = { 'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'U': 'A', 'N': 'N' };
   const rcSeq = seq.split('').reverse().map(b => comp[b] || b).join('');
 
-  const IUPAC_MAP = { 'R': '[AG]', 'Y': '[CT]', 'S': '[GC]', 'W': '[AT]', 'K': '[GT]', 'M': '[AC]', 'B': '[CGT]', 'D': '[AGT]', 'H': '[ACT]', 'V': '[ACG]', 'N': '[ATGC]' };
+  // IUPAC MAP PATCH: ambiguous bases in the *target* DNA (N, R, Y…) must also match.
+  // Each enzyme IUPAC code is expanded to include both the concrete bases AND the
+  // ambiguity character itself, so an 'N' in the sequenced template still scores a hit.
+  const IUPAC_MAP = {
+    'R': '[AGR]',   'Y': '[CTY]',   'S': '[GCS]',   'W': '[ATW]',
+    'K': '[GTK]',   'M': '[ACM]',   'B': '[CGTB]',  'D': '[AGTD]',
+    'H': '[ACTH]',  'V': '[ACGV]',  'N': '[ATGCN]'
+  };
 
   for (let i = 0; i < enzymes.length; i++) {
     const enz = enzymes[i];
+
+    // Build regex from enzyme recognition site IUPAC codes
     let regexStr = '';
     for (const char of enz.site.toUpperCase()) { regexStr += IUPAC_MAP[char] || char; }
     const regex = new RegExp(regexStr, 'g');
 
-    // Forward
+    // Derive cut positions — support both legacy (cut) and new (cut_sense / cut_antisense) schema
+    const cut_sense     = enz.cut_sense     !== undefined ? enz.cut_sense     : (enz.cut || 0);
+    const cut_antisense = enz.cut_antisense !== undefined ? enz.cut_antisense : (enz.site.length - (enz.cut || 0));
+    const endType = determineEndType(cut_sense, cut_antisense);
+
+    // CIRCULAR TOPOLOGY: extend the search string so sites spanning the origin are found.
+    // We only append (site.length - 1) bases to avoid counting duplicate full-length sites.
+    const searchFwd = isCircular ? seq + seq.substring(0, enz.site.length - 1) : seq;
+    const searchRev = isCircular ? rcSeq + rcSeq.substring(0, enz.site.length - 1) : rcSeq;
+
+    // ── Forward strand scan ──────────────────────────────────
     let match;
-    while ((match = regex.exec(seq)) !== null) {
-      results.push({ name: enz.name, site: enz.site, strand: '+', pos: match.index + 1, cut: match.index + (enz.cut || 0) + 1 });
+    while ((match = regex.exec(searchFwd)) !== null) {
+      // For circular DNA, positions wrap around origin via modulo arithmetic
+      const cut5 = (match.index + cut_sense) % seqLen;
+      const cut3 = (match.index + cut_antisense) % seqLen;
+      results.push({
+        name:    enz.name,
+        site:    enz.site,
+        strand:  '+',
+        pos:     (match.index % seqLen) + 1,   // 1-based, circular-safe
+        cut:     cut5 + 1,
+        cut3:    cut3 + 1,
+        endType: endType,
+        overhang: Math.abs(cut_antisense - cut_sense)
+      });
       regex.lastIndex = match.index + 1;
     }
 
-    // Reverse
+    // ── Reverse (bottom) strand scan ────────────────────────
     regex.lastIndex = 0;
-    while ((match = regex.exec(rcSeq)) !== null) {
-      const fwdIndex = seqLen - match.index - enz.site.length;
-      const fwdCut = seqLen - (match.index + (enz.cut || 0));
-      results.push({ name: enz.name, site: enz.site, strand: '-', pos: fwdIndex + 1, cut: fwdCut });
+    while ((match = regex.exec(searchRev)) !== null) {
+      const fwdIndex   = seqLen - match.index - enz.site.length;
+      const fwdCut5    = (seqLen - (match.index + cut_sense))    % seqLen;
+      const fwdCut3    = (seqLen - (match.index + cut_antisense)) % seqLen;
+      results.push({
+        name:    enz.name,
+        site:    enz.site,
+        strand:  '-',
+        pos:     ((fwdIndex % seqLen) + seqLen) % seqLen + 1,  // 1-based, always positive
+        cut:     ((fwdCut5  % seqLen) + seqLen) % seqLen + 1,
+        cut3:    ((fwdCut3  % seqLen) + seqLen) % seqLen + 1,
+        endType: endType,
+        overhang: Math.abs(cut_antisense - cut_sense)
+      });
       regex.lastIndex = match.index + 1;
     }
 
@@ -368,14 +426,14 @@ async function runRestrictionSearch(data, taskId) {
     }
   }
 
-  // Deduplicate and Sort
+  // Deduplicate by name + min/max cut window, then sort by position
   const seen = new Set();
   const unique = [];
   results.forEach(r => {
-    const key = `${r.name}-${Math.min(r.pos, r.cut)}-${Math.max(r.pos, r.cut)}`;
+    const key = `${r.name}-${r.strand}-${r.pos}`;
     if (!seen.has(key)) { seen.add(key); unique.push(r); }
   });
-  
+
   unique.sort((a, b) => a.pos - b.pos);
   self.postMessage({ type: 'RESULT', taskId, result: unique });
 }

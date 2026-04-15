@@ -926,6 +926,13 @@
       </div>
       <div class="input-block">
         <label class="input-label">Enter DNA Sequence</label>
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+          <label class="input-label" style="margin:0; white-space:nowrap;">DNA Topology</label>
+          <select id="reTopologyToggle" style="background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:4px 10px; font-size:0.85rem;">
+            <option value="linear" selected>Linear</option>
+            <option value="circular">Circular (Plasmid)</option>
+          </select>
+        </div>
         <textarea class="seq-input" id="reInput" placeholder="Paste your DNA sequence here..." rows="4"></textarea>
       </div>
       <div class="re-enzyme-select">
