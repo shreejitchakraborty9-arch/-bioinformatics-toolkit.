@@ -106,9 +106,23 @@
       } else {
         html += `
           <table class="data-table">
-            <thead><tr><th>Enzyme</th><th>Site</th><th>Strand</th><th>Position</th><th>5' Cut</th><th>End Type</th><th>Overhang (bp)</th></tr></thead>
+            <thead><tr><th>Enzyme</th><th>Site</th><th>Strand</th><th>Position</th><th>5' Cut</th><th>End Type</th><th>Overhang (bp)</th><th>Wet-Lab Warning</th></tr></thead>
             <tbody>
-              ${results.map(r => `<tr><td>${r.name}</td><td>${r.site}</td><td>${r.strand || '+'}</td><td>${r.pos}</td><td>${r.cut}</td><td>${r.endType || '—'}</td><td>${r.overhang !== undefined ? r.overhang : '—'}</td></tr>`).join('')}
+              ${results.map(r => {
+                let badge = '';
+                if (r.blocked) {
+                  badge = `<span style="background:#dc2626;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.72rem;font-weight:700;letter-spacing:.04em;" title="${r.warning}">⛔ BLOCKED · ${r.blockType}</span>`;
+                } else if (r.potentialInterference) {
+                  badge = `<span style="background:#b45309;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.72rem;font-weight:700;letter-spacing:.04em;" title="${r.warning}">⚠ CAUTION · ${r.blockType}</span>`;
+                }
+                return `<tr style="${r.blocked ? 'opacity:0.6;' : ''}">
+                  <td>${r.name}</td><td>${r.site}</td><td>${r.strand || '+'}</td>
+                  <td>${r.pos}</td><td>${r.cut}</td>
+                  <td>${r.endType || '—'}</td>
+                  <td>${r.overhang !== undefined ? r.overhang : '—'}</td>
+                  <td>${badge || '<span style="color:var(--text-muted);font-size:0.75rem;">—</span>'}</td>
+                </tr>`;
+              }).join('')}
             </tbody>
           </table>
         `;
