@@ -1196,6 +1196,77 @@
   // ==========================================================
   // 6. Standard Codon Translation
   // ==========================================================
+
+  const GENETIC_CODES = {
+    1: { // Standard
+      'TTT':'F', 'TTC':'F', 'TTA':'L', 'TTG':'L',
+      'CTT':'L', 'CTC':'L', 'CTA':'L', 'CTG':'L',
+      'ATT':'I', 'ATC':'I', 'ATA':'I', 'ATG':'M',
+      'GTT':'V', 'GTC':'V', 'GTA':'V', 'GTG':'V',
+      'TCT':'S', 'TCC':'S', 'TCA':'S', 'TCG':'S',
+      'CCT':'P', 'CCC':'P', 'CCA':'P', 'CCG':'P',
+      'ACT':'T', 'ACC':'T', 'ACA':'T', 'ACG':'T',
+      'GCT':'A', 'GCC':'A', 'GCA':'A', 'GCG':'A',
+      'TAT':'Y', 'TAC':'Y', 'TAA':'*', 'TAG':'*',
+      'CAT':'H', 'CAC':'H', 'CAA':'Q', 'CAG':'Q',
+      'AAT':'N', 'AAC':'N', 'AAA':'K', 'AAG':'K',
+      'GAT':'D', 'GAC':'D', 'GAA':'E', 'GAG':'E',
+      'TGT':'C', 'TGC':'C', 'TGA':'*', 'TGG':'W',
+      'CGT':'R', 'CGC':'R', 'CGA':'R', 'CGG':'R',
+      'AGT':'S', 'AGC':'S', 'AGA':'R', 'AGG':'R',
+      'GGT':'G', 'GGC':'G', 'GGA':'G', 'GGG':'G'
+    },
+    2: { // Vertebrate Mitochondrial
+      'AGA':'*', 'AGG':'*', 'ATA':'M', 'TGA':'W'
+    },
+    3: { // Yeast Mitochondrial
+      'ATA':'M', 'CTT':'T', 'CTC':'T', 'CTA':'T', 'CTG':'T', 'TGA':'W', 'CGA':'X', 'CGC':'X'
+    },
+    4: { // Mold, Protozoan, Coelenterate Mito
+      'TGA':'W'
+    },
+    5: { // Invertebrate Mitochondrial
+      'AGA':'S', 'AGG':'S', 'ATA':'M', 'TGA':'W'
+    },
+    6: { // Ciliate, Dasycladacean, Hexamita Nuclear
+      'TAA':'Q', 'TAG':'Q'
+    },
+    11: { // Bacterial, Archaeal, Plant Plastid
+      // Identical to Standard (1) but with different alternative start codons (not handled fully here)
+    }
+  };
+
+  BioMath.translateDNA = function (seq, options = {}) {
+    const { 
+        tableId = 1, 
+        stopAtFirst = false, 
+        requireStart = false 
+    } = options;
+    
+    const table = Object.assign({}, GENETIC_CODES[1], GENETIC_CODES[tableId] || {});
+    const s = seq.toUpperCase().replace(/U/g, 'T').replace(/[^ATCG]/g, 'N');
+    
+    let protein = '';
+    let started = !requireStart;
+
+    for (let i = 0; i < s.length - 2; i += 3) {
+      const codon = s.substring(i, i + 3);
+      if (!started) {
+        if (codon === 'ATG') started = true;
+        else continue;
+      }
+
+      const aa = table[codon] || 'X';
+      if (aa === '*') {
+        protein += '*';
+        if (stopAtFirst) break;
+      } else {
+        protein += aa;
+      }
+    }
+
+    return protein || (requireStart ? 'No ATG start found' : '');
+  };
   // ==========================================================
   // 3. SECIENTIFIC UPGRADE: Molecular Weight & Extinction
   // ==========================================================
