@@ -356,82 +356,6 @@ function hasSeedMatch(query, subject, wordSize = 7) {
  * the most commonly used enzymes. Enzymes absent from this table fall back to
  * algorithmic overlap detection only (no false positives — conservative).
  */
-const METHYLATION_SENSITIVITY = {
-  // Dam-sensitive (GATC methylation on adenine N6 blocks cleavage)
-  'XbaI':   { dam: true,  dcm: false, cpg: false },  // TCTAGA adjacent to G^ATC
-  'ClaI':   { dam: true,  dcm: false, cpg: false },  // ATCGAT; Dam site GATC overlaps
-  'MboI':   { dam: true,  dcm: false, cpg: false },  // GATC — recognises unmethylated GATC only
-  'SalI':   { dam: true,  dcm: false, cpg: false },  // GTCGAC; Dam GATC in context G^TCGAC^
-  'BglII':  { dam: true,  dcm: false, cpg: false },  // AGATCT contains GATC
-
-  // Dam-INSENSITIVE (cleave regardless of Dam methylation status)
-  'Sau3AI': { dam: false, dcm: false, cpg: false },  // GATC; isoschizomer of MboI, Dam-insensitive
-  'DpnI':   { dam: false, dcm: false, cpg: false },  // GATC; requires Dam methylation to cut
-
-  // Dcm-sensitive (CCWGG methylation on cytosine C5 blocks cleavage)
-  'EcoRII': { dam: false, dcm: true,  cpg: false },  // CCWGG — identical to Dcm site
-  'AvaII':  { dam: false, dcm: true,  cpg: false },  // GGWCC (complement of CCWGG)
-
-  // CpG-sensitive (cytosine methylation at C in CG context blocks cleavage)
-  'HpaII':  { dam: false, dcm: false, cpg: true  },  // CCGG; blocked when inner CG is methylated C5
-  'MspI':   { dam: false, dcm: false, cpg: false },  // CCGG; isoschizomer but CpG-insensitive
-  'NotI':   { dam: false, dcm: false, cpg: true  },  // GCGGCCGC contains two CpG dinucleotides
-  'SacII':  { dam: false, dcm: false, cpg: true  },  // CCGCGG contains CpG
-  'BssHII': { dam: false, dcm: false, cpg: true  },  // GCGCGC contains CpG
-  'AscI':   { dam: false, dcm: false, cpg: true  },  // GGCGCGCC contains CpG
-
-  // Enzymes not affected by any of the three methylation systems
-  'EcoRI':  { dam: false, dcm: false, cpg: false },  // GAATTC
-  'BamHI':  { dam: false, dcm: false, cpg: false },  // GGATCC
-  'HindIII':{ dam: false, dcm: false, cpg: false },  // AAGCTT
-  'PstI':   { dam: false, dcm: false, cpg: false },  // CTGCAG
-  'SphI':   { dam: false, dcm: false, cpg: false },  // GCATGC
-  'KpnI':   { dam: false, dcm: false, cpg: false },  // GGTACC
-  'SmaI':   { dam: false, dcm: false, cpg: false },  // CCCGGG
-  'XmaI':   { dam: false, dcm: false, cpg: false },  // CCCGGG
-  'SacI':   { dam: false, dcm: false, cpg: false },  // GAGCTC
-  'AvaI':   { dam: false, dcm: false, cpg: false },  // CYCGRG
-};
-
-/**
- * Scans the canonical (uppercase, no-whitespace) sequence for all three major
- * prokaryotic and eukaryotic methylation target motifs.
- *
- * Dam  methylase: methylates A⁶  in G^ATC on both strands.
- * Dcm  methylase: methylates C⁵  in CC^WGG (W = A|T) on the internal C.
- * CpG  methylase: methylates C⁵  in ^CG   (in mammals and some bacteria).
- *
- * @param {string} seq - Uppercase, whitespace-free DNA sequence.
- * @returns {Array<{type:string, motif:string, start:number, end:number}>}
- *   0-based half-open intervals [start, end) matching standard JS substring convention.
- */
-function scanMethylationSites(seq) {
-  const sites = [];
-
-  // Dam: GATC — exact 4-mer, both strands identical under reverse complement
-  const damRegex = /GATC/g;
-  let m;
-  while ((m = damRegex.exec(seq)) !== null) {
-    sites.push({ type: 'Dam', motif: 'GATC', start: m.index, end: m.index + 4 });
-  }
-
-  // Dcm: CCWGG — W is A or T; regex covers both CC[A]GG and CC[T]GG
-  const dcmRegex = /CC[AT]GG/g;
-  dcmRegex.lastIndex = 0;
-  while ((m = dcmRegex.exec(seq)) !== null) {
-    sites.push({ type: 'Dcm', motif: seq.substring(m.index, m.index + 5), start: m.index, end: m.index + 5 });
-  }
-
-  // CpG: CG dinucleotide — two-character motif, scanned across the entire sequence
-  const cpgRegex = /CG/g;
-  cpgRegex.lastIndex = 0;
-  while ((m = cpgRegex.exec(seq)) !== null) {
-    sites.push({ type: 'CpG', motif: 'CG', start: m.index, end: m.index + 2 });
-  }
-
-  return sites;
-}
-
 /**
  * Determines whether a restriction site physically overlaps with any methylation
  * site in a way that would block enzymatic cleavage.
@@ -441,49 +365,32 @@ function scanMethylationSites(seq) {
  *
  * An enzyme is blocked only if:
  *   1. Its recognition site overlaps a methylation site (interval intersection), AND
- *   2. The enzyme is known to be sensitive to that specific methylation type.
- *
- * If the enzyme is absent from METHYLATION_SENSITIVITY, we still report an overlap
- * as a "potential" warning (blocked: false, potentialInterference: true) rather than
- * suppressing it — erring on the side of caution for wet-lab use.
+ *   2. The enzyme's database object explicitly lists the methylation type in `blockedBy`.
  *
  * @param {number} reStart   - 0-based start of restriction recognition site.
  * @param {number} reEnd     - 0-based end (exclusive) of restriction recognition site.
- * @param {string} enzName   - Enzyme name for sensitivity lookup.
+ * @param {Object} enz       - Enzyme database object containing `blockedBy` array.
  * @param {Array}  methSites - Output of scanMethylationSites().
- * @returns {{ blocked:boolean, blockType:string|null, warning:string|null,
- *             potentialInterference:boolean }}
+ * @returns {{ isBlocked:boolean, blockType:string|null, warning:string|null }}
  */
-function checkMethylationOverlap(reStart, reEnd, enzName, methSites) {
-  const sensitivity = METHYLATION_SENSITIVITY[enzName] || null;
+function checkMethylationOverlap(reStart, reEnd, enz, methSites) {
+  const blockedBy = enz.blockedBy || [];
 
   for (const ms of methSites) {
     // Standard half-open interval overlap test
     const overlaps = (ms.start < reEnd) && (ms.end > reStart);
     if (!overlaps) continue;
 
-    if (sensitivity) {
-      // Enzyme is in our curated table — apply exact sensitivity
-      if (sensitivity[ms.type.toLowerCase()]) {
-        return {
-          blocked:               true,
-          blockType:             ms.type,
-          warning:               `Overlaps ${ms.type} methylation site (${ms.motif}) at position ${ms.start + 1}–${ms.end}. Cleavage likely BLOCKED in dam+/dcm+ strains.`,
-          potentialInterference: false
-        };
-      }
-    } else {
-      // Enzyme not in curated table — report as potential (conservative flag)
+    if (blockedBy.includes(ms.type)) {
       return {
-        blocked:               false,
-        blockType:             ms.type,
-        warning:               `Potential ${ms.type} methylation overlap (${ms.motif}) at position ${ms.start + 1}–${ms.end}. Sensitivity of ${enzName} to ${ms.type} methylation is uncharacterised — validate experimentally.`,
-        potentialInterference: true
+        isBlocked: true,
+        blockType: ms.type,
+        warning:   `Site blocked by overlapping ${ms.type} methylation`
       };
     }
   }
 
-  return { blocked: false, blockType: null, warning: null, potentialInterference: false };
+  return { isBlocked: false, blockType: null, warning: null };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -537,7 +444,7 @@ async function runRestrictionSearch(data, taskId) {
       const cut3       = (match.index + cut_antisense) % seqLen;
 
       // Run methylation overlap check for this recognition site window
-      const methResult = checkMethylationOverlap(siteStart0, siteEnd0, enz.name, methSites);
+      const methResult = checkMethylationOverlap(siteStart0, siteEnd0, enz, methSites);
 
       results.push({
         name:                 enz.name,
@@ -548,10 +455,9 @@ async function runRestrictionSearch(data, taskId) {
         cut3:                 cut3 + 1,
         endType:              endType,
         overhang:             Math.abs(cut_antisense - cut_sense),
-        blocked:              methResult.blocked,
+        isBlocked:            methResult.isBlocked,
         blockType:            methResult.blockType,
-        warning:              methResult.warning,
-        potentialInterference: methResult.potentialInterference
+        warning:              methResult.warning
       });
       regex.lastIndex = match.index + 1;
     }
@@ -565,7 +471,7 @@ async function runRestrictionSearch(data, taskId) {
       const fwdCut5    = (seqLen - (match.index + cut_sense))    % seqLen;
       const fwdCut3    = (seqLen - (match.index + cut_antisense)) % seqLen;
 
-      const methResult = checkMethylationOverlap(siteStart0, siteEnd0, enz.name, methSites);
+      const methResult = checkMethylationOverlap(siteStart0, siteEnd0, enz, methSites);
 
       results.push({
         name:                 enz.name,
@@ -576,10 +482,9 @@ async function runRestrictionSearch(data, taskId) {
         cut3:                 ((fwdCut3 % seqLen) + seqLen) % seqLen + 1,
         endType:              endType,
         overhang:             Math.abs(cut_antisense - cut_sense),
-        blocked:              methResult.blocked,
+        isBlocked:            methResult.isBlocked,
         blockType:            methResult.blockType,
-        warning:              methResult.warning,
-        potentialInterference: methResult.potentialInterference
+        warning:              methResult.warning
       });
       regex.lastIndex = match.index + 1;
     }

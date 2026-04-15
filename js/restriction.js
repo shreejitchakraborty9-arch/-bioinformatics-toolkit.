@@ -110,12 +110,15 @@
             <tbody>
               ${results.map(r => {
                 let badge = '';
-                if (r.blocked) {
+                if (r.isBlocked) {
                   badge = `<span style="background:#dc2626;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.72rem;font-weight:700;letter-spacing:.04em;" title="${r.warning}">⛔ BLOCKED · ${r.blockType}</span>`;
-                } else if (r.potentialInterference) {
-                  badge = `<span style="background:#b45309;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.72rem;font-weight:700;letter-spacing:.04em;" title="${r.warning}">⚠ CAUTION · ${r.blockType}</span>`;
                 }
-                return `<tr style="${r.blocked ? 'opacity:0.6;' : ''}">
+                
+                const rowStyle = r.isBlocked 
+                  ? 'background: rgba(220, 38, 38, 0.08); opacity: 0.8;' 
+                  : '';
+                
+                return `<tr style="${rowStyle}">
                   <td>${r.name}</td><td>${r.site}</td><td>${r.strand || '+'}</td>
                   <td>${r.pos}</td><td>${r.cut}</td>
                   <td>${r.endType || '—'}</td>
