@@ -437,100 +437,6 @@
   };
 
   /**
-   * Calculates the thermodynamic stability (Delta G) of a dimerization event.
-   * Based on SantaLucia NN parameters at a given temperature.
-   * @param {string} seq1 - First primer sequence.
-   * @param {string} seq2 - Second primer sequence (or same for self-dimer).
-   * @param {number} temp_C - Evaluation temperature in Celsius (default 37.0).
-   * @returns {Object} { deltaG, maxRun, is3PrimeTerminal }
-   */
-  BioMath.calculateDimerThermodynamics = function (seq1, seq2, temp_C = 37.0) {
-    const s1 = seq1.toUpperCase();
-    const s2 = seq2.toUpperCase();
-    const s2_rc = BioMath.reverseComplement(s2).toUpperCase();
-    const temp_K = temp_C + 273.15;
-    const R = 1.9872;
-
-    let minDeltaG = 0;
-    let bestRun = 0;
-    let is3Prime = false;
-
-    // Use a sliding alignment to find the most stable binding site
-    for (let shift = -s1.length + 1; shift < s2_rc.length; shift++) {
-      let dH = 0, dS = 0, currentRun = 0, maxRunInShift = 0;
-      let shiftIs3Prime = false;
-
-      // Check complementarity at this shift
-      for (let i = 0; i < s1.length; i++) {
-        const j = i + shift;
-        if (j >= 0 && j < s2_rc.length) {
-          if (s1[i] === s2_rc[j]) {
-            currentRun++;
-            maxRunInShift = Math.max(maxRunInShift, currentRun);
-            
-            // If we have at least a dimer pair (2 bases), add NN params
-            if (currentRun >= 2) {
-              const pair = s1[i-1] + s1[i];
-              if (NN_PARAMS[pair]) {
-                dH += NN_PARAMS[pair][0];
-                dS += NN_PARAMS[pair][1];
-              }
-            }
-            
-            // Detect if this match involves the 3' end of either primer
-            // Primer 1 3' is at indexed s1.length-1
-            // Primer 2 3' is at s2_rc index 0 (if seq2=...5' then s2_rc=3'...5'?) 
-            // Wait, reverseComplement of 5'-GAT-3' is 3'-CTA-5'. So base index 0 of s2_rc is its 3' end.
-            if (i === s1.length - 1 || j === 0) {
-              shiftIs3Prime = true;
-            }
-          } else {
-            currentRun = 0;
-          }
-        }
-      }
-
-      if (maxRunInShift >= 4) {
-        // Add initiation parameters using the actual terminal bases of the
-        // complementary run (SantaLucia 1998 convention: initiation depends
-        // on the identity of the terminal base pair, not a fixed G).
-        // Find the first and last matched bases in this shift to pick the
-        // correct initiation parameters.
-        let firstMatchBase = 'G', lastMatchBase = 'G';
-        for (let k = 0; k < s1.length; k++) {
-          const kj = k + shift;
-          if (kj >= 0 && kj < s2_rc.length && s1[k] === s2_rc[kj]) {
-            firstMatchBase = s1[k]; break;
-          }
-        }
-        for (let k = s1.length - 1; k >= 0; k--) {
-          const kj = k + shift;
-          if (kj >= 0 && kj < s2_rc.length && s1[k] === s2_rc[kj]) {
-            lastMatchBase = s1[k]; break;
-          }
-        }
-        const initStart = NN_INIT[firstMatchBase] || NN_INIT['G'];
-        const initEnd   = NN_INIT[lastMatchBase]  || NN_INIT['G'];
-        dH += initStart.dH + initEnd.dH;
-        dS += initStart.dS + initEnd.dS;
-
-        const dG = (dH * 1000 - temp_K * dS) / 1000;
-        if (dG < minDeltaG) {
-          minDeltaG = dG;
-          bestRun = maxRunInShift;
-          is3Prime = shiftIs3Prime;
-        }
-      }
-    }
-
-    return { 
-      deltaG: minDeltaG.toFixed(2), 
-      maxRun: bestRun, 
-      is3PrimeTerminal: is3Prime 
-    };
-  };
-
-  /**
    * Assesses the stability and quality of the 3' end.
    * Identifies excessive GC sequences (over-clamping) or loose A/T ends.
    */
@@ -1512,7 +1418,8 @@
       'R': ['A', 'G'],       'Y': ['C', 'T'],       'S': ['G', 'C'],
       'W': ['A', 'T'],       'K': ['G', 'T'],       'M': ['A', 'C'],
       'B': ['C', 'G', 'T'],  'D': ['A', 'G', 'T'],  'H': ['A', 'C', 'T'],
-      'V': ['A', 'C', 'G'],  'N': ['A', 'C', 'G', 'T']
+      'V': ['A', 'C', 'G'],  'N': ['A', 'C', 'G', 'T'],
+      'I': ['A', 'C', 'T']
     };
 
     const MAX_PERMS = 64;
