@@ -502,20 +502,7 @@
              if (!eco) return;
              
              const seq = eco.sequence;
-             // Mock some CDS and motif data based on lengths and knowledge
-             const mockCds = [
-                 { start: 10, end: 150, frame: 1, length: 140 },
-                 { start: 200, end: 500, frame: 2, length: 300 },
-                 { start: 550, end: 850, frame: 3, length: 300 }
-             ];
-             const mockMotifs = [
-                 { position: 20, matched: 'TATA', name: 'TATA Box' },
-                 { position: 100, matched: 'CAAT', name: 'CAAT Box' },
-                 { position: 400, matched: 'GCGC', name: 'GC Box' },
-                 { position: 700, matched: 'TATA', name: 'TATA Box' },
-             ];
-             
-             window.loadGenomeData(seq, mockCds, 200, mockMotifs);
+             window.loadGenomeData(seq, [], 200, []);
          });
      }
   });

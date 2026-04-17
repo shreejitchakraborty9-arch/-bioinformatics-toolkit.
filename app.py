@@ -523,15 +523,16 @@ def analyze_protein():
     seq_clean = seq.split("*")[0] if "*" in seq else seq
     truncated = len(seq_clean) < len(seq)
 
-    # ProtParam does not handle ambiguous residues (X/B/Z) or selenocysteine (U)
-    # Selenocysteine → Cysteine is a standard approximation; ambiguous residues are removed
-    has_ambiguous = bool(set(seq_clean) & _AMBIGUOUS_AA)
-    analysis_seq = seq_clean.replace("U", "C")
-    for ch in _AMBIGUOUS_AA:
-        analysis_seq = analysis_seq.replace(ch, "")
+    # Ambiguous residues (X/B/Z) cannot be assigned a definite molecular formula.
+    # Silent removal would produce a scientifically incorrect result — abort instead.
+    if set(seq_clean) & _AMBIGUOUS_AA:
+        return jsonify({
+            "error": "Ambiguous residue detected. Precise calculation aborted to maintain scientific integrity.",
+            "code": "AMBIGUOUS_RESIDUE"
+        }), 422
 
-    if not analysis_seq:
-        return jsonify({"error": "Sequence contains only ambiguous or invalid residues after cleaning"}), 422
+    # Selenocysteine → Cysteine is a standard, documented approximation.
+    analysis_seq = seq_clean.replace("U", "C")
 
     try:
         pa = ProteinAnalysis(analysis_seq)
@@ -574,7 +575,6 @@ def analyze_protein():
             "instability_index": instability,
             "instability_label": "Stable" if instability < 40 else "Unstable",
             "net_charge_ph74": net_charge,
-            "has_ambiguous": has_ambiguous,
             "truncated": truncated
         })
 

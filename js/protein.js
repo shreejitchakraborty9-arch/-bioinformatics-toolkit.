@@ -78,6 +78,24 @@
     const seq = validation.clean.replace(/\*/g, '');
     currentSequence = seq;
 
+    // Ambiguous residues (X, B, Z) cannot be assigned definite molecular formulas.
+    // Do not compute — display an explicit abort instead of silently wrong numbers.
+    if (/[XBZ]/i.test(seq)) {
+      const ambiguityBanner = document.getElementById('proteinAmbiguityWarning');
+      if (ambiguityBanner) {
+        ambiguityBanner.textContent = 'Calculation Aborted: Sequence contains ambiguous residues (X, B, Z). Precise physicochemical values cannot be computed.';
+        ambiguityBanner.classList.remove('hidden');
+      }
+      const empty = document.getElementById('proteinEmptyState');
+      const content = document.querySelector('#proteinResults .results-content');
+      if (content) content.classList.add('hidden');
+      if (empty) {
+        empty.textContent = 'Calculation Aborted: Sequence contains ambiguous residues (X, B, Z).';
+        empty.classList.remove('hidden');
+      }
+      return;
+    }
+
     window.withLoading('panel-protein', () => {
       const mwResult  = BioMath.calculateProtein_MW(seq, massType);
       const hydro     = BioMath.calculateHydrophobicity(seq);
@@ -105,22 +123,13 @@
         window.showValidationWarning('panel-protein', warn);
       }
 
-      // Ambiguity warning banner
+      // Hide ambiguity banner — sequence passed the ambiguity check above.
       const ambiguityBanner = document.getElementById('proteinAmbiguityWarning');
-      if (ambiguityBanner) {
-        if (mwResult.hasAmbiguousResidues) {
-          ambiguityBanner.textContent = `⚠ Contains ambiguous residues (X/B/Z); MW precision reduced (±${mwResult.errorMarginKDa} kDa).`;
-          ambiguityBanner.classList.remove('hidden');
-        } else {
-          ambiguityBanner.classList.add('hidden');
-        }
-      }
+      if (ambiguityBanner) ambiguityBanner.classList.add('hidden');
 
       const massLabel = massType === 'monoisotopic' ? 'MW (Mono, kDa)' : 'Mol. Weight (kDa)';
       const ecLabel   = redoxState === 'oxidized' ? 'Ext. Coeff [Ox] (M⁻¹cm⁻¹)' : 'Ext. Coeff [Red] (M⁻¹cm⁻¹)';
-      const mwDisplay = mwResult.hasAmbiguousResidues
-        ? `${mwResult.kDa} ±${mwResult.errorMarginKDa} kDa`
-        : `${mwResult.kDa} kDa`;
+      const mwDisplay = `${mwResult.kDa} kDa`;
 
       // Stat cards
       window.buildStatCards('proteinStatRow', [
