@@ -914,11 +914,37 @@
 
   /**
    * Calculates protein molecular weight.
-   * @param {string} seq - Canonical protein sequence (no headers, no stop codons).
+   *
+   * Ambiguous residue error margin logic:
+   *   When X, B, or Z are detected, the returned object includes `hasAmbiguousResidues: true`
+   *   and `errorMarginKDa` representing the ± precision bound. The base MW uses the average
+   *   (midpoint) mass for each ambiguous code; the error margin is the additive sum of the
+   *   worst-case per-residue deviation from that midpoint:
+   *
+   *   B (Asx = Asp | Asn):
+   *     avg  = (D_avg + N_avg) / 2 = (115.0886 + 114.1038) / 2 = 114.5962 Da
+   *     ±    = (D_avg − N_avg) / 2 = 0.4924 Da per B residue
+   *
+   *   Z (Glx = Glu | Gln):
+   *     avg  = (E_avg + Q_avg) / 2 = (129.1155 + 128.1307) / 2 = 128.6231 Da
+   *     ±    = (E_avg − Q_avg) / 2 = 0.4924 Da per Z residue
+   *
+   *   X (unknown — any of 20 standard AAs):
+   *     Nominal = 111.10 Da (empirical average of all 20 standard AAs)
+   *     ± = (W_avg − G_avg) / 2 = (186.2132 − 57.0519) / 2 = 64.5807 Da per X residue
+   *     This is the symmetric half-range of the full canonical AA mass spectrum.
+   *
+   *   Total errorMarginKDa = (nX * 64.5807 + nB * 0.4924 + nZ * 0.4924) / 1000
+   *
+   * @param {string} seq - Protein sequence (may contain X, B, Z, U, *).
    * @param {string} massType - 'average' (default) | 'monoisotopic'
-   *   Average: standard residue masses for solution-phase estimation.
-   *   Monoisotopic: most abundant isotopologue masses for MS applications.
-   * @returns {{ kDa: string, internalStop: boolean }}
+   * @returns {{
+   *   kDa: string,
+   *   internalStop: boolean,
+   *   truncatedLength: number,
+   *   hasAmbiguousResidues?: boolean,
+   *   errorMarginKDa?: string
+   * }}
    */
   BioMath.calculateProtein_MW = function(seq, massType='average') {
       // Average residue masses — Fasman (1989) CRC Handbook of Biochemistry
@@ -928,10 +954,11 @@
           'H': 137.1411, 'I': 113.1594, 'L': 113.1594, 'K': 128.1741,
           'M': 131.1926, 'F': 147.1766, 'P': 97.1167,  'S': 87.0782,
           'T': 101.1051, 'W': 186.2132, 'Y': 163.1760, 'V': 99.1326,
-          // Non-canonical: use best available average masses
-          'X': 111.1000, // Unknown — approximate average
+          // Non-canonical
+          'B': 114.5962, // Asx (Asp|Asn midpoint average)
+          'X': 111.1000, // Unknown — empirical average of 20 standard AAs
           'U': 150.0388, // Selenocysteine (avg)
-          'Z': 128.6231  // Glx (Glu/Gln avg)
+          'Z': 128.6231  // Glx (Glu|Gln midpoint average)
       };
 
       // Monoisotopic residue masses — NIST / Roepstorff & Fohlman (1984)
@@ -942,26 +969,41 @@
           'M': 131.04049, 'F': 147.06841, 'P': 97.05276,  'S': 87.03203,
           'T': 101.04768, 'W': 186.07931, 'Y': 163.06333, 'V': 99.06841,
           // Non-canonical
+          'B': 114.53494, // Asx midpoint: (D_mono + N_mono) / 2
           'X': 111.00000, // Unknown placeholder
           'U': 150.95363, // Selenocysteine (monoisotopic)
-          'Z': 128.05858  // Use Gln mass for Glx
+          'Z': 128.55059  // Glx midpoint: (E_mono + Q_mono) / 2
       };
 
-      // Stop codon middleware — strip trailing stops, detect internal stops
+      // Stop codon handling — strip trailing stops, detect internal stops
       const trailingStripped = seq.replace(/\*+$/, '');
       const internalStop = trailingStripped.includes('*');
-      // For mass calculation, truncate at first internal stop
       const workingSeq = internalStop ? trailingStripped.split('*')[0] : trailingStripped;
+      const truncatedLength = workingSeq.length;
 
       const table = (massType === 'monoisotopic') ? monoisotopicMass : averageMass;
       // H₂O: N-terminal H + C-terminal OH = 18.01056 (mono) or 18.01524 (avg)
       let mass = (massType === 'monoisotopic') ? 18.01056 : 18.01524;
 
+      let nX = 0, nB = 0, nZ = 0;
       for (let i = 0; i < workingSeq.length; i++) {
           const char = workingSeq[i].toUpperCase();
+          if (char === 'X') nX++;
+          else if (char === 'B') nB++;
+          else if (char === 'Z') nZ++;
           if (table[char] !== undefined) mass += table[char];
       }
-      return { kDa: (mass / 1000).toFixed(2), internalStop };
+
+      const result = { kDa: (mass / 1000).toFixed(2), internalStop, truncatedLength };
+
+      if (nX > 0 || nB > 0 || nZ > 0) {
+          // Per-residue half-range error (Da): X=64.5807, B=0.4924, Z=0.4924
+          const errorDa = nX * 64.5807 + nB * 0.4924 + nZ * 0.4924;
+          result.hasAmbiguousResidues = true;
+          result.errorMarginKDa = (errorDa / 1000).toFixed(4);
+      }
+
+      return result;
   };
 
   // ==========================================================
@@ -1055,48 +1097,100 @@
   // ==========================================================
   // 5. Isoelectric Point (pI) Solver
   // ==========================================================
+  // Bjellqvist (1993) pKa scale for isoelectric point calculation.
+  // Selenocysteine (U) pKa 5.2: Johansson et al. (2005) Biochemistry 44, 15307.
   const BJELLQVIST_PKA = {
     'N-term': 7.5, 'C-term': 3.55,
     'D': 4.05, 'E': 4.45, 'C': 9.0, 'Y': 10.0,
-    'H': 5.98, 'K': 10.0, 'R': 12.0
+    'H': 5.98, 'K': 10.0, 'R': 12.0,
+    'U': 5.2   // Selenocysteine selenol group; far lower pKa than Cys (9.0) due to selenium
   };
 
   BioMath.calculatePI = function(seq) {
     if (!seq || seq.length === 0) return 7.0;
     const s = seq.toUpperCase();
-    
-    // Count titratable groups
-    const counts = { D:0, E:0, C:0, Y:0, H:0, K:0, R:0 };
+
+    // Count all titratable groups, including Selenocysteine (U)
+    const counts = { D:0, E:0, C:0, Y:0, H:0, K:0, R:0, U:0 };
     for (const aa of s) {
       if (counts[aa] !== undefined) counts[aa]++;
     }
 
     const netCharge = (pH) => {
       let charge = 0;
-      // Basic groups (Positive when pH < pKa)
+      // Basic groups (positive at pH < pKa)
       charge += 1 / (1 + Math.pow(10, pH - BJELLQVIST_PKA['N-term']));
       charge += counts['K'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['K']));
       charge += counts['R'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['R']));
       charge += counts['H'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['H']));
-      
-      // Acidic groups (Negative when pH > pKa)
+      // Acidic groups (negative at pH > pKa)
       charge -= 1 / (1 + Math.pow(10, BJELLQVIST_PKA['C-term'] - pH));
       charge -= counts['D'] / (1 + Math.pow(10, BJELLQVIST_PKA['D'] - pH));
       charge -= counts['E'] / (1 + Math.pow(10, BJELLQVIST_PKA['E'] - pH));
       charge -= counts['C'] / (1 + Math.pow(10, BJELLQVIST_PKA['C'] - pH));
       charge -= counts['Y'] / (1 + Math.pow(10, BJELLQVIST_PKA['Y'] - pH));
-      
+      // Selenocysteine (U): acidic, pKa 5.2 — nearly fully deprotonated at physiological pH
+      charge -= counts['U'] / (1 + Math.pow(10, BJELLQVIST_PKA['U'] - pH));
       return charge;
     };
 
     // Iterative binary search for pH where netCharge ≈ 0
     let low = 0, high = 14, pI = 7;
     for (let i = 0; i < 20; i++) {
-        pI = (low + high) / 2;
-        if (netCharge(pI) > 0) low = pI;
-        else high = pI;
+      pI = (low + high) / 2;
+      if (netCharge(pI) > 0) low = pI;
+      else high = pI;
     }
     return pI.toFixed(2);
+  };
+
+  /**
+   * Returns the net charge of a protein sequence at an arbitrary pH value using
+   * the Bjellqvist pKa scale. Handles Selenocysteine (U, pKa 5.2) as an acidic group.
+   *
+   * Formula for each titratable group (Henderson-Hasselbalch):
+   *   Basic  group: fraction_charged = 1 / (1 + 10^(pH − pKa))
+   *   Acidic group: fraction_charged = 1 / (1 + 10^(pKa − pH))
+   *
+   * @param {string} sequence - Single-letter protein sequence.
+   * @param {number} pH       - Target pH (0–14).
+   * @returns {number} Net charge at the given pH (signed float).
+   */
+  BioMath.calculateNetChargeAtPH = function(sequence, pH) {
+    if (!sequence || sequence.length === 0) return 0;
+    const s = sequence.toUpperCase();
+
+    const counts = { D:0, E:0, C:0, Y:0, H:0, K:0, R:0, U:0 };
+    for (const aa of s) {
+      if (counts[aa] !== undefined) counts[aa]++;
+    }
+
+    let charge = 0;
+    // Basic groups
+    charge += 1 / (1 + Math.pow(10, pH - BJELLQVIST_PKA['N-term']));
+    charge += counts['K'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['K']));
+    charge += counts['R'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['R']));
+    charge += counts['H'] / (1 + Math.pow(10, pH - BJELLQVIST_PKA['H']));
+    // Acidic groups
+    charge -= 1 / (1 + Math.pow(10, BJELLQVIST_PKA['C-term'] - pH));
+    charge -= counts['D'] / (1 + Math.pow(10, BJELLQVIST_PKA['D'] - pH));
+    charge -= counts['E'] / (1 + Math.pow(10, BJELLQVIST_PKA['E'] - pH));
+    charge -= counts['C'] / (1 + Math.pow(10, BJELLQVIST_PKA['C'] - pH));
+    charge -= counts['Y'] / (1 + Math.pow(10, BJELLQVIST_PKA['Y'] - pH));
+    charge -= counts['U'] / (1 + Math.pow(10, BJELLQVIST_PKA['U'] - pH));
+
+    return charge;
+  };
+
+  /**
+   * Returns net charge at physiological pH 7.4.
+   * Convenience wrapper around calculateNetChargeAtPH.
+   *
+   * @param {string} sequence - Single-letter protein sequence.
+   * @returns {number} Net charge at pH 7.4 (signed float, 2 decimal places).
+   */
+  BioMath.calculateNetChargeAtPhysiological = function(sequence) {
+    return parseFloat(BioMath.calculateNetChargeAtPH(sequence, 7.4).toFixed(2));
   };
 
   // ==========================================================

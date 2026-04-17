@@ -513,6 +513,41 @@
         </div>
 
         <div class="workspace-results" id="proteinResults">
+
+          <!-- UniProt Biological Context Card (Step 6) — hidden until a UniProt fetch -->
+          <div id="uniprotMetaCard" class="hidden" style="
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--teal);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+            margin-bottom: 14px;
+            font-family: var(--mono);
+            font-size: 0.78rem;
+          ">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+              <span style="color:var(--teal); font-weight:700; text-transform:uppercase; letter-spacing:0.08em; font-size:0.65rem;">UniProt Biological Context</span>
+              <span id="uniprotMetaAccessionBadge" style="color:var(--text-muted); font-size:0.7rem; background:var(--bg-card); border:1px solid var(--border); border-radius:3px; padding:1px 6px;"></span>
+            </div>
+            <div id="uniprotMetaProteinName" style="color:var(--text-primary); font-weight:600; font-size:0.88rem; margin-bottom:3px;"></div>
+            <div id="uniprotMetaOrganism" style="color:var(--text-muted); font-style:italic; font-size:0.72rem; margin-bottom:12px;"></div>
+
+            <div id="uniprotMetaLocBlock" style="display:none; margin-bottom:10px;">
+              <div style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">Subcellular Location</div>
+              <div id="uniprotMetaLocTags" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
+            </div>
+
+            <div id="uniprotMetaPTMBlock" style="display:none; margin-bottom:10px;">
+              <div style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">Post-Translational Modifications</div>
+              <div id="uniprotMetaPTMList" style="color:var(--text-secondary); font-size:0.72rem; line-height:1.65;"></div>
+            </div>
+
+            <div id="uniprotMetaFeatBlock" style="display:none;">
+              <div style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">Structural Features</div>
+              <div id="uniprotMetaFeatTags" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
+            </div>
+          </div>
+
           <!-- Skeleton empty state with metric preview -->
           <div class="results-empty" id="proteinEmptyState">
             <i data-lucide="beaker"></i>
@@ -570,18 +605,54 @@
           </div>
 
           <div class="results-content hidden">
-            <div class="results-header">Physicochemical Profile</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <div class="results-header" style="margin-bottom:0;">Physicochemical Profile</div>
+              <button id="proteinExportCSVBtn" class="btn-secondary" style="font-size:0.78rem; padding:5px 12px; display:flex; align-items:center; gap:5px;">
+                <i data-lucide="download" style="width:13px; height:13px;"></i> Export Data
+              </button>
+            </div>
+
+            <!-- Ambiguity warning banner — shown only when X/B/Z are present -->
+            <div id="proteinAmbiguityWarning" class="hidden" style="
+              background: rgba(245,158,11,0.12);
+              border: 1px solid #f59e0b;
+              border-radius: var(--radius-sm);
+              color: #f59e0b;
+              font-size: 0.78rem;
+              font-family: var(--mono);
+              padding: 8px 12px;
+              margin-bottom: 10px;
+            "></div>
+
             <div class="result-stat-row" id="proteinStatRow"></div>
             <div class="result-tabs">
               <button class="result-tab active" data-rtab="aa-comp">Composition</button>
               <button class="result-tab" data-rtab="hydro">Hydropathy</button>
+              <button class="result-tab" data-rtab="titration">Titration Curve</button>
             </div>
             <div class="result-tab-content" id="protein-aa-comp">
               <canvas id="aaCanvas" width="300" height="200"></canvas>
               <div class="aa-table-wrap" id="aaTableWrap"></div>
             </div>
             <div class="result-tab-content hidden" id="protein-hydro">
+              <!-- Hydropathy window selector (5–21; default 7 = surface/loop; 19 = TM helix) -->
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;">
+                <label style="font-size:0.72rem; color:var(--text-muted); font-family:var(--mono);">
+                  Window size
+                </label>
+                <input
+                  type="range"
+                  id="hydroWindowSize"
+                  min="5" max="21" step="2" value="7"
+                  style="width:120px; accent-color:var(--teal);"
+                />
+                <span id="hydroWindowLabel" style="font-size:0.72rem; color:var(--teal); font-family:var(--mono); min-width:20px;">7</span>
+                <span style="font-size:0.7rem; color:var(--text-muted);">(7 = surface/loop · 19 = transmembrane)</span>
+              </div>
               <canvas id="hydroCanvas" width="300" height="150"></canvas>
+            </div>
+            <div class="result-tab-content hidden" id="protein-titration">
+              <canvas id="titrationCanvas" width="300" height="220"></canvas>
             </div>
           </div>
         </div>
@@ -1304,6 +1375,21 @@
         });
       });
     }
+  })();
+  </script>
+
+  <!-- Hydropathy window slider label sync -->
+  <script>
+  (function () {
+    document.addEventListener('DOMContentLoaded', function () {
+      const slider = document.getElementById('hydroWindowSize');
+      const label  = document.getElementById('hydroWindowLabel');
+      if (slider && label) {
+        slider.addEventListener('input', function () {
+          label.textContent = slider.value;
+        });
+      }
+    });
   })();
   </script>
 </body>

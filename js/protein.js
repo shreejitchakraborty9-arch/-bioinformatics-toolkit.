@@ -10,6 +10,7 @@
   const BioMath = window.BioKit.core.BioMath;
 
   let currentSequence = "";
+  let lastMetrics = null;
 
   function getThemeColors() {
     const style = getComputedStyle(document.documentElement);
@@ -55,11 +56,14 @@
   }
 
   // ── Main Run ──────────────────────────────────────────
-  function run() {
+  function run(silent) {
     const input = document.getElementById('proteinInput');
     if (!input) return;
 
     const raw = input.value;
+
+    if (silent && raw.replace(/[^A-Za-z*]/g, '').length < 4) return;
+
     const validation = window.validateSequence(raw, 'protein');
 
     if (!validation.valid) {
@@ -82,25 +86,52 @@
       const aliphatic   = BioMath.calculateAliphaticIndex(seq);
       const instability = BioMath.calculateInstabilityIndex(seq);
       const instabLabel = instability < 40 ? ' (Stable)' : ' (Unstable)';
+      const netCharge74 = BioMath.calculateNetChargeAtPhysiological(seq);
 
-      // Surface internal stop-codon warning
+      lastMetrics = {
+        sequence: seq,
+        mwResult,
+        massType,
+        pI,
+        extCoeff,
+        redoxState,
+        netCharge74,
+        aaComposition: getAAComposition(seq)
+      };
+
+      // Internal stop-codon warning: report the exact truncated length
       if (mwResult.internalStop) {
-        const warn = { valid: true, msg: 'Internal stop codon (*) detected. Sequence was truncated at first stop for mass calculation.' };
+        const warn = { valid: true, msg: `Internal stop codon (*) detected. Sequence truncated to ${mwResult.truncatedLength} aa for mass calculation.` };
         window.showValidationWarning('panel-protein', warn);
+      }
+
+      // Ambiguity warning banner
+      const ambiguityBanner = document.getElementById('proteinAmbiguityWarning');
+      if (ambiguityBanner) {
+        if (mwResult.hasAmbiguousResidues) {
+          ambiguityBanner.textContent = `⚠ Contains ambiguous residues (X/B/Z); MW precision reduced (±${mwResult.errorMarginKDa} kDa).`;
+          ambiguityBanner.classList.remove('hidden');
+        } else {
+          ambiguityBanner.classList.add('hidden');
+        }
       }
 
       const massLabel = massType === 'monoisotopic' ? 'MW (Mono, kDa)' : 'Mol. Weight (kDa)';
       const ecLabel   = redoxState === 'oxidized' ? 'Ext. Coeff [Ox] (M⁻¹cm⁻¹)' : 'Ext. Coeff [Red] (M⁻¹cm⁻¹)';
+      const mwDisplay = mwResult.hasAmbiguousResidues
+        ? `${mwResult.kDa} ±${mwResult.errorMarginKDa} kDa`
+        : `${mwResult.kDa} kDa`;
 
       // Stat cards
       window.buildStatCards('proteinStatRow', [
         { val: seq.length.toLocaleString(),      label: 'Length (aa)' },
-        { val: mwResult.kDa + ' kDa',            label: massLabel },
+        { val: mwDisplay,                        label: massLabel },
         { val: pI,                               label: 'Isoelectric Pt (pI)' },
         { val: extCoeff.toLocaleString(),        label: ecLabel },
         { val: hydro,                            label: 'GRAVY Index' },
         { val: aliphatic,                        label: 'Aliphatic Index' },
-        { val: instability + instabLabel,        label: 'Instability Index' }
+        { val: instability + instabLabel,        label: 'Instability Index' },
+        { val: netCharge74,                      label: 'Net Charge (pH 7.4)' }
       ]);
 
       // AA Composition chart
@@ -109,8 +140,13 @@
       // AA Table
       renderAATable(seq);
 
-      // Hydrophobicity plot
-      renderHydroPlot(seq);
+      // Hydrophobicity plot — window size from UI selector (default 7)
+      const winEl = document.getElementById('hydroWindowSize');
+      const winSize = winEl ? parseInt(winEl.value, 10) : 7;
+      renderHydroPlot(seq, winSize);
+
+      // Titration curve
+      renderTitrationCurve(seq);
 
       // Show results, hide empty state
       const empty = document.getElementById('proteinEmptyState');
@@ -118,7 +154,7 @@
       if (empty) empty.classList.add('hidden');
       if (content) content.classList.remove('hidden');
 
-      window.showToast('Analysis Complete');
+      if (!silent) window.showToast('Analysis Complete');
     }, seq.length);
   }
 
@@ -192,7 +228,8 @@
   }
 
   // ── Hydrophobicity Plot ───────────────────────────────
-  function renderHydroPlot(seq) {
+  function renderHydroPlot(seq, windowSize) {
+    windowSize = (windowSize >= 5 && windowSize <= 21) ? windowSize : 7;
     const canvas = document.getElementById('hydroCanvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -202,10 +239,9 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const W = canvas.width, H = canvas.height;
-    const pad = { top: 20, right: 20, bottom: 30, left: 40 };
+    const pad = { top: 28, right: 20, bottom: 30, left: 40 };
     const plotW = W - pad.left - pad.right;
     const plotH = H - pad.top - pad.bottom;
-    const windowSize = 7;
 
     // Compute sliding window
     const values = [];
@@ -228,6 +264,12 @@
     // Background
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, W, H);
+
+    // Window label
+    ctx.fillStyle = colors.muted;
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Kyte-Doolittle  window = ${windowSize}`, pad.left, 14);
 
     // Zero line
     const zeroY = pad.top + plotH - ((-minVal) / range) * plotH;
@@ -272,8 +314,238 @@
     ctx.globalAlpha = 1;
   }
 
+  // ── Titration Curve (Charge vs. pH) ──────────────────
+  function renderTitrationCurve(seq) {
+    const canvas = document.getElementById('titrationCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = canvas.offsetWidth || 700;
+    canvas.height = 220;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const W = canvas.width, H = canvas.height;
+    const pad = { top: 20, right: 20, bottom: 36, left: 52 };
+    const plotW = W - pad.left - pad.right;
+    const plotH = H - pad.top - pad.bottom;
+    const colors = getThemeColors();
+
+    // Generate data: pH 0 to 14 at 0.5 intervals
+    const points = [];
+    for (let ph = 0; ph <= 14; ph += 0.5) {
+      points.push({ ph, charge: BioMath.calculateNetChargeAtPH(seq, ph) });
+    }
+
+    const charges = points.map(p => p.charge);
+    const minC = Math.min(...charges);
+    const maxC = Math.max(...charges);
+    const rangeC = (maxC - minC) || 1;
+
+    const toX = (ph) => pad.left + (ph / 14) * plotW;
+    const toY = (c)  => pad.top + plotH - ((c - minC) / rangeC) * plotH;
+
+    // Background
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Zero charge line
+    const zeroY = toY(0);
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, zeroY);
+    ctx.lineTo(W - pad.right, zeroY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // pH 7.4 marker
+    const x74 = toX(7.4);
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x74, pad.top);
+    ctx.lineTo(x74, pad.top + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = '9px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText('pH 7.4', x74, pad.top + plotH + 20);
+
+    // Curve
+    ctx.beginPath();
+    ctx.strokeStyle = colors.teal;
+    ctx.lineWidth = 2;
+    points.forEach((p, i) => {
+      const x = toX(p.ph);
+      const y = toY(p.charge);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Axes
+    ctx.fillStyle = colors.muted;
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'center';
+
+    // X axis labels (pH)
+    [0, 2, 4, 6, 8, 10, 12, 14].forEach(ph => {
+      ctx.fillText(ph, toX(ph), pad.top + plotH + 14);
+    });
+    ctx.fillText('pH', pad.left + plotW / 2, H - 2);
+
+    // Y axis labels (charge)
+    ctx.textAlign = 'right';
+    [minC, 0, maxC].forEach(c => {
+      ctx.fillText(c.toFixed(1), pad.left - 5, toY(c) + 3);
+    });
+  }
+
+  // ── CSV Export ─────────────────────────────────────────
+  function exportMetricsToCSV() {
+    if (!lastMetrics) return;
+
+    const { sequence, mwResult, massType, pI, extCoeff, redoxState, netCharge74, aaComposition } = lastMetrics;
+    const total = sequence.length;
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    const rows = [];
+    rows.push(['# BioToolkit Protein Analysis Export']);
+    rows.push([`# Date,${ts}`]);
+    rows.push([`# Sequence Length,${total} aa`]);
+    rows.push(['']);
+    rows.push(['Metric', 'Value', 'Unit']);
+    rows.push([`Molecular Weight (${massType === 'monoisotopic' ? 'Monoisotopic' : 'Average'})`, mwResult.kDa, 'kDa']);
+    rows.push(['Isoelectric Point (pI)', pI, '']);
+    rows.push([`Extinction Coefficient (${redoxState === 'oxidized' ? 'Oxidized' : 'Reduced'})`, extCoeff, 'M-1cm-1']);
+    rows.push(['Net Charge (pH 7.4)', netCharge74, '']);
+    rows.push(['Sequence Length', total, 'aa']);
+    rows.push(['']);
+    rows.push(['AA', 'Name', 'Group', 'Count', 'Percentage']);
+    aaComposition.forEach(([aa, cnt]) => {
+      const pct = ((cnt / total) * 100).toFixed(2);
+      rows.push([aa, AA_NAMES[aa] || aa, AA_GROUPS[aa] || 'Other', cnt, `${pct}%`]);
+    });
+
+    const csvContent = rows.map(r => r.join(',')).join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `protein_analysis_${ts.replace(/[: ]/g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ── UniProt Biological Context (Step 6) ───────────────
+
+  function clearUniProtCard() {
+    const card = document.getElementById('uniprotMetaCard');
+    if (card) card.classList.add('hidden');
+  }
+
+  function renderUniProtCard(data) {
+    const card = document.getElementById('uniprotMetaCard');
+    if (!card) return;
+
+    const setText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val || '';
+    };
+    const setDisplay = (id, show) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = show ? '' : 'none';
+    };
+
+    setText('uniprotMetaAccessionBadge', data.accession || '');
+    setText('uniprotMetaProteinName', data.protein_name || '');
+    setText('uniprotMetaOrganism', data.organism || '');
+
+    // Subcellular locations
+    const locTags = document.getElementById('uniprotMetaLocTags');
+    if (locTags && data.subcellular_locations && data.subcellular_locations.length) {
+      locTags.innerHTML = data.subcellular_locations.map(loc =>
+        `<span style="background:rgba(20,184,166,0.12);border:1px solid rgba(20,184,166,0.3);color:var(--teal);border-radius:3px;padding:2px 8px;font-size:0.7rem;">${window.sanitizeHTML ? window.sanitizeHTML(loc) : loc}</span>`
+      ).join('');
+      setDisplay('uniprotMetaLocBlock', true);
+    } else {
+      setDisplay('uniprotMetaLocBlock', false);
+    }
+
+    // PTM descriptions
+    const ptmList = document.getElementById('uniprotMetaPTMList');
+    if (ptmList && data.ptms && data.ptms.length) {
+      ptmList.innerHTML = data.ptms.map(p =>
+        `<div style="padding:2px 0 2px 8px; border-left:2px solid var(--border);">• ${window.sanitizeHTML ? window.sanitizeHTML(p) : p}</div>`
+      ).join('');
+      setDisplay('uniprotMetaPTMBlock', true);
+    } else {
+      setDisplay('uniprotMetaPTMBlock', false);
+    }
+
+    // Structural features (TM helices, signal peptides, etc.)
+    const featTags = document.getElementById('uniprotMetaFeatTags');
+    if (featTags && data.features && data.features.length) {
+      const FEAT_COLORS = {
+        'Transmembrane':    { bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)', text: '#a78bfa' },
+        'Signal':           { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)', text: '#f59e0b' },
+        'Modified residue': { bg: 'rgba(248,113,113,0.12)',border: 'rgba(248,113,113,0.35)', text: '#f87171' },
+        'Glycosylation':    { bg: 'rgba(52,211,153,0.12)', border: 'rgba(52,211,153,0.35)', text: '#34d399' },
+        'Disulfide bond':   { bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.35)', text: '#fbbf24' },
+        'Lipidation':       { bg: 'rgba(96,165,250,0.12)', border: 'rgba(96,165,250,0.35)', text: '#60a5fa' },
+      };
+      featTags.innerHTML = data.features.map(f => {
+        const c = FEAT_COLORS[f.type] || { bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.3)', text: '#94a3b8' };
+        const range = (f.start != null && f.end != null) ? ` ${f.start}–${f.end}` : '';
+        const desc = f.description ? `: ${f.description}` : '';
+        const label = `${f.type}${range}${desc}`;
+        return `<span style="background:${c.bg};border:1px solid ${c.border};color:${c.text};border-radius:3px;padding:2px 7px;font-size:0.68rem;" title="${f.type}">${window.sanitizeHTML ? window.sanitizeHTML(label) : label}</span>`;
+      }).join('');
+      setDisplay('uniprotMetaFeatBlock', true);
+    } else {
+      setDisplay('uniprotMetaFeatBlock', false);
+    }
+
+    card.classList.remove('hidden');
+  }
+
+  function fetchAndDisplayUniProtMeta(accessionId) {
+    fetch('/api/uniprot/' + encodeURIComponent(accessionId))
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { clearUniProtCard(); return; }
+        renderUniProtCard(data);
+      })
+      .catch(() => clearUniProtCard());
+  }
+
+  // Hook into the protein panel fetch button — intercept UniProt fetches only
+  (function () {
+    const panel = document.getElementById('panel-protein');
+    if (!panel) return;
+    const fetchBtn  = panel.querySelector('.fetch-btn');
+    const dbSelect  = panel.querySelector('.fetch-db-select');
+    const idInput   = panel.querySelector('.fetch-id-input');
+    if (!fetchBtn) return;
+
+    fetchBtn.addEventListener('click', () => {
+      const db = dbSelect?.value;
+      const id = idInput?.value.trim();
+      if (db === 'uniprot' && id) {
+        fetchAndDisplayUniProtMeta(id);
+      } else {
+        clearUniProtCard();
+      }
+    });
+  })();
+
   // ── Events ─────────────────────────────────────────────
-  document.getElementById('proteinAnalyzeBtn')?.addEventListener('click', window.debounce(run, 300));
+  document.getElementById('proteinAnalyzeBtn')?.addEventListener('click', () => run());
 
   document.getElementById('proteinSampleBtn')?.addEventListener('click', () => {
     const input = document.getElementById('proteinInput');
@@ -288,6 +560,7 @@
     if (input) { input.value = ''; input.dispatchEvent(new Event('input')); }
     const label = document.getElementById('uniprotNameLabel');
     if (label) { label.textContent = ''; label.classList.add('hidden'); }
+    clearUniProtCard();
     const empty = document.getElementById('proteinEmptyState');
     const content = document.querySelector('#proteinResults .results-content');
     if (empty) empty.classList.remove('hidden');
@@ -338,13 +611,37 @@
     });
   }
 
+  // ── Reactive debounced input (500 ms) ─────────────────
+  (function () {
+    const el = document.getElementById('proteinInput');
+    if (!el) return;
+    let timer;
+    el.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => run(true), 500);
+    });
+  })();
+
+  document.getElementById('proteinExportCSVBtn')?.addEventListener('click', exportMetricsToCSV);
+
+  // ── Hydropathy window selector ─────────────────────────
+  document.getElementById('hydroWindowSize')?.addEventListener('change', () => {
+    if (!currentSequence) return;
+    const winEl = document.getElementById('hydroWindowSize');
+    const winSize = winEl ? parseInt(winEl.value, 10) : 7;
+    renderHydroPlot(currentSequence, winSize);
+  });
+
   // ── Theme Sync ──────────────────────────────────────────
   window.addEventListener('biokit-theme-change', () => {
-    const isVisible = !document.getElementById('panel-protein').classList.contains('hidden') && 
+    const isVisible = !document.getElementById('panel-protein').classList.contains('hidden') &&
                       !document.querySelector('#proteinResults .results-content').classList.contains('hidden');
     if (isVisible && currentSequence) {
+      const winEl = document.getElementById('hydroWindowSize');
+      const winSize = winEl ? parseInt(winEl.value, 10) : 7;
       renderAAChart(currentSequence);
-      renderHydroPlot(currentSequence);
+      renderHydroPlot(currentSequence, winSize);
+      renderTitrationCurve(currentSequence);
     }
   });
 

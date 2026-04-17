@@ -25,6 +25,8 @@ import io
 try:
     from Bio import SeqIO
     from Bio.Seq import Seq as BioSeq
+    from Bio.SeqUtils.ProtParam import ProteinAnalysis
+    from Bio.SeqUtils import molecular_weight as bio_molecular_weight
     _BIOPYTHON_AVAILABLE = True
 except ImportError:
     _BIOPYTHON_AVAILABLE = False
@@ -456,6 +458,228 @@ def analyze_basic():
         return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+# ─────────────────────────────────────────────────────────────
+# Protein Analysis — BioPython ProtParam Backend
+# ─────────────────────────────────────────────────────────────
+
+# Allowed protein residues (IUPAC + ambiguous + selenocysteine + stop)
+_VALID_AA = frozenset("ACDEFGHIKLMNPQRSTVWYXBZU*")
+# Residues that confuse ProtParam — strip before analysis
+_AMBIGUOUS_AA = frozenset("XBZ")
+
+@app.route("/api/analyze/protein", methods=["POST"])
+def analyze_protein():
+    """Server-side protein physicochemical analysis via BioPython ProtParam."""
+    if not _BIOPYTHON_AVAILABLE:
+        return jsonify({"error": "Biopython not available on this server"}), 503
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    raw = data.get("sequence", "")
+    mass_type = data.get("mass_type", "average")
+    redox_state = data.get("redox_state", "reduced")
+
+    if mass_type not in ("average", "monoisotopic"):
+        return jsonify({"error": "mass_type must be 'average' or 'monoisotopic'"}), 422
+    if redox_state not in ("reduced", "oxidized"):
+        return jsonify({"error": "redox_state must be 'reduced' or 'oxidized'"}), 422
+
+    # Strip FASTA header lines
+    lines = raw.strip().splitlines()
+    seq_lines = [l.strip() for l in lines if not l.strip().startswith(">")]
+    seq = "".join(seq_lines).upper()
+
+    # Reject empty or suspiciously short sequences
+    if not seq:
+        return jsonify({"error": "No sequence provided"}), 400
+    if len(seq) < 4:
+        return jsonify({"error": "Sequence too short (minimum 4 residues)"}), 400
+    if len(seq) > 50000:
+        return jsonify({"error": "Sequence too long (maximum 50,000 residues)"}), 400
+
+    # Reject characters that are not valid protein residues
+    invalid = set(seq) - _VALID_AA
+    if invalid:
+        return jsonify({"error": "Invalid characters for a protein sequence: {}".format("".join(sorted(invalid)))}), 422
+
+    # Truncate at first internal stop codon
+    seq_clean = seq.split("*")[0] if "*" in seq else seq
+    truncated = len(seq_clean) < len(seq)
+
+    # ProtParam does not handle ambiguous residues (X/B/Z) or selenocysteine (U)
+    # Selenocysteine → Cysteine is a standard approximation; ambiguous residues are removed
+    has_ambiguous = bool(set(seq_clean) & _AMBIGUOUS_AA)
+    analysis_seq = seq_clean.replace("U", "C")
+    for ch in _AMBIGUOUS_AA:
+        analysis_seq = analysis_seq.replace(ch, "")
+
+    if not analysis_seq:
+        return jsonify({"error": "Sequence contains only ambiguous or invalid residues after cleaning"}), 422
+
+    try:
+        pa = ProteinAnalysis(analysis_seq)
+
+        # Molecular weight
+        if mass_type == "monoisotopic":
+            mw_da = bio_molecular_weight(analysis_seq, seq_type="protein", monoisotopic=True)
+        else:
+            mw_da = pa.molecular_weight()
+        mw_kda = round(mw_da / 1000.0, 3)
+
+        # Isoelectric point
+        pi = round(pa.isoelectric_point(), 2)
+
+        # Extinction coefficient (reduced, oxidized)
+        ec_reduced, ec_oxidized = pa.molar_extinction_coefficient()
+        ext_coeff = ec_oxidized if redox_state == "oxidized" else ec_reduced
+
+        # GRAVY hydrophobicity index
+        gravy = round(pa.gravy(), 3)
+
+        # Aliphatic index (Ikai 1980)
+        aliphatic = round(pa.aliphatic_index(), 2)
+
+        # Instability index (Guruprasad 1990)
+        instability = round(pa.instability_index(), 2)
+
+        # Net charge at physiological pH 7.4
+        net_charge = round(pa.charge_at_pH(7.4), 2)
+
+        return jsonify({
+            "length": len(analysis_seq),
+            "molecular_weight_kda": mw_kda,
+            "mass_type": mass_type,
+            "isoelectric_point": pi,
+            "extinction_coefficient": ext_coeff,
+            "redox_state": redox_state,
+            "gravy": gravy,
+            "aliphatic_index": aliphatic,
+            "instability_index": instability,
+            "instability_label": "Stable" if instability < 40 else "Unstable",
+            "net_charge_ph74": net_charge,
+            "has_ambiguous": has_ambiguous,
+            "truncated": truncated
+        })
+
+    except Exception as e:
+        logger.error("ProtParam analysis error: %s", str(e))
+        return jsonify({"error": "Analysis failed: {}".format(str(e))}), 500
+
+
+# ─────────────────────────────────────────────────────────────
+# UniProt Biological Context — Real Metadata Endpoint
+# ─────────────────────────────────────────────────────────────
+
+# UniProt accession format: [A-Z][0-9][A-Z0-9]{3}[0-9] or [O,P,Q][0-9][A-Z0-9]{3}[0-9]
+_UNIPROT_ACC_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_\-]{1,19}$')
+
+@app.route("/api/uniprot/<accession_id>", methods=["GET"])
+def get_uniprot_entry(accession_id):
+    """Fetch rich biological metadata for a UniProt accession from UniProt REST API."""
+    if not _UNIPROT_ACC_RE.match(accession_id):
+        return jsonify({"error": "Invalid UniProt accession format"}), 400
+
+    cache_key = "uniprot_meta_{}".format(accession_id.upper())
+    cached = cache.get(cache_key)
+    if cached:
+        return jsonify(cached)
+
+    enforce_rate_limit("uniprot")
+
+    try:
+        resp = requests.get(
+            "{}/uniprotkb/{}.json".format(UNIPROT_BASE, accession_id),
+            headers={"Accept": "application/json"},
+            timeout=15
+        )
+        if resp.status_code == 404:
+            return jsonify({"error": "UniProt entry '{}' not found".format(accession_id)}), 404
+        resp.raise_for_status()
+        raw = resp.json()
+
+        # Protein name
+        protein_name = ""
+        rec_name = raw.get("proteinDescription", {}).get("recommendedName", {})
+        if rec_name:
+            protein_name = rec_name.get("fullName", {}).get("value", "")
+        if not protein_name:
+            sub_names = raw.get("proteinDescription", {}).get("submissionNames", [])
+            if sub_names:
+                protein_name = sub_names[0].get("fullName", {}).get("value", "")
+
+        # Gene symbol
+        gene_symbol = ""
+        genes = raw.get("genes", [])
+        if genes:
+            gene_symbol = genes[0].get("geneName", {}).get("value", "")
+
+        # Organism
+        organism = raw.get("organism", {}).get("scientificName", "")
+
+        # Sequence
+        sequence = raw.get("sequence", {}).get("value", "")
+        sequence_length = raw.get("sequence", {}).get("length", 0)
+
+        # PTM text descriptions (commentType == "PTM")
+        ptms = []
+        for comment in raw.get("comments", []):
+            if comment.get("commentType") == "PTM":
+                for t in comment.get("texts", []):
+                    val = t.get("value", "").strip()
+                    if val:
+                        ptms.append(val)
+
+        # Subcellular locations (commentType == "SUBCELLULAR LOCATION")
+        locations = []
+        for comment in raw.get("comments", []):
+            if comment.get("commentType") == "SUBCELLULAR LOCATION":
+                for sub in comment.get("subcellularLocations", []):
+                    loc = sub.get("location", {}).get("value", "")
+                    if loc and loc not in locations:
+                        locations.append(loc)
+
+        # Structural features: TM helices, signal peptide, modified residues
+        _FEATURE_TYPES = {
+            "Transmembrane", "Signal", "Propeptide",
+            "Modified residue", "Glycosylation", "Lipidation", "Disulfide bond"
+        }
+        features = []
+        for feat in raw.get("features", []):
+            ftype = feat.get("type", "")
+            if ftype in _FEATURE_TYPES:
+                loc_obj = feat.get("location", {})
+                entry = {
+                    "type": ftype,
+                    "start": loc_obj.get("start", {}).get("value"),
+                    "end": loc_obj.get("end", {}).get("value"),
+                }
+                desc = feat.get("description", "").strip()
+                if desc:
+                    entry["description"] = desc
+                features.append(entry)
+
+        result = {
+            "accession": accession_id.upper(),
+            "protein_name": protein_name,
+            "gene_symbol": gene_symbol,
+            "organism": organism,
+            "sequence": sequence,
+            "sequence_length": sequence_length,
+            "ptms": ptms[:5],
+            "subcellular_locations": locations,
+            "features": features
+        }
+
+        cache.set(cache_key, result, timeout=86400)
+        return jsonify(result)
+
+    except requests.exceptions.RequestException as e:
+        logger.error("UniProt metadata fetch error: %s", str(e))
+        return jsonify({"error": "Failed to fetch from UniProt: {}".format(str(e))}), 502
+
 
 # ─────────────────────────────────────────────────────────────
 # Error Handlers
