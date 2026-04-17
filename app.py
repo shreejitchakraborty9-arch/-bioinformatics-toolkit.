@@ -37,6 +37,20 @@ try:
 except ImportError:
     _REDIS_AVAILABLE = False
 
+# Celery / batch task queue
+try:
+    from worker import celery as _celery_app, process_batch_task
+    from celery.result import AsyncResult
+    _CELERY_AVAILABLE = True
+except Exception as _celery_import_err:
+    _CELERY_AVAILABLE = False
+    logger = logging.getLogger("BioToolkit")
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("BioToolkit").warning(
+        "Celery worker not importable — batch endpoints will return 503: %s",
+        _celery_import_err
+    )
+
 # ─────────────────────────────────────────────────────────────
 # App Setup
 # ─────────────────────────────────────────────────────────────
@@ -679,6 +693,136 @@ def get_uniprot_entry(accession_id):
     except requests.exceptions.RequestException as e:
         logger.error("UniProt metadata fetch error: %s", str(e))
         return jsonify({"error": "Failed to fetch from UniProt: {}".format(str(e))}), 502
+
+
+# ─────────────────────────────────────────────────────────────
+# High-Throughput Batch Processing (Step 8)
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/analyze/batch", methods=["POST"])
+def analyze_batch():
+    """
+    Accept a multi-FASTA file upload (multipart/form-data, field name 'file').
+    Dispatches an async Celery task and immediately returns a job_id.
+    The client should poll GET /api/status/<job_id> for progress.
+    """
+    if not _CELERY_AVAILABLE:
+        return jsonify({
+            "error": "Batch processing requires the background worker (Celery + Redis). "
+                     "Start it with: celery -A worker worker --loglevel=info"
+        }), 503
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file field in request. POST with multipart/form-data, field name 'file'."}), 400
+
+    uploaded = request.files["file"]
+    if not uploaded.filename:
+        return jsonify({"error": "No file selected."}), 400
+
+    try:
+        content = uploaded.read().decode("utf-8", errors="replace").strip()
+    except Exception as e:
+        return jsonify({"error": "Could not read uploaded file: {}".format(str(e))}), 400
+
+    if not content:
+        return jsonify({"error": "Uploaded file is empty."}), 400
+
+    # Lightweight FASTA sanity check — must contain at least one header line
+    if ">" not in content:
+        return jsonify({
+            "error": "File does not appear to be in FASTA format (no '>' header lines found)."
+        }), 422
+
+    task = process_batch_task.apply_async(args=[content])
+    logger.info("Batch job queued: %s", task.id)
+
+    return jsonify({"job_id": task.id, "status": "queued"}), 202
+
+
+@app.route("/api/status/<job_id>", methods=["GET"])
+def batch_job_status(job_id):
+    """
+    Poll for async batch job progress.
+    Returns JSON: { status, processed, total, progress, [failed], [error] }
+    """
+    if not _CELERY_AVAILABLE:
+        return jsonify({"error": "Celery not available"}), 503
+
+    # Sanitize job_id (Celery UUIDs are hex + hyphens)
+    if not re.match(r'^[a-f0-9\-]{8,64}$', job_id, re.IGNORECASE):
+        return jsonify({"error": "Invalid job ID format"}), 400
+
+    result = AsyncResult(job_id, app=_celery_app)
+    state  = result.state
+
+    if state == "PENDING":
+        return jsonify({"status": "pending", "processed": 0, "total": 0, "progress": 0})
+
+    if state == "STARTED":
+        return jsonify({"status": "running", "processed": 0, "total": 0, "progress": 0})
+
+    if state == "PROGRESS":
+        meta = result.info or {}
+        return jsonify({
+            "status":    "running",
+            "processed": meta.get("processed", 0),
+            "total":     meta.get("total", 0),
+            "progress":  meta.get("progress", 0),
+        })
+
+    if state == "SUCCESS":
+        res = result.result or {}
+        # If the worker itself returned an error dict
+        if res.get("status") == "error":
+            return jsonify({"status": "failed", "error": res.get("message", "Worker error")}), 200
+        return jsonify({
+            "status":   "complete",
+            "total":    res.get("total", 0),
+            "failed":   res.get("failed", 0),
+            "progress": 100,
+        })
+
+    if state in ("FAILURE", "REVOKED"):
+        err_msg = str(result.info) if result.info else state
+        return jsonify({"status": "failed", "error": err_msg})
+
+    return jsonify({"status": state.lower(), "progress": 0})
+
+
+@app.route("/api/batch/<job_id>/download", methods=["GET"])
+def download_batch_results(job_id):
+    """
+    Return completed batch results as a CSV file attachment.
+    The CSV is read from the Celery result stored in Redis.
+    """
+    if not _CELERY_AVAILABLE:
+        return jsonify({"error": "Celery not available"}), 503
+
+    if not re.match(r'^[a-f0-9\-]{8,64}$', job_id, re.IGNORECASE):
+        return jsonify({"error": "Invalid job ID format"}), 400
+
+    result = AsyncResult(job_id, app=_celery_app)
+    if result.state != "SUCCESS":
+        return jsonify({
+            "error": "Job is not complete (state: {}).".format(result.state)
+        }), 400
+
+    res = result.result or {}
+    csv_data = res.get("csv", "")
+    if not csv_data:
+        return jsonify({"error": "No CSV data found for this job."}), 404
+
+    short_id = job_id.replace("-", "")[:8].upper()
+    filename = "batch_results_{}.csv".format(short_id)
+
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="{}"'.format(filename),
+            "Content-Type":        "text/csv; charset=utf-8",
+        },
+    )
 
 
 # ─────────────────────────────────────────────────────────────

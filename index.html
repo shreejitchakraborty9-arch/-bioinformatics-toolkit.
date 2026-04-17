@@ -100,6 +100,14 @@
         <span class="nav-icon"><i data-lucide="layers"></i></span>
         <span class="nav-label">Genome Viewer</span>
       </button>
+      <button class="nav-item" data-tool="structure" id="nav-structure">
+        <span class="nav-icon"><i data-lucide="box"></i></span>
+        <span class="nav-label">Structure Viewer</span>
+      </button>
+      <button class="nav-item" data-tool="batch" id="nav-batch">
+        <span class="nav-icon"><i data-lucide="database"></i></span>
+        <span class="nav-label">Batch Analysis</span>
+      </button>
 
       <div class="sidebar-divider"></div>
     </nav>
@@ -235,7 +243,29 @@
       </div>
 
       <div class="category-header" style="margin-top: 48px;">
-        <h2 class="category-title" style="color: var(--text-muted);">Planned &amp; Experimental Modules</h2>
+        <h2 class="category-title">Structural &amp; High-Throughput Modules</h2>
+      </div>
+      <div class="tool-grid">
+        <div class="tool-card" data-tool="structure">
+          <div class="tool-card-icon"><i data-lucide="box"></i></div>
+          <div class="tool-card-category">Structural Biology</div>
+          <h3>3D Structure Viewer</h3>
+          <p>Fetch AlphaFold predicted structures by UniProt accession. Render in Cartoon, Surface, or Spacefill with pLDDT confidence coloring.</p>
+          <div class="tool-card-tags"><span>AlphaFold</span><span>pLDDT</span><span>NGL</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
+        </div>
+        <div class="tool-card" data-tool="batch">
+          <div class="tool-card-icon"><i data-lucide="database"></i></div>
+          <div class="tool-card-category">Omics / High-Throughput</div>
+          <h3>Batch Analysis</h3>
+          <p>Upload multi-FASTA files with thousands of sequences. Async Celery queue processes each record; download a full CSV of metrics when complete.</p>
+          <div class="tool-card-tags"><span>Multi-FASTA</span><span>Async</span><span>CSV Export</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
+        </div>
+      </div>
+
+      <div class="category-header" style="margin-top: 48px;">
+        <h2 class="category-title" style="color: var(--text-muted);">Planned Modules</h2>
       </div>
       <div class="tool-grid" style="opacity: 0.6;">
         <div class="tool-card" style="box-shadow: none; border-style: dashed; cursor: default;">
@@ -243,13 +273,6 @@
           <div class="tool-card-category">Systems Biology</div>
           <h3 style="color: var(--text-muted);">Metabolic Pathway Modeling</h3>
           <p>Simulate flux balance analysis across reconstructed metabolic networks.</p>
-          <div class="tool-card-tags"><span style="background: transparent; border-color: transparent;">Coming soon</span></div>
-        </div>
-        <div class="tool-card" style="box-shadow: none; border-style: dashed; cursor: default;">
-          <div class="tool-card-icon" style="background: transparent;"><i data-lucide="microscope"></i></div>
-          <div class="tool-card-category">Structural</div>
-          <h3 style="color: var(--text-muted);">3D Protein Fold Viewer</h3>
-          <p>Render PDB formats and predict tertiary structures for analysis.</p>
           <div class="tool-card-tags"><span style="background: transparent; border-color: transparent;">Coming soon</span></div>
         </div>
       </div>
@@ -1227,6 +1250,216 @@
       </p>
     </section>
 
+    <!-- STRUCTURE VIEWER PANEL -->
+    <section class="tool-panel" id="panel-structure">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="box"></i></div>
+        <div>
+          <h2>3D Protein Structure Viewer</h2>
+          <p class="panel-desc">Fetch AlphaFold predicted structures by UniProt accession. Cartoon representation colored by pLDDT confidence score using the official AlphaFold four-tier color scale.</p>
+        </div>
+      </div>
+
+      <!-- Controls row -->
+      <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+        <div class="input-block" style="flex:1; min-width:200px; margin-bottom:0;">
+          <label class="input-label">UniProt Accession ID</label>
+          <input
+            type="text"
+            id="sv-accession-input"
+            class="seq-input-line"
+            placeholder="e.g. P04637 (TP53), P00533 (EGFR), P68871 (HBB)"
+            style="text-transform:uppercase; font-family:var(--mono);"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <button class="btn-primary" id="sv-fetch-btn">Load Structure</button>
+        <button class="btn-secondary" id="sv-sample-btn">Load TP53 Example</button>
+        <div class="input-block" style="margin-bottom:0;">
+          <label class="input-label">Representation</label>
+          <select id="sv-repr-select" class="num-input" style="width:148px;">
+            <option value="cartoon"   selected>Cartoon</option>
+            <option value="ribbon">Ribbon</option>
+            <option value="surface">Surface</option>
+            <option value="ball-stick">Ball &amp; Stick</option>
+            <option value="spacefill">Spacefill</option>
+          </select>
+        </div>
+        <button class="btn-secondary" id="sv-reset-btn" title="Reset camera to default view">
+          <i data-lucide="maximize-2" style="width:13px; height:13px;"></i>&nbsp;Reset View
+        </button>
+        <button class="btn-secondary" id="sv-screenshot-btn" title="Save 2× high-resolution PNG">
+          <i data-lucide="camera" style="width:13px; height:13px;"></i>&nbsp;Screenshot
+        </button>
+      </div>
+
+      <!-- Thin status bar -->
+      <div id="sv-status-bar"></div>
+
+      <!-- Main viewer grid -->
+      <div class="sv-layout">
+
+        <!-- NGL 3D canvas -->
+        <div class="sv-canvas-wrap">
+          <div class="sv-canvas-container" id="ngl-viewer-container"></div>
+          <!-- Loading / idle overlay -->
+          <div class="sv-overlay" id="sv-overlay">
+            <div class="sv-spinner"></div>
+            <p class="sv-overlay-text">Enter a UniProt accession above and click <strong>Load Structure</strong>.</p>
+          </div>
+        </div>
+
+        <!-- Right sidebar: legend + metadata + controls hint -->
+        <div class="sv-sidebar">
+
+          <!-- pLDDT confidence legend (hidden until first load) -->
+          <div id="sv-plddt-legend" class="sv-legend-card hidden">
+            <div class="sv-legend-title">pLDDT Confidence Score</div>
+            <div class="sv-legend-items">
+              <div class="sv-legend-item">
+                <span class="sv-legend-swatch" style="background:#0053D6;"></span>
+                <span>≥ 90 — Very high</span>
+              </div>
+              <div class="sv-legend-item">
+                <span class="sv-legend-swatch" style="background:#65CBF3;"></span>
+                <span>70–89 — Confident</span>
+              </div>
+              <div class="sv-legend-item">
+                <span class="sv-legend-swatch" style="background:#FFDB13;"></span>
+                <span>50–69 — Low</span>
+              </div>
+              <div class="sv-legend-item">
+                <span class="sv-legend-swatch" style="background:#FF7D45;"></span>
+                <span>&lt; 50 — Very low</span>
+              </div>
+            </div>
+            <div class="sv-legend-note">Scores are stored in the B-factor column of the AlphaFold PDB / mmCIF file.</div>
+          </div>
+
+          <!-- Structure metadata (hidden until first load) -->
+          <div id="sv-meta" class="sv-meta-card hidden">
+            <div class="sv-meta-header">Structure Metadata</div>
+            <div id="sv-meta-content"></div>
+          </div>
+
+          <!-- Mouse controls hint -->
+          <div class="sv-hint-card">
+            <div style="font-size:0.65rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; font-family:var(--mono);">Mouse Controls</div>
+            <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.75; font-family:var(--mono);">
+              Left drag &nbsp;— Rotate<br>
+              Right drag — Pan<br>
+              Scroll &nbsp;&nbsp;&nbsp;&nbsp;— Zoom
+            </div>
+          </div>
+
+        </div><!-- /.sv-sidebar -->
+      </div><!-- /.sv-layout -->
+    </section>
+
+    <!-- BATCH ANALYSIS PANEL -->
+    <section class="tool-panel" id="panel-batch">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="database"></i></div>
+        <div>
+          <h2>Batch Sequence Analysis</h2>
+          <p class="panel-desc">Process multi-FASTA files with thousands of sequences using an asynchronous background queue. Upload → queue → monitor progress → download full CSV.</p>
+        </div>
+      </div>
+
+      <!-- File upload drop zone -->
+      <div class="drop-zone" id="batchDropZone">
+        <div class="drop-icon">🧬</div>
+        <p class="drop-title">Drag &amp; Drop your multi-FASTA file here</p>
+        <p class="drop-sub">DNA, RNA, and protein sequences supported · Maximum 5 MB</p>
+        <p class="drop-sub">or</p>
+        <label class="btn-primary" for="batchFileInput" style="cursor:pointer; display:inline-block; margin-top:4px;">Browse File</label>
+        <input type="file" id="batchFileInput" accept=".fasta,.fa,.fna,.faa,.txt" style="display:none"/>
+      </div>
+
+      <div class="fasta-separator">— or paste FASTA text directly —</div>
+      <div class="input-block">
+        <textarea
+          class="seq-input"
+          id="batchPasteInput"
+          placeholder=">Sequence_1 | Description line&#10;ATGGCTATCAAGCAGAAGTTTGATGCC...&#10;>Sequence_2 | Description line&#10;MSKGEELFTGVVPILVELDGDVNGHKF..."
+          rows="6"
+          style="font-family:var(--mono); font-size:0.8rem;"
+        ></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-primary" id="batchSubmitBtn">
+          <i data-lucide="zap"></i> Submit Batch Job
+        </button>
+        <button class="btn-secondary" id="batchSampleBtn">Load 3-Sequence Example</button>
+        <button class="btn-secondary" id="batchClearBtn">Clear</button>
+      </div>
+
+      <!-- Job progress area — hidden until a job is submitted -->
+      <div id="batchJobArea" class="hidden" style="margin-top:24px;">
+        <div class="batch-job-card">
+          <div class="batch-job-header">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div class="spinner-sm" id="batchSpinner"></div>
+              <span id="batchJobStatus" style="font-weight:600; font-size:0.88rem; color:var(--text-primary);">Queued</span>
+            </div>
+            <span id="batchJobId" style="font-family:var(--mono); font-size:0.68rem; color:var(--text-muted);"></span>
+          </div>
+
+          <div class="batch-progress-wrap">
+            <div class="batch-progress-bar" id="batchProgressBar"></div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; margin-top:8px;">
+            <span id="batchProgressLabel" style="font-size:0.82rem; color:var(--text-secondary);">Waiting for worker…</span>
+            <span id="batchProgressPct" style="font-family:var(--mono); font-size:0.82rem; color:var(--teal); font-weight:600;">0%</span>
+          </div>
+        </div>
+
+        <!-- Download panel — hidden until job complete -->
+        <div id="batchDownloadArea" class="hidden" style="
+          margin-top:16px;
+          padding:16px 20px;
+          background:var(--bg-surface);
+          border:1px solid var(--border);
+          border-left:3px solid var(--teal);
+          border-radius:var(--radius-sm);
+        ">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <div>
+              <div style="font-weight:600; font-size:0.9rem; color:var(--text-primary); margin-bottom:4px;">Analysis Complete</div>
+              <div id="batchCompleteSummary" style="font-size:0.78rem; color:var(--text-muted); font-family:var(--mono);"></div>
+            </div>
+            <button class="btn-primary" id="batchDownloadBtn" style="display:flex; align-items:center; gap:7px;">
+              <i data-lucide="download" style="width:14px; height:14px;"></i> Download CSV Results
+            </button>
+          </div>
+        </div>
+
+        <!-- CSV Column Reference -->
+        <details style="margin-top:16px;">
+          <summary style="font-size:0.78rem; color:var(--text-muted); cursor:pointer; font-family:var(--mono); user-select:none;">
+            CSV column reference ▾
+          </summary>
+          <div style="margin-top:10px; padding:12px 14px; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-family:var(--mono); font-size:0.72rem; color:var(--text-secondary); line-height:1.85;">
+            <strong>id</strong> — FASTA record identifier<br>
+            <strong>description</strong> — Full FASTA header<br>
+            <strong>length</strong> — Sequence length (nt or aa)<br>
+            <strong>type</strong> — Auto-detected: DNA / RNA / PROTEIN<br>
+            <strong>gc_percent</strong> — GC content % (DNA / RNA only)<br>
+            <strong>at_percent</strong> — AT content % (DNA / RNA only)<br>
+            <strong>molecular_weight_kda</strong> — MW in kDa (BioPython)<br>
+            <strong>isoelectric_point</strong> — pI (protein only)<br>
+            <strong>gravy</strong> — GRAVY hydrophobicity index (protein only)<br>
+            <strong>instability_index</strong> — Guruprasad instability (protein only)<br>
+            <strong>instability_label</strong> — Stable / Unstable threshold &lt; 40<br>
+            <strong>error</strong> — Per-record error message, if any
+          </div>
+        </details>
+      </div>
+    </section>
+
     <!-- SCIENTIFIC REFERENCES FOOTER -->
     <section class="tool-panel" id="panel-references" style="margin-top:24px; border:1px solid var(--border-color); background:rgba(17, 24, 39, 0.6);">
       <div class="panel-header" style="margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border-color);">
@@ -1296,16 +1529,18 @@
     // Map each tool-id to the JS file that drives it.
     // Add new tools here without touching any other file.
     const MODULE_MAP = {
-      'dna':           'js/seq-analyzer.js',
-      'protein':       'js/protein.js',
-      'alignment':     'js/alignment.js',
-      'fasta':         'js/fasta.js',
-      'primer':        'js/primer.js',
-      'restriction':   'js/restriction.js',
-      'promoter':      'js/promoter.js',
+      'dna':             'js/seq-analyzer.js',
+      'protein':         'js/protein.js',
+      'alignment':       'js/alignment.js',
+      'fasta':           'js/fasta.js',
+      'primer':          'js/primer.js',
+      'restriction':     'js/restriction.js',
+      'promoter':        'js/promoter.js',
       'sequence-search': 'js/sequence-search.js',
-      'genome-viewer': 'js/genome-viewer.js',
+      'genome-viewer':   'js/genome-viewer.js',
       'example-genomes': 'js/example-genomes.js',
+      'structure':       'js/structure-viewer.js',
+      'batch':           'js/batch.js',
     };
 
     // Tracks which modules have already been fetched so we never

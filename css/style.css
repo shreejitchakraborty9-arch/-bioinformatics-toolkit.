@@ -1951,7 +1951,7 @@ canvas {
  }
 
 /* ============================================================
-   Scientific Grade Upgrade � Unified styles
+   Scientific Grade Upgrade � Unified styles
    ============================================================ */
 
 .scientific-params-drawer {
@@ -2153,4 +2153,229 @@ canvas {
   color: var(--text-muted);
   border: 1px dashed var(--border);
   border-radius: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   3D Structure Viewer — Step 7
+   ═══════════════════════════════════════════════════════════ */
+
+/* Two-column layout: canvas left, sidebar right */
+.sv-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Canvas wrapper holds the NGL stage and the loading overlay */
+.sv-canvas-wrap {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-card);
+  min-height: 560px;
+}
+
+/* NGL renders into this div; height must be explicit for WebGL */
+.sv-canvas-container {
+  width: 100%;
+  height: 560px;
+  display: block;
+}
+
+/* Overlay shown during loading — absolutely positioned over canvas */
+.sv-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 18, 20, 0.88);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  gap: 14px;
+  z-index: 10;
+  pointer-events: none;
+}
+.sv-overlay.hidden { display: none; }
+
+/* Loading spinner (reuses same keyframe as .spinner-sm) */
+.sv-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--teal);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.sv-overlay-text {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  text-align: center;
+  max-width: 260px;
+  line-height: 1.5;
+}
+
+/* Right sidebar column */
+.sv-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* pLDDT confidence legend */
+.sv-legend-card,
+.sv-meta-card,
+.sv-hint-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.sv-legend-card {
+  border-left: 3px solid var(--teal);
+}
+
+.sv-legend-title,
+.sv-meta-header {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 10px;
+  font-family: var(--mono);
+}
+
+.sv-legend-title { color: var(--teal); }
+
+.sv-legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sv-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+}
+
+.sv-legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.sv-legend-note {
+  margin-top: 9px;
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* Per-row metadata inside the metadata card */
+.sv-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-muted);
+  font-family: var(--mono);
+}
+.sv-meta-row:last-child { border-bottom: none; }
+
+.sv-meta-label {
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.sv-meta-value {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
+  max-width: 160px;
+}
+
+/* Thin status bar under the controls row */
+#sv-status-bar {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  min-height: 16px;
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Responsive: stack on narrow viewports */
+@media (max-width: 900px) {
+  .sv-layout {
+    grid-template-columns: 1fr;
+  }
+  .sv-canvas-container {
+    height: 400px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Batch Analysis — Step 8
+   ═══════════════════════════════════════════════════════════ */
+
+/* Job status card */
+.batch-job-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 20px;
+}
+
+.batch-job-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Determinate progress bar */
+.batch-progress-wrap {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.batch-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--teal) 0%, #38bdf8 100%);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  width: 0%;
+}
+
+/* Drop zone dragging highlight */
+.drop-zone.dragover {
+  border-color: var(--teal);
+  background: rgba(20, 184, 166, 0.06);
 }
