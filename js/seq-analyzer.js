@@ -47,7 +47,13 @@
     window.clearValidationAlert('panel-dna');
     const seq = validation.clean;
     const BioMath = window.BioKit.core.BioMath;
-    
+
+    // ── Auto-detect sequence type (DNA vs RNA) ────────────
+    const seqUpper = seq.toUpperCase();
+    const seqType = seqUpper.includes('U') ? 'rna' : 'dna';
+    const tmType  = seqType === 'rna' ? 'rna-rna' : 'dna-dna';
+    const tmModel = seqType === 'rna' ? 'Turner 2004' : 'SantaLucia 1998';
+
     // ── Retrieve Scientific Parameters ────────────────────
     const saltFormVal = document.getElementById('dnaSaltForm')?.value || 'Na_50';
     const SALT_MAP = {
@@ -55,8 +61,12 @@
       'K_50':    0.05, 'Free':    0.001,
       'custom':  (parseFloat(document.getElementById('dnaCustomSaltConc')?.value) || 50) / 1000
     };
-    
-    const ctVal = parseFloat(document.getElementById('dnaCt')?.value) || 0.5;
+    const NaConc = SALT_MAP[saltFormVal];
+
+    const mgVal  = parseFloat(document.getElementById('dnaMgConc')?.value) || 0;
+    const Mg     = mgVal / 1000; // mM → M
+
+    const ctVal = parseFloat(document.getElementById('dnaCt')?.value) || 0.25;
     const ctUnit = document.getElementById('dnaCtUnit')?.value || 'uM';
     const Ct = ctUnit === 'uM' ? ctVal * 1e-6 : ctVal * 1e-9;
     
@@ -71,17 +81,34 @@
       
       // 2. Scientific RNA Engine (UPGRADE)
       const rnaMass = BioMath.calculateScientificRNA_MW(seq, { topology, terminal });
-      const rnaTm = BioMath.calculateScientificTm(seq, { type: 'rna-rna', Ct, Na: SALT_MAP[saltFormVal] });
+      const rnaTm = BioMath.calculateScientificTm(seq, { type: tmType, Ct, Na: NaConc, Mg });
       const indMetrics = BioMath.calculateIndustrialMetrics(seq, { topology, terminal });
       
       // 3. Advanced Translation (ORF Analysis UPGRADE)
       const orfs = BioMath.analyzeORFs(seq, { codeId, minLen: minORF });
 
+      // 4. Synthesis & Viability QC (GC, homopolymer, thermodynamic self-dimer, hairpin)
+      // Pass actual [Na⁺] and free [Mg²⁺] so the ΔG engine uses the same salt
+      // conditions as the Tm calculation. rnaTm.freeMg is already Von Ahsen-corrected.
+      const qcFlags = BioMath.runQualityControl(
+        seq,
+        NaConc,
+        rnaTm && rnaTm.freeMg !== null ? rnaTm.freeMg : 0
+      );
+      const qcHtml = qcFlags.length > 0
+        ? qcFlags.map(f => `<div class="metric-note">\u26A0\uFE0F ${f}</div>`).join('')
+        : '<div class="metric-note">\u2713 All synthesis &amp; viability QC checks passed.</div>';
+
+      // Pre-compute free Mg note for the Tm card
+      const freeMgNote = (rnaTm && rnaTm.freeMg !== null)
+        ? ` | Free $[Mg^{2+}] = ${(rnaTm.freeMg * 1000).toFixed(2)}\\ mM$ (Von Ahsen 2001)`
+        : '';
+
       // ── Update Stat Cards ───────────────────────────────
       window.buildStatCards('dnaStatRow', [
         { val: seq.length.toLocaleString(), label: 'Length (bp)' },
         { val: gc + '%', label: 'GC Content' },
-        { val: rnaTm.tm + '°C', label: 'RNA Tm (Turner 2004)' },
+        { val: rnaTm.tm + '°C', label: `${seqType.toUpperCase()} Tm (${tmModel})` },
         { val: rnaMass.avg.toLocaleString(), label: 'RNA Mass (Avg Da)' },
         { val: orfs.length, label: 'Potential ORFs' }
       ]);
@@ -104,16 +131,20 @@
               <div class="metric-body">
                 <div class="formula-block">$${rnaTm.formula}$</div>
                 <div class="result-block">Predicted $${rnaTm.latex}$</div>
-                <div class="metric-note">Model: Turner 2004 | $C_t = ${ctVal} ${ctUnit}$ | $[Na^+] = ${SALT_MAP[saltFormVal]} M$</div>
+                <div class="metric-note">Model: ${tmModel} | $C_t = ${ctVal}\ ${ctUnit}$ | $[Na^+] = ${NaConc}\ M$${Mg > 0 ? ` | Total $[Mg^{2+}] = ${mgVal}\\ mM$${freeMgNote}` : ''}${rnaTm && rnaTm.degenerateNote ? `<br>${rnaTm.degenerateNote}` : ''}</div>
               </div>
             </div>
             <div class="metric-card scientific-card">
               <div class="metric-header">Industrial Metrics (ϵ260)</div>
               <div class="metric-body">
-                <div>Molar Molar Extinction: $${indMetrics.latex.e260}$</div>
+                <div>Extinction Coefficient: $${indMetrics.latex.e260}$</div>
                 <div>Copy Estimate: $${indMetrics.latex.copies}$</div>
                 <div class="metric-note">Standard Mass Conc (RNA): $1 A_{260} = 40 \mu g/ml$</div>
               </div>
+            </div>
+            <div class="metric-card scientific-card">
+              <div class="metric-header">Synthesis &amp; Viability QC</div>
+              <div class="metric-body">${qcHtml}</div>
             </div>
           </div>
         `);
@@ -161,7 +192,11 @@
   }
 
   // ── Events ─────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', initScientificUI);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initScientificUI);
+  } else {
+    initScientificUI();
+  }
   
   document.getElementById('dnaAnalyzeBtn')?.addEventListener('click', window.debounce(run, 300));
 
@@ -184,7 +219,9 @@
   if (input && meta) {
     input.addEventListener('input', () => {
       const seq = window.cleanSeq(input.value);
-      meta.textContent = `Length: ${seq.length} bp`;
+      const detectedType = seq.toUpperCase().includes('U') ? 'RNA' : 'DNA';
+      const unit = detectedType === 'RNA' ? 'nt' : 'bp';
+      meta.textContent = `Length: ${seq.length} ${unit} (${detectedType} detected)`;
     });
   }
 
@@ -195,5 +232,41 @@
       customSaltBlock.style.display = saltFormEl.value === 'custom' ? 'block' : 'none';
     });
   }
+
+  // ── Quick-Action Buttons ───────────────────────────────
+  function _showQuickResult(tab) {
+    const empty = document.getElementById('dnaEmptyState');
+    const content = document.querySelector('#dnaResults .results-content');
+    if (empty) empty.classList.add('hidden');
+    if (content) content.classList.remove('hidden');
+    document.querySelector(`[data-rtab="${tab}"]`)?.click();
+  }
+
+  document.getElementById('dnaRevCompBtn')?.addEventListener('click', () => {
+    const raw = document.getElementById('dnaInput')?.value || '';
+    const v = window.validateSequence(raw, 'dna');
+    if (!v.valid) { window.showValidationWarning('panel-dna', v); return; }
+    window.clearValidationAlert('panel-dna');
+    const rcEl = document.getElementById('rcDisplay');
+    if (rcEl) rcEl.textContent = window.BioKit.core.BioMath.reverseComplement(v.clean);
+    _showQuickResult('rc');
+  });
+
+  document.getElementById('dnaToRnaBtn')?.addEventListener('click', () => {
+    const raw = document.getElementById('dnaInput')?.value || '';
+    const v = window.validateSequence(raw, 'dna');
+    if (!v.valid) { window.showValidationWarning('panel-dna', v); return; }
+    window.clearValidationAlert('panel-dna');
+    const rnaEl = document.getElementById('rnaDisplay');
+    if (rnaEl) rnaEl.textContent = v.clean.toUpperCase().replace(/T/g, 'U');
+    _showQuickResult('rna');
+  });
+
+  document.getElementById('dnaTranslateBtn')?.addEventListener('click', window.debounce(() => {
+    run();
+    const seq = window.cleanSeq(document.getElementById('dnaInput')?.value || '');
+    const delay = Math.min(Math.max(seq.length * 0.4, 250), 1800);
+    setTimeout(() => document.querySelector('[data-rtab="protein"]')?.click(), delay);
+  }, 300));
 
 })();

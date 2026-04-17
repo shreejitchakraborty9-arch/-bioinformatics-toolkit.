@@ -1328,21 +1328,95 @@
   /**
    * Advanced Thermodynamic Stability (Nearest-Neighbor)
    * Turner 2004 for RNA-RNA, Sugimoto 1995 for RNA-DNA hybrids.
+   * Upgrades: IUPAC degenerate base filtering, Von Ahsen (2001) free Mg²⁺
+   * correction for dNTP chelation, Owczarzy (2004) threshold-based salt logic.
    */
   BioMath.calculateScientificTm = function(seq, options = {}) {
     if (!seq || seq.length < 2) return null;
-    const s = seq.toUpperCase().replace(/T/g, 'U');
-    const { 
-        type = 'rna-rna', // 'rna-rna' or 'rna-dna'
-        Ct = 0.5e-6,      // Molar concentration (default 0.5 uM)
-        Na = 0.05,       // Molar salt (default 50 mM)
+
+    // ── IUPAC Degenerate Base Detection ──────────────────────────
+    const IUPAC_DEGENERATE = new Set(['N','R','Y','W','S','M','K','B','V','D','H','I']);
+    const rawUpper = seq.toUpperCase();
+    const degenerateBases = [...rawUpper].filter(c => IUPAC_DEGENERATE.has(c));
+    const hasDegenerateBases = degenerateBases.length > 0;
+
+    // ── Degenerate Permutation Matrix ────────────────────────────
+    // Per Biochemical Engine v3: stop stripping degenerate bases. Instead,
+    // expand the full permutation pool (up to 64), run the NN Tm engine over
+    // every exact variant, and return the [minTm, maxTm] range. The minimum Tm
+    // represents the weakest binding variant and governs wet-lab annealing.
+    if (hasDegenerateBases) {
+      const { Mg = 0, dNTPs = 0.0008 } = options;
+      const totalMgDeg = (typeof Mg === 'number' && Mg > 0) ? Mg : 0;
+      const freeMgDeg  = Math.max(0, totalMgDeg - dNTPs);
+
+      const expansion = BioMath.expandDegenerateSequence(rawUpper);
+      let minTm = Infinity, maxTm = -Infinity;
+
+      for (const exactSeq of expansion.sequences) {
+        const r = BioMath.calculateScientificTm(exactSeq, options);
+        if (r && r.tm !== 'N/A') {
+          const v = parseFloat(r.tm);
+          if (!isNaN(v)) {
+            if (v < minTm) minTm = v;
+            if (v > maxTm) maxTm = v;
+          }
+        }
+      }
+
+      if (!isFinite(minTm)) {
+        return {
+          tm: 'N/A', hasDegenerateBases: true, degenerateCount: degenerateBases.length,
+          freeMg: null, formula: '', latex: `T_m = \\text{N/A}`, degenerateNote: null
+        };
+      }
+
+      const minStr = minTm.toFixed(2);
+      const maxStr = maxTm.toFixed(2);
+      const degNote = `Minimum $T_m$ (${minStr}\u00b0C) represents the weakest binding` +
+        ` variant in the degenerate pool and should dictate annealing conditions.` +
+        (expansion.truncated ? ` ${expansion.warning}` : '');
+
+      return {
+        tm:              `${minStr} - ${maxStr}`,
+        minTm:           minStr,
+        maxTm:           maxStr,
+        hasDegenerateBases: true,
+        degenerateCount: degenerateBases.length,
+        freeMg:          totalMgDeg > 0 ? freeMgDeg : null,
+        formula:         `T_m = \\frac{\\Delta H}{\\Delta S + R \\ln(\\frac{C_t}{4})} - 273.15`,
+        latex:           `T_m = ${minStr} ^\\circ\\text{C} {-} ${maxStr} ^\\circ\\text{C}`,
+        degenerateNote:  degNote
+      };
+    }
+
+    // ── Exact-sequence NN path (no degenerate bases) ──────────────
+    // Convert DNA T → RNA U for the Turner/Sugimoto NN tables.
+    const s = rawUpper.replace(/[^ATGCU]/g, '').replace(/T/g, 'U');
+
+    if (s.length < 2) return {
+        tm: 'N/A', hasDegenerateBases, degenerateCount: degenerateBases.length,
+        freeMg: null, formula: '', latex: `T_m = \\text{N/A}`, degenerateNote: null
+    };
+
+    const {
+        type  = 'rna-rna', // 'rna-rna' | 'rna-dna'
+        Ct    = 0.5e-6,    // strand concentration (M)
+        Na    = 0.05,      // [Na⁺] (M)
+        Mg    = 0,         // Total [Mg²⁺] (M)
+        dNTPs = 0.0008,    // Von Ahsen (2001): standard 4 × 0.2 mM = 0.8 mM total dNTPs
     } = options;
 
-    const data = window.BioKit.data;
-    const params = (type === 'rna-dna') ? data.SUGIMOTO_1995 : data.TURNER_2004;
-    const R = 1.987; // Gas constant in cal/mol·K
+    // ── Von Ahsen (2001) Free Mg²⁺ Correction ────────────────────
+    // dNTPs chelate Mg²⁺ 1:1; free Mg²⁺ drives thermodynamics, not total.
+    const totalMg = (typeof Mg === 'number' && Mg > 0) ? Mg : 0;
+    const freeMg  = Math.max(0, totalMg - dNTPs);
 
-    let sumH = params.init.dH * 1000; // Convert kcal to cal
+    const data   = window.BioKit.data;
+    const params = (type === 'rna-dna') ? data.SUGIMOTO_1995 : data.TURNER_2004;
+    const R      = 1.987; // cal / (mol·K)
+
+    let sumH = params.init.dH * 1000; // kcal → cal
     let sumS = params.init.dS;
 
     for (let i = 0; i < s.length - 1; i++) {
@@ -1351,30 +1425,40 @@
             sumH += params[pair].dH * 1000;
             sumS += params[pair].dS;
         } else {
-            // Approximation for ambiguity codes in thermodynamics
-            sumH += -10.0 * 1000; // Median value
+            // Median NN approximation for unrecognised dinucleotides
+            sumH += -10.0 * 1000;
             sumS += -25.0;
         }
     }
 
-    // Formula: Tm = dH / (dS + R * ln(Ct/4)) - 273.15
-    // Note: Ct/4 is for non-self-complementary duplexes. For self-complementary, use Ct.
-    const isSelfComp = (s === BioMath.reverseComplement(seq.replace(/T/g, 'U')));
+    // Ct/4 for non-self-complementary strands; Ct for self-complementary
+    const cleanForRC   = rawUpper.replace(/[^ATGCU]/g, '').replace(/T/g, 'U');
+    const isSelfComp   = (s === BioMath.reverseComplement(cleanForRC));
     const ctAdjustment = isSelfComp ? Ct : (Ct / 4);
-    
+
     let tm = (sumH / (sumS + R * Math.log(ctAdjustment))) - 273.15;
 
-    // Salt Correction: Tm(corrected) = Tm(1M) + 16.6 * log10[Na+]
-    // For standard NN, we adjust the Tm based on deviation from 1M Na+
-    const saltAdj = 16.6 * Math.log10(Na);
+    // ── Salt / Entropy Correction ─────────────────────────────────
+    // Owczarzy (2004): when sqrt([freeMg]) / [Na] > 0.22, Mg²⁺ dominates.
+    // Mg²⁺-dominant correction uses Sugimoto (2001) coefficient (12.0).
+    let saltAdj;
+    if (freeMg > 0 && Na > 0 && (Math.sqrt(freeMg) / Na) > 0.22) {
+        saltAdj = 12.0 * Math.log10(freeMg); // Mg²⁺-dominant regime
+    } else {
+        saltAdj = 16.6 * Math.log10(Na);     // Na⁺-dominant regime (SantaLucia 1998)
+    }
     tm += saltAdj;
 
     return {
-      tm: tm.toFixed(2),
-      dH: (sumH / 1000).toFixed(2),
-      dS: sumS.toFixed(2),
-      formula: `T_m = \\frac{\\Delta H}{\\Delta S + R \\ln(\\frac{C_t}{4})} - 273.15`,
-      latex: `T_m = ${tm.toFixed(2)} ^\\circ\\text{C}`
+        tm: tm.toFixed(2),
+        dH: (sumH / 1000).toFixed(2),
+        dS: sumS.toFixed(2),
+        hasDegenerateBases,
+        degenerateCount: degenerateBases.length,
+        freeMg: totalMg > 0 ? freeMg : null,
+        formula: `T_m = \\frac{\\Delta H}{\\Delta S + R \\ln(\\frac{C_t}{4})} - 273.15`,
+        latex:   `T_m = ${tm.toFixed(2)} ^\\circ\\text{C}`,
+        degenerateNote: null
     };
   };
 
@@ -1410,6 +1494,267 @@
             copies: `N = ${copiesPerUg.toExponential(2)} \\text{ copies/\\mu g}`
         }
     };
+  };
+
+  /**
+   * Expands a degenerate IUPAC DNA sequence into all exact-base permutations.
+   * Expansion is capped at 64 sequences. If the true permutation count exceeds
+   * this limit, the first 64 are returned with a warning flag set.
+   *
+   * @param {string} sequence - Input sequence; IUPAC ambiguity codes allowed.
+   * @returns {{ sequences: string[], truncated: boolean, warning: string|null }}
+   */
+  BioMath.expandDegenerateSequence = function(sequence) {
+    // Normalise to DNA space (U → T)
+    const s = sequence.toUpperCase().replace(/U/g, 'T');
+
+    const IUPAC_EXPAND = {
+      'R': ['A', 'G'],       'Y': ['C', 'T'],       'S': ['G', 'C'],
+      'W': ['A', 'T'],       'K': ['G', 'T'],       'M': ['A', 'C'],
+      'B': ['C', 'G', 'T'],  'D': ['A', 'G', 'T'],  'H': ['A', 'C', 'T'],
+      'V': ['A', 'C', 'G'],  'N': ['A', 'C', 'G', 'T']
+    };
+
+    const MAX_PERMS = 64;
+    let sequences = [''];
+    let truncated  = false;
+
+    for (let pos = 0; pos < s.length; pos++) {
+      const base       = s[pos];
+      const expansions = IUPAC_EXPAND[base] || [base];
+
+      if (expansions.length === 1) {
+        // Non-degenerate base: append in-place, no branching
+        for (let k = 0; k < sequences.length; k++) sequences[k] += expansions[0];
+      } else {
+        const newSeqs = [];
+        let   limitHit = false;
+
+        for (let k = 0; k < sequences.length && !limitHit; k++) {
+          for (let e = 0; e < expansions.length && !limitHit; e++) {
+            newSeqs.push(sequences[k] + expansions[e]);
+            if (newSeqs.length >= MAX_PERMS) limitHit = true;
+          }
+        }
+
+        sequences = newSeqs;
+
+        if (limitHit) {
+          // Hard limit reached: complete all partial sequences deterministically
+          // by appending the first (alphabetically lowest) expansion for every
+          // remaining degenerate position. Sequences are fully-formed but the
+          // pool is a subset of the true permutation space.
+          for (let remPos = pos + 1; remPos < s.length; remPos++) {
+            const remBase = s[remPos];
+            const remExp  = (IUPAC_EXPAND[remBase] || [remBase])[0];
+            for (let k = 0; k < sequences.length; k++) sequences[k] += remExp;
+          }
+          truncated = true;
+          break;
+        }
+      }
+    }
+
+    return {
+      sequences,
+      truncated,
+      warning: truncated ? 'Sequence highly degenerate; calculating partial pool.' : null
+    };
+  };
+
+  /**
+   * Thermodynamic self-dimer ΔG calculation (SantaLucia 1998 Nearest-Neighbor,
+   * Owczarzy 2004 / Von Ahsen 2001 salt correction).
+   *
+   * Algorithm:
+   *   1. Compute the reverse complement (RC) of the sequence.
+   *   2. Slide the sequence against its RC over all integer offsets to find every
+   *      contiguous Watson-Crick matching region (no gaps).
+   *   3. For each contiguous run ≥ 4 bp, accumulate ΔH and ΔS via the SantaLucia
+   *      1998 Nearest-Neighbor parameter table (NN_PARAMS / NN_INIT).
+   *   4. Track the run whose 1 M NaCl ΔG at 310.15 K is most negative.
+   *   5. Apply Owczarzy (2004) / Von Ahsen (2001) salt correction:
+   *        Tm_1M_K  = ΔH_cal / ΔS_1M
+   *        Tm_salt_K = Tm_1M_K + salt_adj   (salt_adj from Owczarzy regime selector)
+   *        ΔS_salt  = ΔH_cal / Tm_salt_K    (back-derived from corrected Tm)
+   *      This yields:  ΔG(37 °C) = ΔH_kcal · (1 − 310.15 / Tm_salt_K)
+   *
+   * @param {string} sequence - Primer sequence (U → T normalised internally).
+   * @param {number} Na       - [Na⁺] in M.
+   * @param {number} freeMg   - Free [Mg²⁺] in M after dNTP chelation (Von Ahsen 2001).
+   * @returns {{ deltaG: number, warning: string|null }}
+   */
+  BioMath.calculateDimerDeltaG = function(sequence, Na, freeMg) {
+    const T_K    = 310.15;  // 37 °C in Kelvin (thermodynamic baseline)
+    const MIN_BP = 4;       // Minimum contiguous WC base pairs to evaluate
+
+    // Normalise to DNA uppercase; strip non-canonical
+    const s  = sequence.toUpperCase().replace(/U/g, 'T').replace(/[^ATGC]/g, '');
+    if (s.length < MIN_BP) return { deltaG: 0, warning: null };
+
+    const rc = BioMath.reverseComplement(s);
+    const n  = s.length;
+
+    // bestDG_1M tracks the most negative ΔG at 1 M NaCl, used only for ranking
+    let bestDG_1M = 0;
+    let bestDH    = 0;   // kcal/mol — ΔH of the best run
+    let bestDS    = 0;   // cal/mol·K — ΔS of the best run
+
+    // ── Sliding-window alignment: all integer offsets ─────────────────────
+    // At each shift, j = i + shift maps a position in s to a position in rc.
+    // Checking s[i] === rc[j] is equivalent to asking whether s[i] is the
+    // Watson-Crick complement of the base at position (n-1-j) in the original
+    // sequence — i.e., the correct antiparallel pairing for a self-dimer.
+    for (let shift = -(n - 1); shift <= n - 1; shift++) {
+      let runLen = 0, runDH = 0, runDS = 0;
+      let firstBase = '', lastBase = '', prevBase = '';
+
+      const evaluateRun = () => {
+        if (runLen < MIN_BP) return;
+        // Add SantaLucia 1998 initiation parameters for the terminal base pairs
+        const iF  = NN_INIT[firstBase] || NN_INIT['G'];
+        const iL  = NN_INIT[lastBase]  || NN_INIT['G'];
+        const tDH = runDH + iF.dH + iL.dH;   // kcal/mol
+        const tDS = runDS + iF.dS + iL.dS;   // cal/mol·K
+        const dg  = tDH - T_K * (tDS / 1000);
+        if (dg < bestDG_1M) {
+          bestDG_1M = dg;
+          bestDH    = tDH;
+          bestDS    = tDS;
+        }
+      };
+
+      for (let i = 0; i < n; i++) {
+        const j = i + shift;
+        if (j >= 0 && j < n && s[i] === rc[j]) {
+          if (runLen === 0) firstBase = s[i];
+          if (runLen >= 1) {
+            const pair = prevBase + s[i];
+            if (NN_PARAMS[pair]) { runDH += NN_PARAMS[pair][0]; runDS += NN_PARAMS[pair][1]; }
+          }
+          prevBase = s[i];
+          lastBase = s[i];
+          runLen++;
+        } else {
+          evaluateRun();
+          runLen = 0; runDH = 0; runDS = 0;
+          firstBase = ''; lastBase = ''; prevBase = '';
+        }
+      }
+      evaluateRun(); // Flush any run reaching the end of the sequence
+    }
+
+    // No contiguous WC run of ≥ MIN_BP found at any offset → no significant dimer
+    if (bestDH === 0 && bestDS === 0) return { deltaG: 0, warning: null };
+
+    // ── Salt Correction (Owczarzy 2004 / Von Ahsen 2001) ─────────────────
+    const na_M = (typeof Na     === 'number' && Na     > 0) ? Na     : 0.05;
+    const mg_M = (typeof freeMg === 'number' && freeMg > 0) ? freeMg : 0;
+
+    let saltAdj = 0;
+    if (mg_M > 0 && (Math.sqrt(mg_M) / na_M) > 0.22) {
+      saltAdj = 12.0 * Math.log10(mg_M);  // Mg²⁺-dominant regime (Owczarzy 2004)
+    } else {
+      saltAdj = 16.6 * Math.log10(na_M);  // Na⁺-dominant regime (SantaLucia 1998)
+    }
+
+    // ── ΔS correction derived from the salt-adjusted Tm ──────────────────
+    // At 1 M NaCl (reference): Tm_1M_K = ΔH_cal / ΔS_1M
+    // Salt correction shifts Tm by saltAdj (°C = K for differences):
+    //   Tm_salt_K = Tm_1M_K + saltAdj
+    // At Tm, ΔG = 0, so ΔS_salt = ΔH_cal / Tm_salt_K
+    // Therefore: ΔG(310.15 K) = ΔH_kcal · (1 − 310.15 / Tm_salt_K)
+    const dH_cal    = bestDH * 1000;
+    const Tm_1M_K   = dH_cal / bestDS;
+    const Tm_salt_K = Math.max(1, Tm_1M_K + saltAdj);  // clamp: must be > 0
+    const finalDG   = bestDH * (1 - T_K / Tm_salt_K);
+
+    // ── QC Threshold ─────────────────────────────────────────────────────
+    const CRITICAL_THRESHOLD = -9.0;
+    const warning = finalDG <= CRITICAL_THRESHOLD
+      ? `CRITICAL: Severe self-dimer potential (\u0394G = ${finalDG.toFixed(2)} kcal/mol` +
+        ` \u2264 \u22129.0 kcal/mol). High risk of PCR failure.`
+      : null;
+
+    return { deltaG: parseFloat(finalDG.toFixed(2)), warning };
+  };
+
+  /**
+   * Synthesis & Biological Viability QC
+   * Returns an array of human-readable alert strings. Empty array = all clear.
+   * Checks: extreme GC content, severe homopolymer runs, secondary structure risk.
+   */
+  BioMath.runQualityControl = function(sequence, Na, freeMg) {
+    const warnings = [];
+    // Strip non-canonical characters; treat DNA and RNA uniformly
+    const s = sequence.toUpperCase().replace(/[^ATGCU]/g, '');
+    if (s.length === 0) return warnings;
+    // Salt parameters forwarded to the thermodynamic self-dimer engine.
+    // Defaults: 50 mM Na⁺ (standard PCR), 0 free Mg²⁺.
+    const na_M  = (typeof Na     === 'number' && Na     > 0) ? Na     : 0.05;
+    const fmg_M = (typeof freeMg === 'number' && freeMg >= 0) ? freeMg : 0;
+
+    // ── GC Content ────────────────────────────────────────────────
+    const gcCount = (s.match(/[GC]/g) || []).length;
+    const gcPct   = (gcCount / s.length) * 100;
+    if (gcPct < 30 || gcPct > 70) {
+        warnings.push(
+            `QC ALERT: Extreme GC Content (${gcPct.toFixed(1)}%) \u2014 Potential amplification failure.`
+        );
+    }
+
+    // ── Homopolymer Runs ──────────────────────────────────────────
+    // > 4 consecutive G's (G-quadruplex / synthesis failure risk)
+    if (/G{5,}/i.test(s)) {
+        warnings.push(
+            'QC ALERT: Severe Homopolymer Run (\u22655 G\'s) \u2014 High synthesis risk / G-quadruplex potential.'
+        );
+    }
+    // > 5 consecutive A, T, or C (synthesis stutter risk)
+    if (/A{6,}|T{6,}|C{6,}|U{6,}/i.test(s)) {
+        warnings.push(
+            'QC ALERT: Severe Homopolymer Run (\u22656 A/T/C) \u2014 High synthesis risk / polymerase slippage.'
+        );
+    }
+
+    // ── Self-Dimer: Thermodynamic ΔG (SantaLucia 1998 + Owczarzy/Von Ahsen) ──
+    // Replaces the heuristic stem-count check with a physics-based ΔG calculation.
+    // Warning is injected only when ΔG ≤ −9.0 kcal/mol (see calculateDimerDeltaG).
+    const dimerResult = BioMath.calculateDimerDeltaG(s, na_M, fmg_M);
+    if (dimerResult.warning) {
+        warnings.push(dimerResult.warning);
+    }
+
+    // ── Hairpin: sliding inverted-repeat search (stem ≥ 4 bp, loop ≥ 4 nt) ──
+    // Retained as a structural geometry screen independent of thermodynamic ΔG.
+    // Cap at 200 nt for performance on genomic-length inputs.
+    {
+        const sDNA      = s.replace(/U/g, 'T');
+        const COMP_HP   = { A: 'T', T: 'A', G: 'C', C: 'G' };
+        const revCompHP = str => str.split('').reverse().map(c => COMP_HP[c] || 'N').join('');
+        const MIN_STEM  = 4;
+        const MIN_LOOP  = 4;
+        const checkSeq  = sDNA.slice(0, 200);
+        const maxStem   = Math.floor((checkSeq.length - MIN_LOOP) / 2);
+        let   hairpin   = false;
+
+        for (let stemLen = MIN_STEM; stemLen <= maxStem && !hairpin; stemLen++) {
+            for (let i = 0; i <= checkSeq.length - 2 * stemLen - MIN_LOOP && !hairpin; i++) {
+                const stem5RC = revCompHP(checkSeq.substr(i, stemLen));
+                for (let j = i + stemLen + MIN_LOOP; j <= checkSeq.length - stemLen && !hairpin; j++) {
+                    if (checkSeq.substr(j, stemLen) === stem5RC) hairpin = true;
+                }
+            }
+        }
+
+        if (hairpin) {
+            warnings.push(
+                'QC ALERT: Probable hairpin loop (stem \u22654 bp) \u2014 Secondary structure may inhibit hybridisation.'
+            );
+        }
+    }
+
+    return warnings;
   };
 
   /**
