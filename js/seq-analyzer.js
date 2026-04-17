@@ -234,12 +234,11 @@
   }
 
   // ── Quick-Action Buttons ───────────────────────────────
-  function _showQuickResult(tab) {
+  function _showQuickResult() {
     const empty = document.getElementById('dnaEmptyState');
     const content = document.querySelector('#dnaResults .results-content');
     if (empty) empty.classList.add('hidden');
     if (content) content.classList.remove('hidden');
-    document.querySelector(`[data-rtab="${tab}"]`)?.click();
   }
 
   document.getElementById('dnaRevCompBtn')?.addEventListener('click', () => {
@@ -249,7 +248,7 @@
     window.clearValidationAlert('panel-dna');
     const rcEl = document.getElementById('rcDisplay');
     if (rcEl) rcEl.textContent = window.BioKit.core.BioMath.reverseComplement(v.clean);
-    _showQuickResult('rc');
+    _showQuickResult();
   });
 
   document.getElementById('dnaToRnaBtn')?.addEventListener('click', () => {
@@ -259,14 +258,9 @@
     window.clearValidationAlert('panel-dna');
     const rnaEl = document.getElementById('rnaDisplay');
     if (rnaEl) rnaEl.textContent = v.clean.toUpperCase().replace(/T/g, 'U');
-    _showQuickResult('rna');
+    _showQuickResult();
   });
 
-  document.getElementById('dnaTranslateBtn')?.addEventListener('click', window.debounce(() => {
-    run();
-    const seq = window.cleanSeq(document.getElementById('dnaInput')?.value || '');
-    const delay = Math.min(Math.max(seq.length * 0.4, 250), 1800);
-    setTimeout(() => document.querySelector('[data-rtab="protein"]')?.click(), delay);
-  }, 300));
+  document.getElementById('dnaTranslateBtn')?.addEventListener('click', window.debounce(run, 300));
 
 })();

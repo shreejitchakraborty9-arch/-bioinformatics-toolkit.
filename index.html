@@ -29,7 +29,7 @@
   <!-- LaTeX Rendering (Scientific Requirement) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\(',right:'\\)',display:false},{left:'\\[',right:'\\]',display:true}],throwOnError:false});"></script>
 </head>
 <body>
 
@@ -399,19 +399,13 @@
             <div class="result-stat-row" id="dnaStatRow"></div>
             <div id="dnaA260A280Display" style="margin-bottom:20px;"></div>
 
-            <div class="result-tabs">
-              <button class="result-tab active" data-rtab="rc">RevComp</button>
-              <button class="result-tab" data-rtab="rna">RNA</button>
-              <button class="result-tab" data-rtab="protein">Translation</button>
-            </div>
-
             <div class="result-tab-content" id="dna-rc">
               <div class="seq-display" id="rcDisplay"></div>
             </div>
-            <div class="result-tab-content hidden" id="dna-rna">
+            <div class="result-tab-content" id="dna-rna">
               <div class="seq-display" id="rnaDisplay"></div>
             </div>
-            <div class="result-tab-content hidden" id="dna-protein">
+            <div class="result-tab-content" id="dna-protein">
               <div id="proteinFrames"></div>
             </div>
           </div>
