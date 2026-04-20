@@ -58,10 +58,14 @@
     return apiMotifs
       .map(m => {
         const meta = MOTIF_META[m.motif] || { cssClass: 'motif-slate', desc: '' };
+        const seqLen = (m.end != null && m.start != null && m.end > m.start)
+          ? (m.end - m.start)
+          : 6;
         return {
           name:       m.motif,
           position:   m.start,
-          matched:    m.sequence,
+          end:        m.end,
+          matched:    m.sequence != null ? m.sequence : 'N'.repeat(seqLen),
           cssClass:   meta.cssClass,
           desc:       meta.desc,
           score:      m.score_pct.toFixed(1) + '%',

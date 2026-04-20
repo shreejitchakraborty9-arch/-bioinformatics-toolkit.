@@ -478,8 +478,10 @@
     for (let i = firstIdx; i < motifData.length; i++) {
        const m = motifData[i];
        if (m.position > bpEnd) break;
-       
-       const mEnd = m.position + m.matched.length;
+
+       if (!m.matched) console.warn('[GenomeViewer] drawMotifTrack: motif missing sequence string', m);
+       const motifLen = m.matched?.length || (m.end - m.position) || 6;
+       const mEnd = m.position + motifLen;
        const x1 = Math.max(0, xForBp(m.position, cw));
        const x2 = Math.min(cw, xForBp(mEnd, cw));
        let w = x2 - x1;
