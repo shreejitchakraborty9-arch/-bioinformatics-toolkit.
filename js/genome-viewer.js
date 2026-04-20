@@ -242,10 +242,13 @@
   // ── Rendering Engine ────────────────────────────────────────
   function render() {
     if (!ctx || !canvas) return;
-    
+
+    const cw = canvas.clientWidth;
+    const ch = canvas.clientHeight;
     const colors = getThemeColors();
 
-    // 1. Draw Background
+    // 1. Clear stale frame, then draw background
+    ctx.clearRect(0, 0, cw, ch);
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, cw, ch);
 
@@ -253,6 +256,7 @@
       ctx.fillStyle = colors.muted;
       ctx.font = '14px Inter';
       ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText('No sequence loaded. Analyze a sequence to view.', cw / 2, ch / 2);
       return;
     }
@@ -489,20 +493,30 @@
     }
   }
 
+  // pUC19 lacZ-alpha region: lac promoter (-35/-10 boxes), Shine-Dalgarno, ATG start codon (GenBank L09137)
+  const DEMO_SEQUENCE =
+    'GCGGATAACAATTTCACACAGGAAACAGCTATGACCATGATTACGCCAAGCTTGCATGCCTGCAG' +
+    'GTCGACGGATCCCCGGGAATTCGAGCTCGGTACCCGGGGATCCTCTAGAGTCGACCTGCAGGCA' +
+    'TGCAAGCTTGGCGTAATCATGGTCATAGCTGTTTCCTGTGTGAAATTGTTATCCGCTCACAATT' +
+    'CCACACAACATACGAGCCGGAAGCATAAAGTGTAAAGCCTGGGGTGCCTAATGAGTGAGCTAACT' +
+    'CACATTAATTGCGTTACGCTGCGGTTTTCATGAGAATGTTTTTCTTTTCATGAGAAAAGCCCGGC' +
+    'TTATAGTTTGCTTTTTATTTGATTTGAGTAATTTTGTTTTTTATACTATTTTTTTTTGAGCTTTT' +
+    'GTTCGTTCAGAGTTTATTCGCTTCATTTAAATGGTATGAAATTTACTGATAATGATATTTTTAT';
+
   // Initialize on load
   document.addEventListener('DOMContentLoaded', () => {
      initViewer();
-     
+
      const btn = document.getElementById('gvLoadDemoBtn');
      if (btn) {
          btn.addEventListener('click', () => {
-             // Let's use the E. coli lacZ sequence from our example database
-             const db = window.EXAMPLE_GENOMES || [];
-             const eco = db.find(d => d.id === 'ECO_LACZ_001');
-             if (!eco) return;
+             const input = document.getElementById('proInput');
+             const analyzeBtn = document.getElementById('proAnalyzeBtn');
+             if (!input || !analyzeBtn) return;
 
-             const seq = eco.sequence;
-             window.loadGenomeData(seq, [], 200, []);
+             input.value = DEMO_SEQUENCE;
+             input.dispatchEvent(new Event('input'));
+             analyzeBtn.click();
 
              const panel = document.getElementById('panel-genome-viewer');
              if (panel && !panel.querySelector('.demo-banner')) {
