@@ -1126,6 +1126,14 @@
       <!-- Options row -->
       <div class="align-options" style="margin-bottom:20px;">
         <div class="option-group">
+          <label class="input-label">Organism Type</label>
+          <select class="num-input" id="proOrganismType">
+            <option value="eukaryote">Eukaryotic (Plant / Animal)</option>
+            <option value="prokaryote">Prokaryotic (Bacteria)</option>
+          </select>
+          <div class="input-meta">Determines PSSM motif library and scanning algorithm</div>
+        </div>
+        <div class="option-group">
           <label class="input-label">Upstream Region (bp)</label>
           <input type="number" class="num-input" id="proUpstream" value="1000" min="50" max="5000"/>
           <div class="input-meta">Bases upstream of first CDS start to extract as promoter</div>
@@ -1135,7 +1143,7 @@
       <div class="btn-row">
         <button class="btn-primary" id="proAnalyzeBtn">🔍 Analyze</button>
         <button class="btn-secondary" id="proClearBtn">Clear</button>
-        <button class="btn-secondary" id="proSampleBtn">Load Sample</button>
+        <button class="btn-secondary" id="proSampleBtn">Load Educational Demo</button>
       </div>
 
       <!-- Results -->
@@ -1237,7 +1245,7 @@
           <button class="btn-secondary" onclick="setZoom('1000bp')" style="padding:4px 8px;font-size:0.8rem;">1000 bp</button>
         </div>
         <div class="toolbar-actions">
-           <button class="btn-primary" id="gvLoadDemoBtn" style="padding:6px 12px;font-size:0.85rem;">Load Demo Annotation</button>
+           <button class="btn-primary" id="gvLoadDemoBtn" style="padding:6px 12px;font-size:0.85rem;">Load Educational Demo</button>
         </div>
       </div>
 

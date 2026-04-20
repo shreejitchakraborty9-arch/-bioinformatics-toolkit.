@@ -27,6 +27,7 @@ try:
     from Bio.Seq import Seq as BioSeq
     from Bio.SeqUtils.ProtParam import ProteinAnalysis
     from Bio.SeqUtils import molecular_weight as bio_molecular_weight
+    from Bio import motifs as Bio_motifs
     _BIOPYTHON_AVAILABLE = True
 except ImportError:
     _BIOPYTHON_AVAILABLE = False
@@ -823,6 +824,364 @@ def download_batch_results(job_id):
             "Content-Type":        "text/csv; charset=utf-8",
         },
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# Promoter & Motif Analysis — PSSM-based, Python backend
+# ─────────────────────────────────────────────────────────────
+
+# Eukaryotic core promoter element PSSMs.
+# Sources: Bucher 1990 (NAR 18:6299); Breathnach & Chambon 1981.
+_EUK_MOTIF_DEFS = [
+    {
+        "name": "TATA-box",
+        "consensus": "TATAAATA",
+        "typical_tss_offset": -30,
+        # 8-position matrix (Bucher 1990, Table 2)
+        "counts": {
+            "A": [14, 99, 100, 81, 99, 16, 56, 63],
+            "C": [ 2,  0,   0,  1,  0,  2, 11,  8],
+            "G": [ 2,  0,   0, 15,  0,  1, 29, 25],
+            "T": [82,  1,   0,  3,  1, 81,  4,  4],
+        },
+        "threshold_fraction": 0.80,
+    },
+    {
+        "name": "CAAT-box",
+        "consensus": "CCAAT",
+        "typical_tss_offset": -80,
+        # 5-position core matrix (Breathnach & Chambon 1981)
+        "counts": {
+            "A": [ 0,  3, 100, 100,  4],
+            "C": [71, 79,   0,   0, 14],
+            "G": [ 8,  5,   0,   0, 24],
+            "T": [21, 13,   0,   0, 58],
+        },
+        "threshold_fraction": 0.78,
+    },
+    {
+        "name": "GC-box",
+        "consensus": "GGGCGG",
+        "typical_tss_offset": -90,
+        # 6-position SP1-site matrix (Bucher 1990, Table 4)
+        "counts": {
+            "A": [ 2,  1,  1,  3,  1,  1],
+            "C": [ 3,  4,  4, 82,  5,  5],
+            "G": [91, 91, 91,  8, 90, 90],
+            "T": [ 4,  4,  4,  7,  4,  4],
+        },
+        "threshold_fraction": 0.82,
+    },
+]
+
+# Prokaryotic σ70 promoter element PSSMs.
+# Count matrices compiled from 168 E. coli σ70 promoters.
+# Source: Harley & Reynolds 1987 (NAR 15:2343).
+_PROK_MOTIF_DEFS = [
+    {
+        "name": "-35 box",
+        "consensus": "TTGACA",
+        "typical_tss_offset": -35,
+        "counts": {
+            "A": [ 9,  9,  8, 62, 13, 54],
+            "C": [ 7, 10,  8, 11, 60,  5],
+            "G": [ 7,  6, 69, 13, 11, 10],
+            "T": [71, 68, 10,  9, 16, 28],
+        },
+        "threshold_fraction": 0.75,
+    },
+    {
+        "name": "-10 box",
+        "consensus": "TATAAT",
+        "typical_tss_offset": -10,
+        "counts": {
+            "A": [10, 85, 10, 63, 48, 11],
+            "C": [ 7,  8,  6, 10,  8,  6],
+            "G": [ 3,  6,  2, 12, 16,  8],
+            "T": [80,  1, 82, 15, 28, 75],
+        },
+        "threshold_fraction": 0.75,
+    },
+]
+
+# Valid spacer (bp) between 3' end of -35 hexamer and 5' end of -10 hexamer.
+# Source: Harley & Reynolds 1987 (NAR 15:2343).
+_PROK_SPACER_MIN = 15
+_PROK_SPACER_MAX = 19
+
+# Distance (bp) from TATA box 5'-most base to TSS proxy (ORF ATG).
+# Source: Bucher 1990 (NAR 18:6299).
+_EUK_TATA_TSS_MIN = 25
+_EUK_TATA_TSS_MAX = 35
+
+_MIN_ORF_NT = 90   # 30 amino acids minimum
+_MAX_PROMOTER_SEQ = 100_000
+
+
+# ── Promoter helpers ─────────────────────────────────────────
+
+def _pssm_scan_motif(mdef, scan_str, bio_seq):
+    """Run PSSM scan for one motif definition. Returns a list of raw hit dicts."""
+    hits = []
+    motif_obj = Bio_motifs.Motif(counts=mdef["counts"])
+    motif_obj.pseudocounts = 0.5
+    pssm = motif_obj.pssm
+    if pssm.max <= 0:
+        return hits
+    threshold = mdef["threshold_fraction"] * pssm.max
+    motif_len = motif_obj.length
+    seq_len = len(scan_str)
+    for strand_label, search_seq in (("+", bio_seq), ("-", bio_seq.reverse_complement())):
+        scores = pssm.calculate(search_seq)
+        if scores is None:
+            continue
+        for i, score in enumerate(scores):
+            # NaN values (N bases) compare False — skipped automatically
+            if score >= threshold:
+                if strand_label == "+":
+                    hit_start = i + 1
+                    hit_end   = i + motif_len
+                    hit_seq   = scan_str[i: i + motif_len]
+                else:
+                    hit_start = seq_len - (i + motif_len) + 1
+                    hit_end   = seq_len - i
+                    hit_seq   = str(search_seq[i: i + motif_len])
+                hits.append({
+                    "motif":              mdef["name"],
+                    "strand":             strand_label,
+                    "start":              hit_start,
+                    "end":                hit_end,
+                    "score":              round(float(score), 3),
+                    "max_score":          round(float(pssm.max), 3),
+                    "score_pct":          round(float(score) / float(pssm.max) * 100, 1),
+                    "sequence":           hit_seq,
+                    "consensus":          mdef["consensus"],
+                    "typical_tss_offset": mdef.get("typical_tss_offset", 0),
+                })
+    return hits
+
+
+def _scan_prokaryotic(scan_str, bio_seq):
+    """
+    Find σ70 -35/-10 box pairs whose inter-element spacer is 15–19 bp.
+
+    Spacer is measured as the gap (in bp) between the 3' end of the -35
+    hexamer and the 5' end of the -10 hexamer, following the convention
+    of Harley & Reynolds 1987 (NAR 15:2343).
+
+    Only motifs that participate in at least one valid pair are returned.
+    Each returned hit carries a 'spacer_to_partner_bp' field.
+    """
+    hits_35 = _pssm_scan_motif(_PROK_MOTIF_DEFS[0], scan_str, bio_seq)
+    hits_10 = _pssm_scan_motif(_PROK_MOTIF_DEFS[1], scan_str, bio_seq)
+
+    validated = []
+    for strand in ("+", "-"):
+        s35 = [h for h in hits_35 if h["strand"] == strand]
+        s10 = [h for h in hits_10 if h["strand"] == strand]
+        for h35 in s35:
+            for h10 in s10:
+                if strand == "+":
+                    # spacer = gap between 3' end of -35 and 5' end of -10
+                    spacer = h10["start"] - h35["end"] - 1
+                else:
+                    # Minus-strand hits are reported in fwd coords.
+                    # Biologically, the -35 box lies at higher fwd coordinates
+                    # than the -10 box (gene reads right→left).
+                    # hit["start"] is the downstream (3') tip in minus-strand
+                    # orientation; hit["end"] is the upstream (5') tip.
+                    spacer = h35["start"] - h10["end"] - 1
+                if _PROK_SPACER_MIN <= spacer <= _PROK_SPACER_MAX:
+                    h35c = dict(h35)
+                    h10c = dict(h10)
+                    h35c["spacer_to_partner_bp"] = spacer
+                    h10c["spacer_to_partner_bp"] = spacer
+                    validated.extend([h35c, h10c])
+
+    # Deduplicate: a motif may satisfy multiple valid pairings
+    seen = set()
+    result = []
+    for m in validated:
+        key = (m["motif"], m["strand"], m["start"])
+        if key not in seen:
+            seen.add(key)
+            result.append(m)
+    return result
+
+
+def _tata_tss_anchored(tata_hit, orfs):
+    """
+    Return True iff an ORF ATG codon lies 25–35 bp downstream of the
+    TATA box 5'-most base (Bucher 1990).
+
+    For + strand: TSS window = [tata_start + 25, tata_start + 35].
+    For - strand: TSS window mirrors symmetrically using fwd coordinates
+    (TATA 5' tip = tata_hit["end"]; downstream = lower fwd coords).
+    """
+    if tata_hit["strand"] == "+":
+        lo = tata_hit["start"] + _EUK_TATA_TSS_MIN
+        hi = tata_hit["start"] + _EUK_TATA_TSS_MAX
+        return any(lo <= o["start"] <= hi for o in orfs if o["strand"] == "+")
+    else:
+        # orf["end"] holds the fwd coordinate of the ATG for minus-strand ORFs
+        lo = tata_hit["end"] - _EUK_TATA_TSS_MAX
+        hi = tata_hit["end"] - _EUK_TATA_TSS_MIN
+        return any(lo <= o["end"] <= hi for o in orfs if o["strand"] == "-")
+
+
+def _scan_eukaryotic(scan_str, bio_seq, orfs):
+    """
+    Scan for TATA-box, CAAT-box, and GC-box using eukaryotic PSSMs.
+    TATA-box hits are filtered to those whose TSS proxy (nearest downstream
+    ORF ATG) falls 25–35 bp downstream (Bucher 1990).
+    """
+    found = []
+    for mdef in _EUK_MOTIF_DEFS:
+        hits = _pssm_scan_motif(mdef, scan_str, bio_seq)
+        if mdef["name"] == "TATA-box":
+            hits = [h for h in hits if _tata_tss_anchored(h, orfs)]
+        found.extend(hits)
+    return found
+
+
+def _dist_to_nearest_orf_start(motif, orfs):
+    """
+    Distance in bp from the motif's 3' end (in the direction of transcription)
+    to the nearest downstream ORF start codon.
+
+    + strand: 3' end of motif = motif["end"]; ORF ATG = orf["start"].
+    - strand: 3' end of motif = motif["start"] (lower fwd coord);
+              ORF ATG (fwd coord) = orf["end"].
+
+    Returns None when no downstream ORF exists.
+    """
+    if motif["strand"] == "+":
+        dists = [o["start"] - motif["end"]
+                 for o in orfs if o["strand"] == "+" and o["start"] > motif["end"]]
+    else:
+        dists = [motif["start"] - o["end"]
+                 for o in orfs if o["strand"] == "-" and o["end"] < motif["start"]]
+    return min(dists) if dists else None
+
+
+@app.route("/api/analyze/promoter", methods=["POST"])
+def analyze_promoter():
+    """
+    Organism-aware PSSM promoter motif scanning and 6-frame ORF detection.
+
+    Accepts:
+      {
+        "sequence":        "ATCG...",
+        "organism_type":   "prokaryote" | "eukaryote",
+        "upstream_length": 500          (optional)
+      }
+
+    Returns: { "orfs": [...], "motifs": [...], "error": null }
+
+    Prokaryote mode: scans for σ70 -35/-10 box pairs with a valid 15–19 bp
+    spacer (Harley & Reynolds 1987). Eukaryotic elements are not searched.
+
+    Eukaryote mode: scans for TATA, CAAT, GC-box elements (Bucher 1990).
+    TATA-box hits are further filtered to those where an ORF ATG lies
+    25–35 bp downstream (TSS anchoring). Prokaryotic elements are not searched.
+
+    Every returned motif includes 'dist_to_nearest_orf_start' (bp to the
+    nearest downstream ORF ATG, or null if none found).
+    """
+    if not _BIOPYTHON_AVAILABLE:
+        return jsonify({"orfs": [], "motifs": [], "error": "Biopython not available on this server"}), 503
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"orfs": [], "motifs": [], "error": "Invalid or missing JSON payload"}), 400
+
+    raw_seq = data.get("sequence", "")
+    upstream_length = data.get("upstream_length", None)
+    organism_type = data.get("organism_type", "").lower().strip()
+
+    if organism_type not in ("prokaryote", "eukaryote"):
+        return jsonify({
+            "orfs": [], "motifs": [],
+            "error": "organism_type must be 'prokaryote' or 'eukaryote'"
+        }), 400
+
+    lines = raw_seq.strip().splitlines()
+    seq_str = "".join(l.strip() for l in lines if not l.strip().startswith(">")).upper()
+
+    if not seq_str:
+        return jsonify({"orfs": [], "motifs": [], "error": "No sequence provided"}), 400
+    if len(seq_str) > _MAX_PROMOTER_SEQ:
+        return jsonify({"orfs": [], "motifs": [], "error": "Sequence too long (max {:,} bp)".format(_MAX_PROMOTER_SEQ)}), 400
+
+    invalid_chars = set(seq_str) - set("ACGTN")
+    if invalid_chars:
+        return jsonify({"orfs": [], "motifs": [], "error": "Invalid DNA characters: {}".format("".join(sorted(invalid_chars)))}), 422
+
+    scan_str = seq_str
+    if upstream_length and isinstance(upstream_length, int) and 0 < upstream_length < len(seq_str):
+        scan_str = seq_str[:upstream_length]
+
+    try:
+        bio_seq = BioSeq(scan_str)
+
+        # ── 6-Frame ORF Detection (full sequence, both strands) ───────────
+        orfs = []
+        stop_codons = {"TAA", "TAG", "TGA"}
+
+        for strand_label, strand_seq in (("+", seq_str), ("-", str(BioSeq(seq_str).reverse_complement()))):
+            seq_len = len(seq_str)
+            for frame in range(3):
+                start_pos = None
+                i = frame
+                while i + 2 < len(strand_seq):
+                    codon = strand_seq[i: i + 3]
+                    if codon == "ATG" and start_pos is None:
+                        start_pos = i
+                    elif codon in stop_codons and start_pos is not None:
+                        orf_nt_len = (i + 3) - start_pos
+                        if orf_nt_len >= _MIN_ORF_NT:
+                            orf_dna = strand_seq[start_pos: i + 3]
+                            try:
+                                protein = str(BioSeq(orf_dna).translate(to_stop=True))
+                            except Exception:
+                                protein = ""
+                            if strand_label == "+":
+                                fwd_start = start_pos + 1
+                                fwd_end   = i + 3
+                            else:
+                                fwd_start = seq_len - (i + 3) + 1
+                                fwd_end   = seq_len - start_pos
+                            orfs.append({
+                                "frame":     (frame + 1) if strand_label == "+" else -(frame + 1),
+                                "strand":    strand_label,
+                                "start":     fwd_start,
+                                "end":       fwd_end,
+                                "length_nt": orf_nt_len,
+                                "length_aa": len(protein),
+                                "protein":   protein,
+                            })
+                        start_pos = None
+                    i += 3
+
+        orfs.sort(key=lambda x: x["start"])
+
+        # ── Organism-Specific Motif Scanning ─────────────────────────────
+        if organism_type == "prokaryote":
+            found_motifs = _scan_prokaryotic(scan_str, bio_seq)
+        else:
+            found_motifs = _scan_eukaryotic(scan_str, bio_seq, orfs)
+
+        # ── Distance to Nearest Downstream ORF Start Codon ───────────────
+        for motif in found_motifs:
+            motif["dist_to_nearest_orf_start"] = _dist_to_nearest_orf_start(motif, orfs)
+
+        found_motifs.sort(key=lambda x: x["score"], reverse=True)
+
+        return jsonify({"orfs": orfs, "motifs": found_motifs, "error": None})
+
+    except Exception as e:
+        logger.error("Promoter analysis error: %s", str(e))
+        return jsonify({"orfs": [], "motifs": [], "error": "Analysis failed: {}".format(str(e))}), 500
 
 
 # ─────────────────────────────────────────────────────────────

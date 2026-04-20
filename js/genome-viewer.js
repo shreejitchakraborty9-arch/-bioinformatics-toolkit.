@@ -500,9 +500,19 @@
              const db = window.EXAMPLE_GENOMES || [];
              const eco = db.find(d => d.id === 'ECO_LACZ_001');
              if (!eco) return;
-             
+
              const seq = eco.sequence;
              window.loadGenomeData(seq, [], 200, []);
+
+             const panel = document.getElementById('panel-genome-viewer');
+             if (panel && !panel.querySelector('.demo-banner')) {
+               const banner = document.createElement('div');
+               banner.className = 'demo-banner';
+               banner.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;margin-bottom:10px;background:var(--warning-bg,#fef3c7);border:1px solid var(--warning-border,#f59e0b);border-radius:6px;font-size:0.85rem;color:var(--warning-text,#92400e);';
+               banner.innerHTML = '<span>⚠ Viewing Educational Demo. Paste your own sequence to calculate custom coordinates.</span><button style="background:none;border:none;cursor:pointer;font-size:1rem;line-height:1;padding:0 2px;color:inherit;" aria-label="Dismiss">&times;</button>';
+               banner.querySelector('button').addEventListener('click', () => banner.remove());
+               panel.insertBefore(banner, panel.firstChild);
+             }
          });
      }
   });
