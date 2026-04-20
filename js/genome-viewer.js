@@ -192,12 +192,13 @@
       const motifTrack = TRACKS.find(t => t.id === 'motif');
       if (y >= motifTrack.y && y <= motifTrack.y + TRACK_HEIGHT) {
           for (const m of motifData) {
-              const mEnd = m.position + m.matched.length;
+              const mMatchLen = m.matched?.length || (m.end - m.position) || 6;
+              const mEnd = m.position + mMatchLen;
               if (clickBp >= m.position && clickBp <= mEnd) {
                    showCanvasTooltip(`Motif: ${m.name}\nPos: ${m.position}\nSeq: ${m.matched}`, e.clientX, e.clientY);
-                   
+
                    // Highlight by snapping to it briefly
-                   const center = m.position + (m.matched.length/2);
+                   const center = m.position + (mMatchLen / 2);
                    const w = bpEnd - bpStart;
                    bpStart = Math.max(0, center - w/2);
                    bpEnd = Math.min(sequence.length, center + w/2);
