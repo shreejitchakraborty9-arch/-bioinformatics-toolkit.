@@ -1758,6 +1758,51 @@
     return warnings;
   };
 
+  BioMath.calculateDimerThermodynamics = function(seq1, seq2) {
+    const na_M  = 0.05;
+    const fmg_M = 0;
+    let result;
+    if (seq1 === seq2) {
+      result = BioMath.calculateDimerDeltaG(seq1.toUpperCase().replace(/[^ATGCU]/g, ''), na_M, fmg_M);
+    } else {
+      const s1  = seq1.toUpperCase().replace(/[^ATGCU]/g, '');
+      const rc2 = BioMath.reverseComplement(seq2.toUpperCase().replace(/[^ATGCU]/g, ''));
+      result = BioMath.calculateDimerDeltaG(s1 + rc2, na_M, fmg_M);
+    }
+    const deltaG = result.deltaG;
+    return { deltaG, isSignificant: deltaG < -6.0 };
+  };
+
+  BioMath.detectHairpin = function(seq) {
+    const sDNA      = seq.toUpperCase().replace(/[^ATGCU]/g, '').replace(/U/g, 'T');
+    const COMP_HP   = { A: 'T', T: 'A', G: 'C', C: 'G' };
+    const revCompHP = str => str.split('').reverse().map(c => COMP_HP[c] || 'N').join('');
+    const MIN_STEM  = 4;
+    const MIN_LOOP  = 4;
+    const checkSeq  = sDNA.slice(0, 200);
+    const maxStem   = Math.floor((checkSeq.length - MIN_LOOP) / 2);
+    let found      = false;
+    let stemLength = 0;
+    let loopLength = 0;
+
+    outer:
+    for (let stemLen = MIN_STEM; stemLen <= maxStem; stemLen++) {
+      for (let i = 0; i <= checkSeq.length - 2 * stemLen - MIN_LOOP; i++) {
+        const stem5RC = revCompHP(checkSeq.substr(i, stemLen));
+        for (let j = i + stemLen + MIN_LOOP; j <= checkSeq.length - stemLen; j++) {
+          if (checkSeq.substr(j, stemLen) === stem5RC) {
+            found      = true;
+            stemLength = stemLen;
+            loopLength = j - (i + stemLen);
+            break outer;
+          }
+        }
+      }
+    }
+
+    return { found, stemLength, loopLength };
+  };
+
   /**
    * Enhanced 6-Frame Translation & ORF Detection
    * Supports all 33 NCBI genetic codes, alternative starts, and Kozak flagging.
@@ -1863,6 +1908,160 @@
             throwOnError : false
         });
     }
+  };
+
+  // ==========================================================
+  // AUTO-DESIGN ENGINE — PRIMER PAIR SUGGESTION & VERDICT
+  // ==========================================================
+
+  BioMath.suggestPrimerPairs = function(template, constraints, options) {
+    return new Promise(function(resolve) {
+      const tmpl       = template.toUpperCase().replace(/[^ATGC]/g, '');
+      const tmplLen    = tmpl.length;
+      const minLen     = (constraints && constraints.length     && constraints.length.min)      || 18;
+      const maxLen     = (constraints && constraints.length     && constraints.length.max)      || 25;
+      const minGC      = (constraints && constraints.gc         && constraints.gc.min)          || 40;
+      const maxGC      = (constraints && constraints.gc         && constraints.gc.max)          || 60;
+      const minTm      = (constraints && constraints.tm         && constraints.tm.min)          || 55;
+      const maxTm      = (constraints && constraints.tm         && constraints.tm.max)          || 65;
+      const minProduct = (constraints && constraints.productSize && constraints.productSize.min) || 100;
+      const maxProduct = (constraints && constraints.productSize && constraints.productSize.max) || 5000;
+      const maxPairs   = (options     && options.maxPairs)                                       || 20;
+      const CHUNK      = 100;
+
+      var fwdCandidates = [];
+      var revCandidates = [];
+
+      function isValidPrimer(seq, tm) {
+        var gc = parseFloat(BioMath.calculateGC(seq));
+        if (gc < minGC || gc > maxGC) return null;
+        var computedTm = (tm !== undefined) ? tm : BioMath.calculateTm(seq);
+        if (computedTm < minTm || computedTm > maxTm) return null;
+        var hp = BioMath.detectHairpin(seq);
+        if (hp.found && hp.stemLength >= 4) return null;
+        return { gc: gc, tm: computedTm };
+      }
+
+      // Phase 1: sliding window forward primers (chunked)
+      function collectForward(startPos, onDone) {
+        var i = startPos;
+        function step() {
+          var count = 0;
+          while (i <= tmplLen - minLen && count < CHUNK) {
+            for (var pLen = minLen; pLen <= maxLen && i + pLen <= tmplLen; pLen++) {
+              var seq    = tmpl.substr(i, pLen);
+              var valid  = isValidPrimer(seq);
+              if (valid) {
+                fwdCandidates.push({ seq: seq, pos: i, tm: valid.tm, gc: valid.gc });
+              }
+            }
+            i++;
+            count++;
+          }
+          if (i <= tmplLen - minLen) {
+            setTimeout(step, 0);
+          } else {
+            onDone();
+          }
+        }
+        step();
+      }
+
+      // Phase 2: sliding window reverse primers on the template reverse strand (chunked)
+      function collectReverse(onDone) {
+        var i = 0;
+        function step() {
+          var count = 0;
+          while (i <= tmplLen - minLen && count < CHUNK) {
+            for (var pLen = minLen; pLen <= maxLen && i + pLen <= tmplLen; pLen++) {
+              var revSeq = BioMath.reverseComplement(tmpl.substr(i, pLen));
+              var valid  = isValidPrimer(revSeq);
+              if (valid) {
+                // endPos marks the rightmost template position covered by this primer
+                revCandidates.push({ seq: revSeq, endPos: i + pLen, tm: valid.tm, gc: valid.gc });
+              }
+            }
+            i++;
+            count++;
+          }
+          if (i <= tmplLen - minLen) {
+            setTimeout(step, 0);
+          } else {
+            onDone();
+          }
+        }
+        step();
+      }
+
+      // Phase 3: pair candidates and score
+      function pairCandidates() {
+        var pairs = [];
+        for (var fi = 0; fi < fwdCandidates.length && pairs.length < maxPairs * 5; fi++) {
+          var fwd = fwdCandidates[fi];
+          for (var ri = 0; ri < revCandidates.length; ri++) {
+            var rev         = revCandidates[ri];
+            var productSize = rev.endPos - fwd.pos;
+            if (productSize < minProduct || productSize > maxProduct) continue;
+            var tmDiff      = Math.abs(fwd.tm - rev.tm);
+            var gcDiff      = Math.abs(fwd.gc - rev.gc);
+            var penaltyScore = parseFloat((tmDiff * 1.0 + gcDiff * 0.1).toFixed(2));
+            pairs.push({
+              forward:     fwd.seq,
+              reverse:     rev.seq,
+              productSize: productSize,
+              penaltyScore: penaltyScore
+            });
+          }
+        }
+        pairs.sort(function(a, b) { return a.penaltyScore - b.penaltyScore; });
+        resolve(pairs.slice(0, maxPairs));
+      }
+
+      collectForward(0, function() {
+        collectReverse(function() {
+          pairCandidates();
+        });
+      });
+    });
+  };
+
+  BioMath.generatePrimerPairVerdict = function(fwdTm, revTm, productSize, heteroDimer, constraints) {
+    var reasons   = [];
+    var failCount = 0;
+    var warnCount = 0;
+
+    var maxTmDiff = (constraints && constraints.tmDifference != null) ? constraints.tmDifference : 5;
+    var tmDiff    = Math.abs(fwdTm - revTm);
+    if (tmDiff > maxTmDiff) {
+      reasons.push('Tm difference ' + tmDiff.toFixed(1) + '\u00b0C exceeds limit of ' + maxTmDiff + '\u00b0C');
+      failCount++;
+    }
+
+    var minProduct = (constraints && constraints.productSize && constraints.productSize.min) || 100;
+    var maxProduct = (constraints && constraints.productSize && constraints.productSize.max) || 5000;
+    if (productSize < minProduct || productSize > maxProduct) {
+      reasons.push('Product size ' + productSize + ' bp is outside requested range [' + minProduct + '\u2013' + maxProduct + '] bp');
+      failCount++;
+    }
+
+    if (heteroDimer && heteroDimer.isSignificant === true) {
+      var dgNote = (heteroDimer.deltaG !== undefined)
+        ? ' (\u0394G = ' + heteroDimer.deltaG.toFixed(1) + ' kcal/mol)'
+        : '';
+      reasons.push('Significant hetero-dimer formation detected' + dgNote);
+      warnCount++;
+    }
+
+    var status;
+    if (failCount > 0) {
+      status = 'FAIL';
+    } else if (warnCount > 0) {
+      status = 'WARNING';
+    } else {
+      status = 'PASS';
+    }
+
+    return { status: status, reasons: reasons };
   };
 
 })();
