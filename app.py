@@ -10,10 +10,11 @@ Deploy target: Render.com (Web Service, Python runtime)
 """
 
 import os
-import time
 import json
 import logging
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import re
 from functools import wraps
 from flask import Flask, jsonify, request, send_from_directory, Response, g, url_for
@@ -108,30 +109,23 @@ if _REDIS_AVAILABLE:
         redis_client = redis.from_url(REDIS_URL) if REDIS_URL else redis.Redis(host='localhost', port=6379, db=0)
         redis_client.ping()
     except Exception as e:
-        logger.warning("Redis unavailable for rate limiting, falling back to in-memory: %s", e)
+        logger.warning("Redis connection failed: %s", e)
         redis_client = None
 
-# Server-side rate limit tracking (per database)
-_last_request_time = {}
-RATE_LIMITS = {
-    "ncbi": 0.34,      # ~3 req/sec without key, ~10 req/sec with key
-    "ensembl": 1.0,    # 1 req/sec per Ensembl guidelines
-    "uniprot": 0.5,
-    "kegg": 0.5
-}
-
-def enforce_rate_limit(db_name):
-    """Scientific standard rate limiting to prevent API blocking."""
-    if db_name not in RATE_LIMITS:
-        return
-    
-    now = time.time()
-    last = _last_request_time.get(db_name, 0)
-    wait = RATE_LIMITS[db_name] - (now - last)
-    
-    if wait > 0:
-        time.sleep(wait)
-    _last_request_time[db_name] = time.time()
+# ─────────────────────────────────────────────────────────────
+# Resilient HTTP Session — exponential backoff on 429/503
+# ─────────────────────────────────────────────────────────────
+_retry = Retry(
+    total=3,
+    backoff_factor=1.5,
+    status_forcelist=[429, 503],
+    allowed_methods=["GET"],
+    raise_on_status=False,
+)
+_adapter = HTTPAdapter(max_retries=_retry)
+http_session = requests.Session()
+http_session.mount("https://", _adapter)
+http_session.mount("http://", _adapter)
 
 # ─────────────────────────────────────────────────────────────
 # Auth / Session
@@ -184,13 +178,14 @@ def fetch_external():
 
     try:
         if db_type == "ncbi":
-            enforce_rate_limit("ncbi")
             # For primer design, we usually want nucleotide
             params = {
                 "db": "nucleotide",
                 "id": acc_id,
                 "rettype": "gb",
-                "retmode": "text"
+                "retmode": "text",
+                "tool": "BioToolkit",
+                "email": "admin@biotoolkit.dev"
             }
             # Determine which API Key to use (Header > ENV)
             user_key = request.headers.get("X-NCBI-API-Key", "").strip()
@@ -199,7 +194,7 @@ def fetch_external():
             if effective_key and str(effective_key).strip():
                 params["api_key"] = effective_key
 
-            resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
+            resp = http_session.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
             resp.raise_for_status()
             raw_data = resp.text
             
@@ -275,29 +270,27 @@ def fetch_external():
             return Response(raw_data, mimetype="text/plain")
         
         elif db_type == "ncbiprotein":
-            enforce_rate_limit("ncbi")
             params = {
                 "db": "protein",
                 "id": acc_id,
                 "rettype": "fasta",
-                "retmode": "text"
+                "retmode": "text",
+                "tool": "BioToolkit",
+                "email": "admin@biotoolkit.dev"
             }
             user_key = request.headers.get("X-NCBI-API-Key", "").strip()
             effective_key = user_key or NCBI_API_KEY
             if effective_key and str(effective_key).strip():
                 params["api_key"] = effective_key
-            resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
+            resp = http_session.get("{}/efetch.fcgi".format(NCBI_BASE), params=params, timeout=15)
 
         elif db_type == "uniprot":
-            enforce_rate_limit("uniprot")
-            # New UniProt REST API endpoint (uniprotkb)
-            resp = requests.get("{}/uniprotkb/{}.fasta".format(UNIPROT_BASE, acc_id), timeout=15)
+            resp = http_session.get("{}/uniprotkb/{}.fasta".format(UNIPROT_BASE, acc_id), timeout=15)
 
         elif db_type == "ensembl":
-            enforce_rate_limit("ensembl")
             # Ensembl REST: use Accept header (not Content-Type) for GET requests
             json_headers = {"Accept": "application/json"}
-            resp = requests.get(
+            resp = http_session.get(
                 "{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id),
                 headers=json_headers,
                 params={"expand_5prime": 2000, "expand_3prime": 2000},
@@ -318,14 +311,13 @@ def fetch_external():
                 return jsonify(result)
             # Fallback: plain FASTA
             fasta_headers = {"Accept": "text/x-fasta"}
-            resp = requests.get("{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id), headers=fasta_headers, timeout=15)
+            resp = http_session.get("{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id), headers=fasta_headers, timeout=15)
 
         elif db_type == "kegg":
-            enforce_rate_limit("kegg")
             seq_type = request.args.get("type", "ntseq")
             if seq_type not in ("ntseq", "aaseq"):
                 return jsonify({"error": "Invalid KEGG type. Use 'ntseq' or 'aaseq'."}), 400
-            resp = requests.get("{}/get/{}/{}".format(KEGG_BASE, acc_id, seq_type), timeout=15)
+            resp = http_session.get("{}/get/{}/{}".format(KEGG_BASE, acc_id, seq_type), timeout=15)
             if resp.status_code == 200:
                 text = resp.text.strip()
                 if not text or text.startswith("<!"):
@@ -337,7 +329,6 @@ def fetch_external():
                 return jsonify({"error": "KEGG returned HTTP {}.".format(resp.status_code)}), resp.status_code
 
         elif db_type == "ncbisymbol":
-            enforce_rate_limit("ncbi")
             species = request.args.get("species", "Homo sapiens")
             user_key = request.headers.get("X-NCBI-API-Key", "").strip()
             effective_key = user_key or NCBI_API_KEY
@@ -354,7 +345,7 @@ def fetch_external():
             if effective_key and str(effective_key).strip():
                 search_params["api_key"] = effective_key
 
-            s_resp = requests.get("{}/esearch.fcgi".format(NCBI_BASE), params=search_params, timeout=15)
+            s_resp = http_session.get("{}/esearch.fcgi".format(NCBI_BASE), params=search_params, timeout=15)
             s_resp.raise_for_status()
             s_data = s_resp.json()
             ids = s_data.get("esearchresult", {}).get("idlist", [])
@@ -365,7 +356,6 @@ def fetch_external():
             gene_id = str(ids[0])
 
             # Step 2: ELink to find associated nucleotide accession
-            enforce_rate_limit("ncbi")
             link_params = {
                 "dbfrom": "gene",
                 "db": "nuccore",
@@ -377,7 +367,7 @@ def fetch_external():
             if effective_key and str(effective_key).strip():
                 link_params["api_key"] = effective_key
 
-            l_resp = requests.get("{}/elink.fcgi".format(NCBI_BASE), params=link_params, timeout=15)
+            l_resp = http_session.get("{}/elink.fcgi".format(NCBI_BASE), params=link_params, timeout=15)
             l_resp.raise_for_status()
             l_data = l_resp.json()
 
@@ -397,7 +387,6 @@ def fetch_external():
                 return jsonify({"error": "No nucleotide record linked to gene '{}'. Try using an accession ID directly.".format(acc_id)}), 404
 
             # Step 3: EFetch the nucleotide record
-            enforce_rate_limit("ncbi")
             fetch_params = {
                 "db": "nucleotide",
                 "id": nuc_id,
@@ -407,7 +396,7 @@ def fetch_external():
             if effective_key and str(effective_key).strip():
                 fetch_params["api_key"] = effective_key
 
-            resp = requests.get("{}/efetch.fcgi".format(NCBI_BASE), params=fetch_params, timeout=15)
+            resp = http_session.get("{}/efetch.fcgi".format(NCBI_BASE), params=fetch_params, timeout=15)
 
         else:
             return jsonify({"error": "Unsupported database: {}".format(db_type)}), 400
@@ -418,12 +407,16 @@ def fetch_external():
 
     except requests.exceptions.RequestException as e:
         logger.error("External API error: %s", str(e))
+        upstream_status = getattr(getattr(e, "response", None), "status_code", None)
+        if upstream_status == 429:
+            return jsonify({"error": "Rate limit exceeded by biological database. Please try again in a few seconds."}), 429
+        if upstream_status in (400, 404):
+            return jsonify({"error": "Sequence or ID not found in the database."}), 404
         return jsonify({"error": "Failed to fetch from biological database: {}".format(str(e))}), 502
 
 @app.route("/api/search", methods=["POST"])
 def search_ncbi():
     """Proxy for NCBI ESearch."""
-    enforce_rate_limit("ncbi")
     data = request.get_json()
     query = data.get("query")
     db_name = data.get("db", "nucleotide")
@@ -439,7 +432,7 @@ def search_ncbi():
         }
         if NCBI_API_KEY and str(NCBI_API_KEY).strip():
             params["api_key"] = NCBI_API_KEY
-        resp = requests.get("{}/esearch.fcgi".format(NCBI_BASE), params=params, timeout=10)
+        resp = http_session.get("{}/esearch.fcgi".format(NCBI_BASE), params=params, timeout=10)
         resp.raise_for_status()
         return jsonify(resp.json())
     except Exception as e:
@@ -602,10 +595,8 @@ def get_uniprot_entry(accession_id):
     if cached:
         return jsonify(cached)
 
-    enforce_rate_limit("uniprot")
-
     try:
-        resp = requests.get(
+        resp = http_session.get(
             "{}/uniprotkb/{}.json".format(UNIPROT_BASE, accession_id),
             headers={"Accept": "application/json"},
             timeout=15
