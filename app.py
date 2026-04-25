@@ -1233,6 +1233,7 @@ def analyze_restriction():
         return jsonify({"results": [], "error": "enzymes field is required"}), 400
 
     try:
+        invalid_enzymes = []
         if isinstance(enzymes_input, str):
             if enzymes_input == "ALL":
                 batch = BioRestriction.CommOnly
@@ -1241,13 +1242,18 @@ def analyze_restriction():
         elif isinstance(enzymes_input, list):
             if not enzymes_input:
                 return jsonify({"results": [], "error": "enzymes list must not be empty"}), 400
-            enzyme_objs = []
+            valid_enzymes = []
+            invalid_enzymes = []
             for name in enzymes_input:
-                enz = getattr(BioRestriction, str(name), None)
-                if enz is None:
-                    return jsonify({"results": [], "error": "Unknown restriction enzyme: {}".format(name)}), 400
-                enzyme_objs.append(enz)
-            batch = BioRestriction.RestrictionBatch(enzyme_objs)
+                enz_name = str(name)
+                enz = getattr(BioRestriction, enz_name, None)
+                if enz is None or not hasattr(BioRestriction, enz_name):
+                    invalid_enzymes.append(enz_name)
+                else:
+                    valid_enzymes.append(enz)
+            if not valid_enzymes:
+                return jsonify({"results": [], "warnings": {"unknown_enzymes": invalid_enzymes}, "error": "None of the requested enzymes are recognized by the Biopython database."}), 400
+            batch = BioRestriction.RestrictionBatch(valid_enzymes)
         else:
             return jsonify({"results": [], "error": "enzymes must be a list of enzyme names or the string 'ALL'"}), 400
 
@@ -1282,7 +1288,8 @@ def analyze_restriction():
             })
 
         results.sort(key=lambda x: x["enzyme"])
-        return jsonify({"results": results, "error": None})
+        warnings = {"unknown_enzymes": invalid_enzymes} if isinstance(enzymes_input, list) and invalid_enzymes else {"unknown_enzymes": []}
+        return jsonify({"results": results, "warnings": warnings, "error": None})
 
     except Exception as e:
         logger.error("Restriction analysis error: %s", str(e))
