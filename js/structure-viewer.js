@@ -1,7 +1,8 @@
 /* ============================================================
    structure-viewer.js — 3D Protein Structure Viewer
-   pdbe-molstar (Mol*) + AlphaFold EBI API
+   pdbe-molstar (Mol*) + AlphaFold EBI API + RCSB PDB
    Native pLDDT confidence coloring via alphafoldView: true
+   PDB IDs (4 alphanumeric chars) routed to RCSB BCIF endpoint
    ============================================================ */
 
 (function () {
@@ -70,55 +71,87 @@
 
   // ── Structure Loading Pipeline ────────────────────────────
   async function loadStructure(accession) {
-    setOverlay('loading', `Querying AlphaFold DB for ${accession}…`);
-    setStatusBar(`Fetching prediction metadata…`);
+    // 4 alphanumeric characters = PDB ID; anything else = UniProt/AlphaFold
+    const isPDB = /^[A-Za-z0-9]{4}$/.test(accession);
+
+    if (isPDB) {
+      setOverlay('loading', `Loading PDB structure ${accession.toUpperCase()}…`);
+      setStatusBar('Fetching experimental structure from RCSB…');
+    } else {
+      setOverlay('loading', `Querying AlphaFold DB for ${accession}…`);
+      setStatusBar('Fetching prediction metadata…');
+    }
+
     disableBtn(true);
+    disableControls(true);
 
     try {
-      const entry = await fetchAlphaFoldEntry(accession);
-
-      setOverlay('loading', 'Downloading structure file…');
-
       const container = document.getElementById('ngl-viewer-container');
       if (!container) throw new Error('Viewer container element not found.');
 
       container.style.position = 'relative';
 
       if (viewerInstance) {
+        viewerInstance.plugin?.dispose();
         viewerInstance = null;
         container.innerHTML = '';
       }
 
       viewerInstance = new window.PDBeMolstarPlugin();
 
-      const options = {
-        customData: {
-          url:    'https://alphafold.ebi.ac.uk/files/AF-' + accession.toUpperCase() + '-F1-model_v6.cif',
-          format: 'cif',
-        },
-        alphafoldView: true,
-        bgColor:       { r: 255, g: 255, b: 255 },
-        hideControls:  false,
-      };
+      if (isPDB) {
+        const id = accession.toLowerCase();
+        await viewerInstance.render(container, {
+          customData: {
+            url:      'https://models.rcsb.org/' + id + '.bcif',
+            format:   'bcif',
+            isBinary: true,
+          },
+          bgColor:      { r: 255, g: 255, b: 255 },
+          hideControls: false,
+        });
 
-      await viewerInstance.render(container, options);
+        activeAccession = accession;
+        setOverlay('ready', '');
+        setStatusBar(
+          `PDB: ${accession.toUpperCase()} · Source: RCSB PDB · Experimental Structure`
+        );
+      } else {
+        const entry = await fetchAlphaFoldEntry(accession);
 
-      activeAccession = accession;
+        setOverlay('loading', 'Downloading structure file…');
 
-      renderMetadata(entry);
-      setOverlay('ready', '');
-      setStatusBar(
-        `${entry.uniprotAccession || accession}` +
-        (entry.gene                   ? ` · Gene: ${entry.gene}` : '') +
-        (entry.organismScientificName ? ` · ${entry.organismScientificName}` : '') +
-        (entry.latestVersion          ? ` · Model v${entry.latestVersion}` : '')
-      );
+        await viewerInstance.render(container, {
+          customData: {
+            url:    'https://alphafold.ebi.ac.uk/files/AF-' + accession.toUpperCase() + '-F1-model_v6.cif',
+            format: 'cif',
+          },
+          alphafoldView: true,
+          bgColor:       { r: 255, g: 255, b: 255 },
+          hideControls:  false,
+        });
+
+        activeAccession = accession;
+        renderMetadata(entry);
+        setOverlay('ready', '');
+        setStatusBar(
+          `${entry.uniprotAccession || accession}` +
+          (entry.gene                   ? ` · Gene: ${entry.gene}` : '') +
+          (entry.organismScientificName ? ` · ${entry.organismScientificName}` : '') +
+          (entry.latestVersion          ? ` · Model v${entry.latestVersion}` : '')
+        );
+      }
+
+      // Only unlock controls on successful render
+      disableControls(false);
+
     } catch (err) {
       const msg = err?.message || (typeof err === 'string' ? err : 'Viewer initialization failed');
       setOverlay('ready', '');
       setStatusBar('Error — ' + msg);
       if (window.showToast) window.showToast('⚠ ' + msg);
       console.error('[StructureViewer]', err);
+      // Controls intentionally remain disabled on error
     } finally {
       disableBtn(false);
     }
@@ -182,12 +215,23 @@
     btn.textContent = disabled ? 'Loading…' : 'Load Structure';
   }
 
+  // Prompt 2: lock/unlock all three viewer controls together
+  function disableControls(disabled) {
+    ['sv-repr-select', 'sv-reset-btn', 'sv-screenshot-btn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = disabled;
+    });
+  }
+
   // ── Event Wiring ──────────────────────────────────────────
   (function bindEvents() {
+    // Disable controls until a structure is loaded
+    disableControls(true);
+
     document.getElementById('sv-fetch-btn')?.addEventListener('click', async () => {
       const acc = document.getElementById('sv-accession-input')?.value.trim();
       if (!acc) {
-        if (window.showToast) window.showToast('Enter a UniProt accession (e.g. P04637)');
+        if (window.showToast) window.showToast('Enter a UniProt accession (e.g. P04637) or PDB ID (e.g. 6LU7)');
         return;
       }
       try {
@@ -210,14 +254,28 @@
       document.getElementById('sv-fetch-btn')?.click();
     });
 
-    // Mol* manages its own camera; reset is a no-op placeholder for UI compatibility
+    // Representation dropdown — awaits the async Mol* update
+    document.getElementById('sv-repr-select')?.addEventListener('change', async (e) => {
+      if (!viewerInstance || !viewerInstance.plugin) { console.warn('Viewer not ready'); return; }
+      const map = {
+        'cartoon':    'cartoon',
+        'ribbon':     'cartoon',       // Mol* has no separate ribbon; cartoon is equivalent
+        'surface':    'molecular-surface',
+        'ball-stick': 'ball-and-stick',
+        'spacefill':  'spacefill',
+      };
+      const styleName = map[e.target.value] ?? e.target.value;
+      await viewerInstance.visual?.update({ style: { name: styleName } });
+    });
+
     document.getElementById('sv-reset-btn')?.addEventListener('click', () => {
-      viewerInstance?.canvas3d?.requestCameraReset?.();
+      if (!viewerInstance || !viewerInstance.plugin) { console.warn('Viewer not ready'); return; }
+      viewerInstance.plugin.canvas3d?.requestCameraReset();
     });
 
     document.getElementById('sv-screenshot-btn')?.addEventListener('click', () => {
-      if (!viewerInstance || !activeAccession) return;
-      viewerInstance.exportLoadedStructure?.();
+      if (!viewerInstance || !viewerInstance.plugin) { console.warn('Viewer not ready'); return; }
+      viewerInstance.plugin.helpers?.viewportScreenshot?.download({ filename: 'bionised_structure.png' });
     });
   })();
 
