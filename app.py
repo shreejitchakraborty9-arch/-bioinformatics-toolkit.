@@ -29,6 +29,7 @@ try:
     from Bio.SeqUtils.ProtParam import ProteinAnalysis
     from Bio.SeqUtils import molecular_weight as bio_molecular_weight
     from Bio import motifs as Bio_motifs
+    from Bio import Restriction as BioRestriction
     _BIOPYTHON_AVAILABLE = True
 except ImportError:
     _BIOPYTHON_AVAILABLE = False
@@ -1173,6 +1174,119 @@ def analyze_promoter():
     except Exception as e:
         logger.error("Promoter analysis error: %s", str(e))
         return jsonify({"orfs": [], "motifs": [], "error": "Analysis failed: {}".format(str(e))}), 500
+
+
+# ─────────────────────────────────────────────────────────────
+# Restriction Enzyme Analysis — Biopython Bio.Restriction backend
+# ─────────────────────────────────────────────────────────────
+
+_MAX_RESTRICTION_SEQ = 100_000
+
+@app.route("/api/analyze/restriction", methods=["POST"])
+def analyze_restriction():
+    """
+    Restriction enzyme digest analysis via Biopython Bio.Restriction.
+
+    Accepts:
+      {
+        "sequence":  "ATCG...",
+        "topology":  "linear" | "circular",
+        "enzymes":   ["EcoRI", "BamHI"] | "ALL"
+      }
+
+    Returns:
+      {
+        "results": [{"enzyme": "EcoRI", "cuts": [105, 400], "fragments": [295, 4705]}],
+        "error": null
+      }
+    """
+    if not _BIOPYTHON_AVAILABLE:
+        return jsonify({"results": [], "error": "Biopython not available on this server"}), 503
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"results": [], "error": "Invalid or missing JSON payload"}), 400
+
+    # Parse and clean sequence (strip FASTA headers)
+    raw_seq = data.get("sequence", "")
+    lines = raw_seq.strip().splitlines()
+    seq_str = "".join(l.strip() for l in lines if not l.strip().startswith(">"))
+    # Strip whitespace, digits, and any non-alphabet character, then normalise case
+    seq_str = re.sub(r'[^A-Za-z]', '', seq_str).upper()
+    # Reject sequences containing letters outside the IUPAC nucleotide alphabet
+    if re.search(r'[^ACGTURYSWKMBDHVN]', seq_str):
+        return jsonify({"results": [], "error": "Sequence contains invalid characters. Only IUPAC nucleotide codes are accepted."}), 400
+
+    if not seq_str:
+        return jsonify({"results": [], "error": "No sequence provided"}), 400
+    if len(seq_str) > _MAX_RESTRICTION_SEQ:
+        return jsonify({"error": "Sequence exceeds the 100,000 bp limit for the free research tier."}), 413
+
+    # Validate topology
+    topology = data.get("topology", "").lower().strip()
+    if topology not in ("linear", "circular"):
+        return jsonify({"results": [], "error": "topology must be 'linear' or 'circular'"}), 400
+
+    # Parse enzymes
+    enzymes_input = data.get("enzymes")
+    if enzymes_input is None:
+        return jsonify({"results": [], "error": "enzymes field is required"}), 400
+
+    try:
+        if isinstance(enzymes_input, str):
+            if enzymes_input == "ALL":
+                batch = BioRestriction.CommOnly
+            else:
+                return jsonify({"results": [], "error": "enzymes must be a list of enzyme names or the string 'ALL'"}), 400
+        elif isinstance(enzymes_input, list):
+            if not enzymes_input:
+                return jsonify({"results": [], "error": "enzymes list must not be empty"}), 400
+            enzyme_objs = []
+            for name in enzymes_input:
+                enz = getattr(BioRestriction, str(name), None)
+                if enz is None:
+                    return jsonify({"results": [], "error": "Unknown restriction enzyme: {}".format(name)}), 400
+                enzyme_objs.append(enz)
+            batch = BioRestriction.RestrictionBatch(enzyme_objs)
+        else:
+            return jsonify({"results": [], "error": "enzymes must be a list of enzyme names or the string 'ALL'"}), 400
+
+        seq_obj = BioSeq(seq_str)
+        search_results = batch.search(seq_obj, linear=(topology == "linear"))
+
+        seq_len = len(seq_str)
+        results = []
+
+        for enzyme, cuts in search_results.items():
+            if not cuts:
+                continue
+
+            cuts = sorted(cuts)
+            enzyme_name = str(enzyme)
+
+            if topology == "linear":
+                positions = [0] + cuts + [seq_len]
+                fragments = [positions[i + 1] - positions[i] for i in range(len(positions) - 1)]
+            else:
+                if len(cuts) == 1:
+                    fragments = [seq_len]
+                else:
+                    fragments = [cuts[i + 1] - cuts[i] for i in range(len(cuts) - 1)]
+                    wrap_fragment = (seq_len - cuts[-1]) + cuts[0]
+                    fragments.append(wrap_fragment)
+
+            results.append({
+                "enzyme": enzyme_name,
+                "cuts": cuts,
+                "fragments": sorted(fragments),
+            })
+
+        results.sort(key=lambda x: x["enzyme"])
+        return jsonify({"results": results, "error": None})
+
+    except Exception as e:
+        logger.error("Restriction analysis error: %s", str(e))
+        return jsonify({"results": [], "error": "Analysis failed: {}".format(str(e))}), 500
 
 
 # ─────────────────────────────────────────────────────────────
