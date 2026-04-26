@@ -83,7 +83,11 @@
 
       const panel = document.getElementById('panel-' + toolId);
       const nav   = document.getElementById('nav-' + toolId);
-      if (panel) panel.classList.add('active');
+      if (panel) {
+        panel.classList.add('active');
+        // Fix 5: notify tool modules that their panel is now visible
+        panel.dispatchEvent(new CustomEvent('panel-shown', { bubbles: false }));
+      }
       if (nav)   nav.classList.add('active');
 
       const main = document.getElementById('mainContent');

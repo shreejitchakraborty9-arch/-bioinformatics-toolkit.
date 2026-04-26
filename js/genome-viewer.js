@@ -84,10 +84,98 @@
     window.addEventListener('mouseup',   onMouseUp);
     canvas.addEventListener('click',     onClick);
 
+    // Fix 5: re-render when the panel is re-shown after navigation away
+    const gvPanel = document.getElementById('panel-genome-viewer');
+    if (gvPanel) {
+      gvPanel.addEventListener('panel-shown', () => {
+        resizeCanvas();
+        requestAnimationFrame(render);
+      });
+    }
+
+    // Fix 7: wire custom sequence accordion
+    const seqTextarea = document.getElementById('gvSeqTextarea');
+    const seqCounter  = document.getElementById('gvSeqCounter');
+    const analyzeBtn  = document.getElementById('gvAnalyzeBtn');
+    const accordion   = document.getElementById('gvCustomSeqAccordion');
+
+    if (seqTextarea && seqCounter) {
+      seqTextarea.addEventListener('input', () => {
+        const clean = seqTextarea.value.replace(/^>.*$/mg, '').replace(/\s+/g, '');
+        const count = clean.length;
+        const warn  = count > 45000;
+        seqCounter.textContent = `${count.toLocaleString()} bp${warn ? ' — approaching 50,000 bp limit' : ''}`;
+        seqCounter.style.color = warn ? '#f59e0b' : 'var(--text-muted)';
+      });
+    }
+
+    if (analyzeBtn) {
+      analyzeBtn.addEventListener('click', async () => {
+        if (!seqTextarea) return;
+        const raw = seqTextarea.value.trim();
+        if (!raw) { alert('Please paste a sequence first.'); return; }
+
+        const clean = raw.replace(/^>.*$/mg, '').replace(/\s+/g, '').toUpperCase();
+        if (clean.length === 0) { alert('No sequence bases found.'); return; }
+        if (clean.length > 50000) {
+          alert(`Sequence is ${clean.length.toLocaleString()} bp. Maximum allowed is 50,000 bp.`);
+          return;
+        }
+        const invalid = [...new Set(clean.split('').filter(c => !/^[ACGTN]$/.test(c)))];
+        if (invalid.length > 0) {
+          alert(`Invalid characters found: ${invalid.join(', ')}\nOnly A, C, G, T, N are accepted.`);
+          return;
+        }
+
+        const organism = document.getElementById('gvOrganismSelect')?.value || 'prokaryote';
+        analyzeBtn.disabled    = true;
+        analyzeBtn.textContent = 'Analyzing…';
+
+        try {
+          const resp = await fetch('/api/analyze/promoter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sequence: clean, organism })
+          });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `Server error ${resp.status}`);
+          }
+          const data = await resp.json();
+
+          const cds = (data.orfs || []).map(o => ({
+            start:  o.start - 1,
+            end:    o.end,
+            frame:  o.frame,
+            length: o.length,
+            name:   o.name || `ORF frame ${o.frame}`
+          }));
+          const motifs = (data.motifs || []).map(m => ({
+            position: m.position - 1,
+            end:      m.end != null ? m.end - 1 : undefined,
+            matched:  m.matched,
+            name:     m.name
+          }));
+          const promoterLen = data.promoter_length || data.promoterLen || 1000;
+
+          window.loadGenomeData(clean, cds, promoterLen, motifs);
+          window.setZoom('10bp');
+          if (accordion) accordion.open = false;
+
+        } catch (err) {
+          alert(`Analysis failed: ${err.message}`);
+        } finally {
+          analyzeBtn.disabled    = false;
+          analyzeBtn.textContent = 'Analyze & Visualize';
+        }
+      });
+    }
+
     requestAnimationFrame(render);
   }
 
   function resizeCanvas() {
+    if (!canvas) return;           // Fix 3: guard against pre-init calls
     const parent = canvas.parentElement;
     if (!parent) return;
 
@@ -560,33 +648,46 @@
     'TTATAGTTTGCTTTTTATTTGATTTGAGTAATTTTGTTTTTTATACTATTTTTTTTTGAGCTTTT' +
     'GTTCGTTCAGAGTTTATTCGCTTCATTTAAATGGTATGAAATTTACTGATAATGATATTTTTAT';
 
-  document.addEventListener('DOMContentLoaded', () => {
-    initViewer();
+  // Fix 1: script is lazy-injected after DOMContentLoaded has fired — call directly.
+  initViewer();
 
-    const btn = document.getElementById('gvLoadDemoBtn');
-    if (btn) {
-      btn.addEventListener('click', () => {
-        const chunk = 'ATGCGTAAAGGCGAAGAGCTGTTCACTGGTGTCGTCCCTATTCTGGTGGAACTGGATGGTGATGTCAACGGTCAT';
-        const demoSeq = (chunk + 'AAGCTTGAATTCTAA').repeat(15).slice(0, 1500);
+  const btn = document.getElementById('gvLoadDemoBtn');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      // Fix 2: use the defined DEMO_SEQUENCE (pUC19 lacZ-alpha, GenBank L09137)
+      // with biologically correct features derived from the actual sequence.
+      const demoCDS = [
+        // lacZ-alpha ORF: ATG at position 30 (0-based), frame +1
+        // The ORF extends beyond this fragment; end is set to sequence end.
+        {
+          start:  30,
+          end:    DEMO_SEQUENCE.length,
+          frame:  1,
+          length: DEMO_SEQUENCE.length - 30,
+          name:   'lacZ-alpha (partial)'
+        }
+      ];
 
-        const demoCDS = [
-          { start: 150, end: 860,  frame:  1, length: 711, name: 'AmpR (beta-lactamase)' },
-          { start: 950, end: 1400, frame: -1, length: 451, name: 'Ori (Origin of Replication)' },
-        ];
+      // 30 bp upstream of the ATG encompasses the Shine-Dalgarno site
+      const demoPromoterLen = 30;
 
-        const demoUpstream = 0;
+      const demoMotifs = [
+        // Shine-Dalgarno: AGGAAA at positions 19–24 (0-based)
+        { position: 19, end: 25, matched: 'AGGAAA', name: 'Shine-Dalgarno' },
+        // HindIII: AAGCTT at positions 47–52 (0-based)
+        { position: 47, end: 53, matched: 'AAGCTT', name: 'HindIII'        },
+        // SalI: GTCGAC at positions 65–70 (0-based, start of MCS)
+        { position: 65, end: 71, matched: 'GTCGAC', name: 'SalI (MCS)'    },
+        // BamHI: GGATCC at positions 71–76 (0-based)
+        { position: 71, end: 77, matched: 'GGATCC', name: 'BamHI (MCS)'   },
+        // EcoRI: GAATTC at positions 81–86 (0-based)
+        { position: 81, end: 87, matched: 'GAATTC', name: 'EcoRI (MCS)'   }
+      ];
 
-        const demoMotifs = [
-          { position: 120, end: 126, matched: 'TATAAA', name: 'TATA Box' },
-          { position: 900, end: 906, matched: 'GAATTC', name: 'EcoRI Site' },
-        ];
-
-        window.loadGenomeData(demoSeq, demoCDS, demoUpstream, demoMotifs);
-        setZoom('10bp');
-        render();
-      });
-    }
-  });
+      window.loadGenomeData(DEMO_SEQUENCE, demoCDS, demoPromoterLen, demoMotifs);
+      window.setZoom('10bp');
+    });
+  }
 
   // ── Theme Sync ───────────────────────────────────────────────
   window.addEventListener('biokit-theme-change', () => {
