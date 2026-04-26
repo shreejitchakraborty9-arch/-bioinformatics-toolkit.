@@ -195,33 +195,11 @@ body.sidebar-collapsed .main-content {
   margin-left: 0;
 }
 
-/* Toggle button — always reachable; floats at top-left when sidebar hides */
+/* Toggle button — lives in app-header, always visible regardless of sidebar state */
 #sidebarToggleBtn {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
   font-size: 1rem;
   line-height: 1;
-  cursor: pointer;
-  padding: 4px 7px;
-  border-radius: var(--radius-sm);
-  margin-left: auto;
-  flex-shrink: 0;
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
-}
-#sidebarToggleBtn:hover {
-  color: var(--text-primary);
-  background: var(--bg-base);
-}
-
-body.sidebar-collapsed #sidebarToggleBtn {
-  position: fixed;
-  top: 14px;
-  left: 10px;
-  z-index: 101;
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
+  letter-spacing: 0.02em;
 }
 
 /* ── Main Content ───────────────────────────────────────── */
