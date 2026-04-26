@@ -1,20 +1,20 @@
 /* ============================================================
-   batch.js — High-Throughput Omics Batch Queue
-   File upload → async Celery job → short-poll /api/status →
-   progress bar → CSV bulk download
-   ============================================================ */
+ batch.js — High-Throughput Omics Batch Queue
+ File upload → async Celery job → short-poll /api/status →
+ progress bar → CSV bulk download
+ ============================================================ */
 
 (function () {
   'use strict';
 
   const POLL_INTERVAL_MS = 2000; // 2-second short-poll cadence
 
-  let currentJobId    = null;
-  let pollTimer       = null;
+  let currentJobId = null;
+  let pollTimer = null;
   let uploadedContent = null; // raw FASTA string from file or paste
 
   // ── File / Drop-Zone Wiring ───────────────────────────────
-  const dropZone  = document.getElementById('batchDropZone');
+  const dropZone = document.getElementById('batchDropZone');
   const fileInput = document.getElementById('batchFileInput');
 
   if (dropZone) {
@@ -56,7 +56,7 @@
 
   async function submitBatch() {
     const pasteArea = document.getElementById('batchPasteInput');
-    const content   = (uploadedContent || pasteArea?.value || '').trim();
+    const content = (uploadedContent || pasteArea?.value || '').trim();
 
     if (!content) {
       window.showToast?.('Upload a FASTA file or paste sequences first.');
@@ -71,12 +71,12 @@
 
     try {
       const formData = new FormData();
-      const blob     = new Blob([content], { type: 'text/plain' });
+      const blob = new Blob([content], { type: 'text/plain' });
       formData.append('file', blob, 'batch.fasta');
 
       const res = await fetch('/api/analyze/batch', {
         method: 'POST',
-        body:   formData,
+        body: formData,
       });
 
       if (!res.ok) {
@@ -107,7 +107,7 @@
 
   async function pollStatus(jobId) {
     try {
-      const res  = await fetch(`/api/status/${encodeURIComponent(jobId)}`);
+      const res = await fetch(`/api/status/${encodeURIComponent(jobId)}`);
       if (!res.ok) return; // transient HTTP error — try again next tick
       const data = await res.json();
       updateProgress(data);
@@ -156,7 +156,7 @@
 
     if (data.status === 'running') {
       const processed = data.processed || 0;
-      const total     = data.total     || 0;
+      const total = data.total || 0;
       setBatchStatus(
         total > 0
           ? `Processing ${processed.toLocaleString()} / ${total.toLocaleString()} sequences…`
@@ -195,7 +195,7 @@
 
     const summary = document.getElementById('batchCompleteSummary');
     if (summary) {
-      const total  = data.total  || 0;
+      const total = data.total || 0;
       const failed = data.failed || 0;
       summary.textContent = `${total.toLocaleString()} sequences processed${failed > 0 ? `, ${failed} failed` : ''}.`;
     }
@@ -238,8 +238,8 @@
 
     const pasteArea = document.getElementById('batchPasteInput');
     if (pasteArea) {
-      pasteArea.value  = sample;
-      uploadedContent  = sample;
+      pasteArea.value = sample;
+      uploadedContent = sample;
     }
     window.showToast?.('Example loaded — 3 human proteins (TP53, EGFR, HBB)');
   });
@@ -248,10 +248,10 @@
   document.getElementById('batchClearBtn')?.addEventListener('click', () => {
     stopPolling();
     uploadedContent = null;
-    currentJobId    = null;
+    currentJobId = null;
     const pasteArea = document.getElementById('batchPasteInput');
     if (pasteArea) pasteArea.value = '';
-    if (fileInput)  fileInput.value = '';
+    if (fileInput) fileInput.value = '';
     resetJobUI();
   });
 

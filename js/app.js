@@ -194,7 +194,7 @@
     const clean = headerStripped.toUpperCase().replace(/\s/g, '');
     if (!clean) return { valid: false, msg: 'Sequence is empty.' };
 
-    let allowed = /^[ATGCNU]+$/;
+    let allowed = /^[ACGTURYSWKMBDHVN]+$/i;
     let label = 'DNA/RNA';
     let limit = 0;
     if (type === 'protein') {

@@ -310,17 +310,22 @@
       if (results.length === 0) {
         html = '<p>No cut sites found for the selected enzymes.</p>';
       } else {
+        const enzymeMap = {};
+        (window.BioKit.data.RESTRICTION_ENZYMES || []).forEach(e => { enzymeMap[e.name] = e; });
+
         const rows = results.map(r => {
           const cuts = Array.isArray(r.cuts) ? r.cuts : [];
           const fragments = Array.isArray(r.fragments) ? r.fragments : [];
           const cutPositions = cuts.length > 0 ? cuts.join(', ') : 'None';
-          const fragmentSizes = fragments.slice().sort((a, b) => b - a).join(', ');
+          const fragmentSizes = fragments.join(', ');
+          const overhang = (enzymeMap[r.enzyme] || {}).overhang_type || 'N/A';
           return `
             <tr>
               <td><strong>${r.enzyme}</strong></td>
               <td>${cuts.length}</td>
               <td>${cutPositions}</td>
               <td>${fragmentSizes}</td>
+              <td>${overhang}</td>
             </tr>`;
         }).join('');
 
@@ -330,8 +335,9 @@
               <tr>
                 <th>Enzyme</th>
                 <th>Number of Cuts</th>
-                <th>Cut Positions</th>
+                <th>Cut Position (1-based, nt)</th>
                 <th>Fragment Sizes (bp)</th>
+                <th>Overhang</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>

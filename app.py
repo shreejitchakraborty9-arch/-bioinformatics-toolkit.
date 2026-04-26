@@ -1284,7 +1284,7 @@ def analyze_restriction():
             results.append({
                 "enzyme": enzyme_name,
                 "cuts": cuts,
-                "fragments": sorted(fragments),
+                "fragments": fragments,
             })
 
         results.sort(key=lambda x: x["enzyme"])
