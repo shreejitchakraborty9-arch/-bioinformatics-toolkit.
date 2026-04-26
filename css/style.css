@@ -197,17 +197,17 @@ body.sidebar-collapsed .main-content {
 
 /* Toggle button — always reachable; floats at top-left when sidebar hides */
 #sidebarToggleBtn {
-  background: transparent;
-  border: none;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 1.1rem;
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 4px 7px;
   border-radius: var(--radius-sm);
   margin-left: auto;
   flex-shrink: 0;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 #sidebarToggleBtn:hover {
   color: var(--text-primary);
