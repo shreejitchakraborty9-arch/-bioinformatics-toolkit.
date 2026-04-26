@@ -361,7 +361,7 @@
     if (window.loadGenomeData) {
       const cdsData   = orfs.map(o => ({ start: o.start - 1, end: o.end, frame: o.frame, length: o.length }));
       const motifData = motifs.map(m => ({ position: m.position - 1, end: m.end, matched: m.matched, name: m.name }));
-      window.loadGenomeData(seq, cdsData, 200, motifData);
+      window.loadGenomeData(seq, cdsData, upstreamLen, motifData);
     }
   }
 
