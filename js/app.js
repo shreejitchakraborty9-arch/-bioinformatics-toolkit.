@@ -848,6 +848,33 @@
         el.addEventListener('change', () => window.BioKit.core.SessionManager.markChanged());
       }
     });
+
+    // ── Sidebar Toggle ──────────────────────────────────────
+    const SidebarManager = {
+      STORAGE_KEY: 'bionised_sidebar_collapsed',
+
+      init() {
+        const btn = document.getElementById('sidebarToggleBtn');
+        if (!btn) return;
+
+        if (localStorage.getItem(this.STORAGE_KEY) === 'true') {
+          document.body.classList.add('sidebar-collapsed');
+        }
+
+        btn.addEventListener('click', () => this.toggle());
+      },
+
+      toggle() {
+        const collapsed = document.body.classList.toggle('sidebar-collapsed');
+        localStorage.setItem(this.STORAGE_KEY, collapsed);
+
+        // Fire resize after CSS transition finishes so Mol* and Genome Viewer
+        // recalculate their WebGL canvas dimensions at the new viewport width.
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 310);
+      }
+    };
+    SidebarManager.init();
+    window.BioKit.core.SidebarManager = SidebarManager;
   });
 
 })();

@@ -105,7 +105,9 @@ html, body {
   display: flex;
   flex-direction: column;
   z-index: 100;
-  transition: var(--transition);
+  transition: width 0.3s ease, min-width 0.3s ease, transform 0.15s ease,
+              background-color 0.15s ease, border-color 0.15s ease,
+              box-shadow 0.15s ease;
 }
 
 .sidebar-logo {
@@ -181,6 +183,47 @@ html, body {
   letter-spacing: 0.04em;
 }
 
+/* ── Sidebar Collapsed State ────────────────────────────── */
+body.sidebar-collapsed .sidebar {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-right: none;
+}
+
+body.sidebar-collapsed .main-content {
+  margin-left: 0;
+}
+
+/* Toggle button — always reachable; floats at top-left when sidebar hides */
+#sidebarToggleBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+#sidebarToggleBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-base);
+}
+
+body.sidebar-collapsed #sidebarToggleBtn {
+  position: fixed;
+  top: 14px;
+  left: 10px;
+  z-index: 101;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
 /* ── Main Content ───────────────────────────────────────── */
 .main-content {
   margin-left: var(--sidebar-w);
@@ -190,6 +233,7 @@ html, body {
   flex-direction: column;
   background: var(--bg-base);
   position: relative;
+  transition: margin-left 0.3s ease;
 }
 
 /* ── App Header (SaaS) ──────────────────────────────────── */
