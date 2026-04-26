@@ -66,6 +66,16 @@
 
     ctx = canvas.getContext('2d', { alpha: false });
 
+    const canvasContainer = canvas.closest('.gv-canvas-container') || canvas.parentElement;
+    if (canvasContainer) {
+      new ResizeObserver(() => {
+        if (canvasContainer.clientWidth > 0) {
+          resizeCanvas();
+          render();
+        }
+      }).observe(canvasContainer);
+    }
+
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
@@ -556,30 +566,24 @@
     const btn = document.getElementById('gvLoadDemoBtn');
     if (btn) {
       btn.addEventListener('click', () => {
-        const input      = document.getElementById('proInput');
-        const analyzeBtn = document.getElementById('proAnalyzeBtn');
-        if (!input || !analyzeBtn) return;
+        const chunk = 'ATGCGTAAAGGCGAAGAGCTGTTCACTGGTGTCGTCCCTATTCTGGTGGAACTGGATGGTGATGTCAACGGTCAT';
+        const demoSeq = (chunk + 'AAGCTTGAATTCTAA').repeat(15).slice(0, 1500);
 
-        input.value = DEMO_SEQUENCE;
-        input.dispatchEvent(new Event('input'));
-        analyzeBtn.click();
+        const demoCDS = [
+          { start: 150, end: 860,  frame:  1, length: 711, name: 'AmpR (beta-lactamase)' },
+          { start: 950, end: 1400, frame: -1, length: 451, name: 'Ori (Origin of Replication)' },
+        ];
 
-        const panel = document.getElementById('panel-genome-viewer');
-        if (panel && !panel.querySelector('.demo-banner')) {
-          const banner = document.createElement('div');
-          banner.className = 'demo-banner';
-          banner.style.cssText =
-            'display:flex;align-items:center;justify-content:space-between;gap:8px;' +
-            'padding:8px 12px;margin-bottom:10px;' +
-            'background:var(--warning-bg,#fef3c7);border:1px solid var(--warning-border,#f59e0b);' +
-            'border-radius:6px;font-size:0.85rem;color:var(--warning-text,#92400e);';
-          banner.innerHTML =
-            '<span>⚠ Viewing Educational Demo. Paste your own sequence to calculate custom coordinates.</span>' +
-            '<button style="background:none;border:none;cursor:pointer;font-size:1rem;line-height:1;' +
-            'padding:0 2px;color:inherit;" aria-label="Dismiss">&times;</button>';
-          banner.querySelector('button').addEventListener('click', () => banner.remove());
-          panel.insertBefore(banner, panel.firstChild);
-        }
+        const demoUpstream = 0;
+
+        const demoMotifs = [
+          { position: 120, end: 126, matched: 'TATAAA', name: 'TATA Box' },
+          { position: 900, end: 906, matched: 'GAATTC', name: 'EcoRI Site' },
+        ];
+
+        window.loadGenomeData(demoSeq, demoCDS, demoUpstream, demoMotifs);
+        setZoom('10bp');
+        render();
       });
     }
   });
