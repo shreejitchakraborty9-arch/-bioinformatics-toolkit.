@@ -2415,3 +2415,8 @@ canvas {
   border-color: var(--teal);
   background: rgba(20, 184, 166, 0.06);
 }
+
+#genomeCanvas {
+  max-width: none !important;
+  width: 100% !important;
+}
