@@ -58,13 +58,18 @@
   // ─────────────────────────────────────────────────────────────
   function parseFasta(text) {
     const lines = text.trim().split("\n");
-    let header = "";
-    const seqLines = [];
-    lines.forEach(line => {
-      if (line.startsWith(">")) { header = line.slice(1).trim(); }
-      else if (line.trim())     { seqLines.push(line.trim()); }
-    });
-    return { header, sequence: seqLines.join("") };
+    const records = [];
+    let current = null;
+    for (const line of lines) {
+      if (line.startsWith(">")) {
+        if (current) records.push(current);
+        current = { header: line.slice(1).trim(), sequence: "" };
+      } else if (current && line.trim()) {
+        current.sequence += line.trim().toUpperCase();
+      }
+    }
+    if (current) records.push(current);
+    return records;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -319,8 +324,9 @@
           return;
         }
         const parsed = parseFasta(text);
-        header = parsed.header;
-        sequence = parsed.sequence;
+        if (!parsed.length) { window.showToast('❌ Could not parse FASTA response.', 4000); return; }
+        header = parsed[0].header;
+        sequence = parsed[0].sequence;
       }
 
       if (!sequence) {

@@ -155,6 +155,7 @@
   }
 
   function readFile(file) {
+    if (file.size > 5 * 1024 * 1024) { window.showToast?.('Error: File exceeds 5MB limit. Please split massive FASTA files for Free-Tier processing.', 'error'); return; }
     const reader = new FileReader();
     reader.onload = (e) => {
       const input = document.getElementById('fastaText');
