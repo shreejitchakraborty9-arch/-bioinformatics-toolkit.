@@ -2197,12 +2197,18 @@ canvas {
   overflow: hidden;
   background: var(--bg-card);
   min-height: 560px;
+  height: 560px;
+  display: flex;
+  flex-direction: column;
 }
 
-/* NGL renders into this div; height must be explicit for WebGL */
+/* Mol* renders into this div — aggressive stretch so no dead gray strip is left */
 .sv-canvas-container {
-  width: 100%;
-  height: 560px;
+  width: 100% !important;
+  height: 100% !important;
+  position: relative;
+  flex: 1;
+  overflow: hidden;
   display: block;
 }
 
@@ -2354,8 +2360,9 @@ canvas {
   .sv-layout {
     grid-template-columns: 1fr;
   }
-  .sv-canvas-container {
+  .sv-canvas-wrap {
     height: 400px;
+    min-height: 400px;
   }
 }
 

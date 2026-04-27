@@ -108,8 +108,11 @@
             isBinary: true,
           },
           bgColor:      { r: 255, g: 255, b: 255 },
-          hideControls: false,
+          hideControls: true,
         });
+
+        viewerInstance.plugin?.handleResize();
+        viewerInstance.plugin?.canvas3d?.requestCameraReset();
 
         activeAccession = accession;
         setOverlay('ready', '');
@@ -128,8 +131,11 @@
           },
           alphafoldView: true,
           bgColor:       { r: 255, g: 255, b: 255 },
-          hideControls:  false,
+          hideControls:  true,
         });
+
+        viewerInstance.plugin?.handleResize();
+        viewerInstance.plugin?.canvas3d?.requestCameraReset();
 
         activeAccession = accession;
         renderMetadata(entry);

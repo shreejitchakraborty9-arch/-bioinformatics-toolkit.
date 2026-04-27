@@ -192,6 +192,11 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
 
+    // Immediately cover the reset (alpha:false) black buffer so no black frame
+    // reaches the browser paint before the deferred RAF fires.
+    ctx.fillStyle = getThemeColors().bg;
+    ctx.fillRect(0, 0, rect.width, 400);
+
     let currentY = MARGIN_TOP + HEADER_HEIGHT;
     for (const t of TRACKS) {
       t.y = currentY;
@@ -454,6 +459,7 @@
 
   function drawTrackBackground(t, cw) {
     const colors = getThemeColors();
+    ctx.save();
     ctx.fillStyle    = colors.muted;
     ctx.font         = '12px "Inter", system-ui, sans-serif';
     ctx.textAlign    = 'left';
@@ -466,6 +472,7 @@
     ctx.moveTo(0,  t.y + TRACK_HEIGHT);
     ctx.lineTo(cw, t.y + TRACK_HEIGHT);
     ctx.stroke();
+    ctx.restore();
   }
 
   function drawSequenceTrack(cw) {
@@ -562,6 +569,7 @@
       ctx.fill();
 
       if (w > 40 && bpWidth < 5000) {
+        ctx.save();
         ctx.fillStyle    = '#ffffff';
         ctx.font         = '10px "Inter", system-ui, sans-serif';
         ctx.textAlign    = isReverse ? 'right' : 'left';
@@ -569,6 +577,7 @@
         const strand     = cds.frame > 0 ? '+' : '−';
         const labelX     = isReverse ? x1 + w - 5 : x1 + 5;
         ctx.fillText(`ORF ${strand}${Math.abs(cds.frame)}`, labelX, y + h / 2);
+        ctx.restore();
       }
     }
   }
@@ -629,11 +638,13 @@
       ctx.fillRect(x1, t.y + 5, w, TRACK_HEIGHT - 10);
 
       if (w > 30) {
+        ctx.save();
         ctx.fillStyle    = '#ffffff';
         ctx.font         = '9px "JetBrains Mono","Courier New",monospace';
         ctx.textAlign    = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(m.name, x1 + 3, t.y + TRACK_HEIGHT / 2);
+        ctx.restore();
       }
     }
   }
