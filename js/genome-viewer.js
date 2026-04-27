@@ -64,7 +64,7 @@
     canvas = document.getElementById('genomeCanvas');
     if (!canvas) return;
 
-    ctx = canvas.getContext('2d', { alpha: false });
+    ctx = canvas.getContext('2d', { alpha: true });
 
     const canvasContainer = canvas.closest('.gv-canvas-container') || canvas.parentElement;
     if (canvasContainer) {
@@ -500,9 +500,7 @@
     const ch     = canvas.clientHeight;
     const colors = getThemeColors();
 
-    ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = colors.bg;
-    ctx.fillRect(0, 0, cw, ch);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (!sequence) {
       ctx.fillStyle    = colors.muted;

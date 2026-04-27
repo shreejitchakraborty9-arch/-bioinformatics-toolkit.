@@ -2419,4 +2419,5 @@ canvas {
 #genomeCanvas {
   max-width: none !important;
   width: 100% !important;
+  background-color: transparent !important;
 }
