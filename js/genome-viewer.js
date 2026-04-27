@@ -201,9 +201,16 @@
   }
 
   function resizeCanvas() {
-    if (!canvas) return;           // Fix 3: guard against pre-init calls
+    if (!canvas) return;
     const parent = canvas.parentElement;
     if (!parent) return;
+
+    // Obliterate any rogue CSS constraints before measuring — inline styles
+    // override non-!important stylesheet rules regardless of specificity.
+    canvas.style.maxWidth = 'none';
+    canvas.style.minWidth = '100%';
+    canvas.style.width    = '100%';
+    canvas.style.display  = 'block';
 
     const rect = parent.getBoundingClientRect();
     const dpr  = window.devicePixelRatio || 1;
@@ -211,15 +218,13 @@
     canvas.width  = rect.width * dpr;
     canvas.height = 400 * dpr;
 
-    canvas.style.width  = `${rect.width}px`;
     canvas.style.height = '400px';
 
-    // Reset before scaling to prevent cumulative multiplication
+    // Reset before scaling to prevent cumulative DPR multiplication.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
 
-    // Immediately cover the reset (alpha:false) black buffer so no black frame
-    // reaches the browser paint before the deferred RAF fires.
+    // Fill immediately so no black frame reaches the browser before RAF.
     ctx.fillStyle = getThemeColors().bg;
     ctx.fillRect(0, 0, rect.width, 400);
 
