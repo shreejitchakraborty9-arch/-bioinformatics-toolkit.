@@ -84,6 +84,32 @@
     window.addEventListener('mouseup',   onMouseUp);
     canvas.addEventListener('click',     onClick);
 
+    const zoomInBtn  = document.getElementById('gvZoomIn');
+    const zoomOutBtn = document.getElementById('gvZoomOut');
+
+    if (zoomInBtn) {
+      zoomInBtn.addEventListener('click', () => {
+        windowSize = Math.max(50, windowSize / 1.5);
+        updateZoom();
+      });
+    }
+    if (zoomOutBtn) {
+      zoomOutBtn.addEventListener('click', () => {
+        windowSize = Math.min(sequence.length || 20000, windowSize * 1.5);
+        updateZoom();
+      });
+    }
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        windowSize = Math.max(50, windowSize / 1.5);
+      } else {
+        windowSize = Math.min(sequence.length || 20000, windowSize * 1.5);
+      }
+      updateZoom();
+    }, { passive: false });
+
     // Fix 5: re-render when the panel is re-shown after navigation away
     const gvPanel = document.getElementById('panel-genome-viewer');
     if (gvPanel) {
@@ -215,31 +241,41 @@
     motifData.sort((a, b) => a.position - b.position);
     storedPromoterLen = (typeof promoterLen === 'number' && promoterLen > 0) ? promoterLen : 1000;
 
-    bpStart = 0;
-    bpEnd   = Math.min(100, sequence.length || 100);
+    bpStart    = 0;
+    windowSize = Math.min(100, sequence.length || 100);
+    bpEnd      = windowSize;
+
+    const label = document.getElementById('gvZoomLabel');
+    if (label) label.textContent = Math.round(windowSize) + ' bp';
 
     resizeCanvas();
   };
 
-  window.setZoom = function (level) {
-    if (!sequence) return;
+  // Current window size in bp; kept in module scope so buttons and wheel share state
+  let windowSize = 1000;
+
+  function updateZoom() {
+    const label = document.getElementById('gvZoomLabel');
+    if (label) label.textContent = Math.round(windowSize) + ' bp';
+
     const centerBp = bpStart + (bpEnd - bpStart) / 2;
-    let windowSize = 100;
-
-    if (level === '1bp')    windowSize = 50;
-    if (level === '10bp')   windowSize = 250;
-    if (level === '100bp')  windowSize = 2500;
-    if (level === '1000bp') windowSize = 25000;
-
-    windowSize = Math.min(windowSize, sequence.length);
-
     bpStart = Math.max(0, centerBp - windowSize / 2);
-    bpEnd   = Math.min(sequence.length, centerBp + windowSize / 2);
+    bpEnd   = Math.min(sequence.length || windowSize, centerBp + windowSize / 2);
 
-    if (bpStart === 0)              bpEnd   = Math.min(sequence.length, windowSize);
-    if (bpEnd   === sequence.length) bpStart = Math.max(0, sequence.length - windowSize);
+    if (bpStart === 0)                       bpEnd   = Math.min(sequence.length || windowSize, windowSize);
+    if (bpEnd   === (sequence.length || 0))  bpStart = Math.max(0, (sequence.length || 0) - windowSize);
 
     requestAnimationFrame(render);
+  }
+
+  window.setZoom = function (level) {
+    if (!sequence) return;
+    if (level === '1bp')    windowSize = 50;
+    else if (level === '10bp')   windowSize = 250;
+    else if (level === '100bp')  windowSize = 2500;
+    else if (level === '1000bp') windowSize = 25000;
+    windowSize = Math.min(windowSize, sequence.length);
+    updateZoom();
   };
 
   // ── Interaction ──────────────────────────────────────────────
@@ -252,31 +288,83 @@
   }
 
   function onMouseMove(e) {
-    if (!isDragging || !sequence) return;
+    if (!sequence) return;
 
-    const dx = e.clientX - dragStartX;
-    if (Math.abs(dx) > 3) dragMoved = true; // 3 px threshold: drag vs. click
+    // ── Drag panning ────────────────────────────────────────────
+    if (isDragging) {
+      const dx = e.clientX - dragStartX;
+      if (Math.abs(dx) > 3) dragMoved = true;
 
-    const cw      = canvas.clientWidth;
+      const cw      = canvas.clientWidth;
+      const bpWidth = bpEnd - bpStart;
+      const bpShift = (dx / cw) * bpWidth;
+
+      bpStart = dragStartBp - bpShift;
+      bpEnd   = bpStart + bpWidth;
+
+      if (bpStart < 0) {
+        bpStart = 0;
+        bpEnd   = bpWidth;
+      }
+      if (bpEnd > sequence.length) {
+        bpEnd   = sequence.length;
+        bpStart = Math.max(0, sequence.length - bpWidth);
+      }
+
+      if (!rafPending) {
+        rafPending = true;
+        requestAnimationFrame(() => { rafPending = false; render(); });
+      }
+      hideCanvasTooltip();
+      return;
+    }
+
+    // ── Hover hit-detection ──────────────────────────────────────
+    const rect    = canvas.getBoundingClientRect();
+    const x       = e.clientX - rect.left;
+    const y       = e.clientY - rect.top;
+    const cw      = rect.width;
     const bpWidth = bpEnd - bpStart;
-    const bpShift = (dx / cw) * bpWidth;
+    const hoverBp = bpStart + (x / cw) * bpWidth;
 
-    bpStart = dragStartBp - bpShift;
-    bpEnd   = bpStart + bpWidth;
+    // CDS / ORF track
+    const cdsTrack = TRACKS.find(t => t.id === 'cds');
+    if (y >= cdsTrack.y && y <= cdsTrack.y + TRACK_HEIGHT) {
+      for (const cds of cdsData) {
+        if (hoverBp >= cds.start && hoverBp <= cds.end) {
+          const strand = cds.frame > 0 ? '+' : '−';
+          showHoverTooltip(
+            `<strong>${cds.name || 'ORF'}</strong><br>` +
+            `Frame: ${strand}${Math.abs(cds.frame)}<br>` +
+            `Start: ${cds.start + 1} | End: ${cds.end}<br>` +
+            `Length: ${cds.length} bp`,
+            e.clientX, e.clientY
+          );
+          return;
+        }
+      }
+    }
 
-    if (bpStart < 0) {
-      bpStart = 0;
-      bpEnd   = bpWidth;
-    }
-    if (bpEnd > sequence.length) {
-      bpEnd   = sequence.length;
-      bpStart = Math.max(0, sequence.length - bpWidth);
+    // Motif / Cis-element track
+    const motifTrack = TRACKS.find(t => t.id === 'motif');
+    if (y >= motifTrack.y && y <= motifTrack.y + TRACK_HEIGHT) {
+      for (const m of motifData) {
+        const mMatchLen = m.matched?.length || (m.end != null ? m.end - m.position : 6);
+        const mEnd      = m.position + mMatchLen;
+        if (hoverBp >= m.position && hoverBp <= mEnd) {
+          showHoverTooltip(
+            `<strong>${m.name || 'Motif'}</strong><br>` +
+            `Start: ${m.position + 1}<br>` +
+            `Length: ${mMatchLen} bp<br>` +
+            `Seq: ${m.matched || '—'}`,
+            e.clientX, e.clientY
+          );
+          return;
+        }
+      }
     }
 
-    if (!rafPending) {
-      rafPending = true;
-      requestAnimationFrame(() => { rafPending = false; render(); });
-    }
+    hideCanvasTooltip();
   }
 
   function onMouseUp() {
@@ -364,6 +452,34 @@
     tt.style.left   = (x + 15) + 'px';
     tt.style.top    = (y + 15) + 'px';
     tt.style.display = 'block';
+  }
+
+  function showHoverTooltip(html, clientX, clientY) {
+    let tt = document.getElementById('gvTooltip');
+    if (!tt) {
+      tt = document.createElement('div');
+      tt.id = 'gvTooltip';
+      tt.style.cssText = [
+        'position:fixed',
+        'background:var(--bg-surface,#1e293b)',
+        'color:var(--text-primary,#f8f9fa)',
+        'border:1px solid var(--border,#334155)',
+        'padding:8px 12px',
+        'border-radius:6px',
+        'box-shadow:0 10px 15px -3px rgba(0,0,0,0.5)',
+        'pointer-events:none',
+        'z-index:1000',
+        'font-family:var(--font,"Inter",system-ui,sans-serif)',
+        'font-size:0.85rem',
+        'line-height:1.55',
+        'max-width:260px'
+      ].join(';');
+      document.body.appendChild(tt);
+    }
+    tt.innerHTML       = html;
+    tt.style.left      = (clientX + 15) + 'px';
+    tt.style.top       = (clientY + 15) + 'px';
+    tt.style.display   = 'block';
   }
 
   function hideCanvasTooltip() {

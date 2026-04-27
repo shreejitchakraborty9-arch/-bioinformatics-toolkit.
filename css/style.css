@@ -300,6 +300,13 @@ body.sidebar-collapsed .main-content {
   gap: 8px;
 }
 
+/* ── Genome Viewer Canvas Container ────────────────────── */
+.gv-canvas-container {
+  width: 100% !important;
+  flex-grow: 1;
+  overflow: hidden;
+}
+
 /* ── Tool Panel Override ────────────────────────────────── */
 .tool-panel {
   display: none;
