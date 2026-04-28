@@ -58,7 +58,17 @@ except Exception as _celery_import_err:
 # App Setup
 # ─────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder=".", static_url_path="")
-app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev-secret-key-12345")
+_secret_key = os.environ.get("SECRET_KEY")
+_is_dev     = os.environ.get("FLASK_DEBUG", "0") in ("1", "true", "True")
+if not _secret_key:
+    if not _is_dev:
+        raise RuntimeError(
+            "SECRET_KEY environment variable must be set in production. "
+            "Export SECRET_KEY before starting the server. "
+            "Set FLASK_DEBUG=1 only for local development."
+        )
+    _secret_key = "dev-secret-key-insecure"
+app.config['SECRET_KEY'] = _secret_key
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///biotoolkit.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -86,7 +96,7 @@ with app.app_context():
         app.logger.warning("Database initialization deferred: {}".format(e))
 
 # 1. CORS Enforcement (Restrict to exact frontend domain)
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173") # Default to local dev
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5000")
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGIN}})
 
 # 2. Payload size Limit (5MB) - Prevents OOM and large sequence abuse
@@ -1154,6 +1164,34 @@ def analyze_promoter():
                             })
                         start_pos = None
                     i += 3
+
+                # Emit run-off ORF: reading frame reached the end of the sequence
+                # without encountering a stop codon (partial gene, exon-only sequence,
+                # or plasmid fragment). Flagged with partial=True so the viewer can
+                # render a dashed border instead of a solid arrow.
+                if start_pos is not None and (len(strand_seq) - start_pos) >= _MIN_ORF_NT:
+                    orf_nt_len = len(strand_seq) - start_pos
+                    orf_dna    = strand_seq[start_pos:]
+                    try:
+                        protein = str(BioSeq(orf_dna).translate(to_stop=True))
+                    except Exception:
+                        protein = ""
+                    if strand_label == "+":
+                        fwd_start = start_pos + 1
+                        fwd_end   = len(strand_seq)
+                    else:
+                        fwd_start = seq_len - len(strand_seq) + 1
+                        fwd_end   = seq_len - start_pos
+                    orfs.append({
+                        "frame":     (frame + 1) if strand_label == "+" else -(frame + 1),
+                        "strand":    strand_label,
+                        "start":     fwd_start,
+                        "end":       fwd_end,
+                        "length_nt": orf_nt_len,
+                        "length_aa": len(protein),
+                        "protein":   protein,
+                        "partial":   True,
+                    })
 
         orfs.sort(key=lambda x: x["start"])
 

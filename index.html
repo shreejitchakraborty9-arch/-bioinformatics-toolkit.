@@ -1,24 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BioToolkit — Scientific Sequence Analysis Platform</title>
-  <meta name="description" content="BioToolkit: High-performance, research-grade platform for DNA, RNA, and protein analysis. Secure, private, and laboratory-standard bioinformatics tools."/>
-  <meta name="keywords" content="bioinformatics, scientific analysis, sequence analysis, researchers, DNA, protein, mapping" />
+  <meta name="description"
+    content="BioToolkit: High-performance, research-grade platform for DNA, RNA, and protein analysis. Secure, private, and laboratory-standard bioinformatics tools." />
+  <meta name="keywords"
+    content="bioinformatics, scientific analysis, sequence analysis, researchers, DNA, protein, mapping" />
   <meta property="og:title" content="BioToolkit — Research-Grade Sequence Analysis" />
-  <meta property="og:description" content="Scientific sequence analysis platform for professional researchers and bioinformaticians." />
+  <meta property="og:description"
+    content="Scientific sequence analysis platform for professional researchers and bioinformaticians." />
   <meta property="og:type" content="website" />
   <meta name="theme-color" content="#14b8a6" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230d1117'/><path d='M30 20 L70 20 M30 50 L70 50 M30 80 L70 80' stroke='%2358a6ff' stroke-width='8'/></svg>" />
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap" rel="stylesheet"/>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230d1117'/><path d='M30 20 L70 20 M30 50 L70 50 M30 80 L70 80' stroke='%2358a6ff' stroke-width='8'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap"
+    rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest"></script>
-  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="css/style.css" />
   <script src="https://unpkg.com/dompurify@latest/dist/purify.min.js"></script>
   <script>
-    (function() {
+    (function () {
       const savedTheme = localStorage.getItem('biokit-theme');
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
@@ -29,8 +36,10 @@
   <!-- LaTeX Rendering (Scientific Requirement) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\(',right:'\\)',display:false},{left:'\\[',right:'\\]',display:true}],throwOnError:false});"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\(',right:'\\)',display:false},{left:'\\[',right:'\\]',display:true}],throwOnError:false});"></script>
 </head>
+
 <body>
 
 
@@ -42,7 +51,8 @@
   <div id="browserWarning" class="browser-warning hidden">
     <div class="browser-warning-content">
       <i data-lucide="alert-circle"></i>
-      <span>Some features (like Web Workers) may be missing. For the best experience, please use a modern browser like Chrome, Firefox, or Edge.</span>
+      <span>Some features (like Web Workers) may be missing. For the best experience, please use a modern browser like
+        Chrome, Firefox, or Edge.</span>
       <button id="closeBrowserWarning" class="banner-close">Dismiss</button>
     </div>
   </div>
@@ -121,7 +131,7 @@
   <!-- ===== MAIN CONTENT ===== -->
   <main class="main-content" id="mainContent">
     <div class="scientific-grid"></div>
-    
+
     <header class="app-header">
       <div class="header-left">
         <button id="sidebarToggleBtn" class="header-action" aria-label="Toggle Sidebar">☰</button>
@@ -149,7 +159,8 @@
       <div class="hero-section">
         <h1 class="hero-title">Scientific Sequence Analysis Platform</h1>
         <p class="hero-subtitle">
-          Professional-grade bioinformatics modules for genomics, transcription analysis, and protein informatics. Designed for laboratory accuracy and robust scientific workflows.
+          Professional-grade bioinformatics modules for genomics, transcription analysis, and protein informatics.
+          Designed for laboratory accuracy and robust scientific workflows.
         </p>
       </div>
 
@@ -169,7 +180,8 @@
           <div class="tool-card-icon"><i data-lucide="beaker"></i></div>
           <div class="tool-card-category">Proteomics</div>
           <h3>Protein Informatics</h3>
-          <p>Determine molecular weights, amino acid composition properties, isoelectric points, and hydropathy plots.</p>
+          <p>Determine molecular weights, amino acid composition properties, isoelectric points, and hydropathy plots.
+          </p>
           <div class="tool-card-tags"><span>MW</span><span>pI</span><span>Composition</span></div>
           <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
@@ -237,7 +249,7 @@
           <div class="tool-card-icon"><i data-lucide="layers"></i></div>
           <div class="tool-card-category">Visualization</div>
           <h3>Genome Viewer</h3>
-          <p>Interactive track visualization for sequenced features including CDS, motiffs, and promoters.</p>
+          <p>Interactive track visualization for sequenced features including CDS, motifs, and promoters.</p>
           <div class="tool-card-tags"><span>Canvas</span><span>Multi-Track</span></div>
           <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
@@ -251,7 +263,8 @@
           <div class="tool-card-icon"><i data-lucide="box"></i></div>
           <div class="tool-card-category">Structural Biology</div>
           <h3>3D Structure Viewer</h3>
-          <p>Fetch AlphaFold predicted structures by UniProt accession. Render in Cartoon, Surface, or Spacefill with pLDDT confidence coloring.</p>
+          <p>Fetch AlphaFold predicted structures by UniProt accession. Render in Cartoon, Surface, or Spacefill with
+            pLDDT confidence coloring.</p>
           <div class="tool-card-tags"><span>AlphaFold</span><span>pLDDT</span><span>NGL</span></div>
           <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
@@ -259,7 +272,8 @@
           <div class="tool-card-icon"><i data-lucide="database"></i></div>
           <div class="tool-card-category">Omics / High-Throughput</div>
           <h3>Batch Analysis</h3>
-          <p>Upload multi-FASTA files with thousands of sequences. Async Celery queue processes each record; download a full CSV of metrics when complete.</p>
+          <p>Upload multi-FASTA files with thousands of sequences. Async Celery queue processes each record; download a
+            full CSV of metrics when complete.</p>
           <div class="tool-card-tags"><span>Multi-FASTA</span><span>Async</span><span>CSV Export</span></div>
           <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
@@ -274,7 +288,8 @@
           <div class="tool-card-category">Systems Biology</div>
           <h3 style="color: var(--text-muted);">Metabolic Pathway Modeling</h3>
           <p>Simulate flux balance analysis across reconstructed metabolic networks.</p>
-          <div class="tool-card-tags"><span style="background: transparent; border-color: transparent;">Coming soon</span></div>
+          <div class="tool-card-tags"><span style="background: transparent; border-color: transparent;">Coming
+              soon</span></div>
         </div>
       </div>
 
@@ -295,7 +310,7 @@
                   <option value="ensembl">Ensembl</option>
                   <option value="kegg">KEGG</option>
                 </select>
-                <input type="text" class="fetch-id-input" placeholder="Enter Accession (e.g. NM_007294)"/>
+                <input type="text" class="fetch-id-input" placeholder="Enter Accession (e.g. NM_007294)" />
                 <button class="btn-fetch fetch-btn">Fetch Reference</button>
               </div>
             </div>
@@ -317,8 +332,11 @@
           </div>
 
           <!-- 3. Run Parameters (Unified) -->
-          <div style="margin-top:16px; padding:16px; border:1px solid rgba(45,212,191,0.2); border-radius:8px; background:rgba(45,212,191,0.03);">
-            <div style="font-weight:600; font-size:0.8rem; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:12px;">Run Parameters</div>
+          <div
+            style="margin-top:16px; padding:16px; border:1px solid rgba(45,212,191,0.2); border-radius:8px; background:rgba(45,212,191,0.03);">
+            <div
+              style="font-weight:600; font-size:0.8rem; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:12px;">
+              Run Parameters</div>
             <div class="settings-grid" style="grid-template-columns:repeat(auto-fit, minmax(175px, 1fr)); gap:12px;">
 
               <div class="input-block">
@@ -335,12 +353,14 @@
               </div>
               <div class="input-block" id="dnaCustomSaltBlock" style="display:none;">
                 <label class="input-label">Custom Na⁺ (mM)</label>
-                <input type="number" class="num-input" id="dnaCustomSaltConc" value="50" min="1" max="1000" style="width:100%;" />
+                <input type="number" class="num-input" id="dnaCustomSaltConc" value="50" min="1" max="1000"
+                  style="width:100%;" />
               </div>
 
               <div class="input-block">
                 <label class="input-label">$[Mg^{2+}]$ Divalent (mM)</label>
-                <input type="number" class="num-input" id="dnaMgConc" value="0" min="0" max="100" step="0.5" style="width:100%;" placeholder="0 = disabled" />
+                <input type="number" class="num-input" id="dnaMgConc" value="0" min="0" max="100" step="0.5"
+                  style="width:100%;" placeholder="0 = disabled" />
               </div>
 
               <div class="input-block">
@@ -374,7 +394,8 @@
 
           <!-- 5. Advanced Parameters (Collapsible) -->
           <div class="collapsible-settings" id="dnaScientificSettings" style="margin-top:16px;">
-            <div class="collapsible-header" id="dnaScientificToggle" style="background:rgba(45,212,191,0.05); border-color:rgba(45,212,191,0.2);">
+            <div class="collapsible-header" id="dnaScientificToggle"
+              style="background:rgba(45,212,191,0.05); border-color:rgba(45,212,191,0.2);">
               <i data-lucide="microscope" style="width:16px; color:var(--teal);"></i>
               <span style="font-weight:600; color:var(--text-primary);">Advanced Analytical Parameters</span>
               <i data-lucide="chevron-right" class="toggle-icon"></i>
@@ -404,7 +425,8 @@
                 </div>
                 <div class="input-block">
                   <label class="input-label">ORF Min Length (nt)</label>
-                  <input type="number" class="num-input" id="dnaMinORF" value="30" min="3" step="3" style="width:100%;" />
+                  <input type="number" class="num-input" id="dnaMinORF" value="30" min="3" step="3"
+                    style="width:100%;" />
                 </div>
               </div>
             </div>
@@ -450,7 +472,7 @@
                   <option value="ncbiprotein">NCBI</option>
                   <option value="kegg">KEGG</option>
                 </select>
-                <input type="text" class="fetch-id-input" placeholder="Accession (e.g. P04637)"/>
+                <input type="text" class="fetch-id-input" placeholder="Accession (e.g. P04637)" />
                 <button class="btn-fetch fetch-btn">Fetch Record</button>
               </div>
             </div>
@@ -466,19 +488,12 @@
 
             <!-- Textarea with paste-autocleaning marker -->
             <div style="position: relative;">
-              <textarea
-                class="seq-input"
-                id="proteinInput"
-                data-fasta-strip="true"
+              <textarea class="seq-input" id="proteinInput" data-fasta-strip="true"
                 placeholder="Enter protein single-letter code, or paste FASTA (headers stripped automatically)..."
-                rows="10"
-              ></textarea>
+                rows="10"></textarea>
               <!-- Clean Sequence button (broom icon) -->
-              <button
-                id="proteinCleanBtn"
-                title="Strip FASTA headers, numbers &amp; whitespace"
-                aria-label="Clean sequence"
-                style="
+              <button id="proteinCleanBtn" title="Strip FASTA headers, numbers &amp; whitespace"
+                aria-label="Clean sequence" style="
                   position: absolute;
                   bottom: 8px;
                   right: 8px;
@@ -493,8 +508,7 @@
                   align-items: center;
                   gap: 4px;
                   transition: var(--transition);
-                "
-              >
+                ">
                 <i data-lucide="sparkles" style="width:12px;height:12px;"></i>
                 Clean
               </button>
@@ -550,24 +564,36 @@
             font-size: 0.78rem;
           ">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-              <span style="color:var(--teal); font-weight:700; text-transform:uppercase; letter-spacing:0.08em; font-size:0.65rem;">UniProt Biological Context</span>
-              <span id="uniprotMetaAccessionBadge" style="color:var(--text-muted); font-size:0.7rem; background:var(--bg-card); border:1px solid var(--border); border-radius:3px; padding:1px 6px;"></span>
+              <span
+                style="color:var(--teal); font-weight:700; text-transform:uppercase; letter-spacing:0.08em; font-size:0.65rem;">UniProt
+                Biological Context</span>
+              <span id="uniprotMetaAccessionBadge"
+                style="color:var(--text-muted); font-size:0.7rem; background:var(--bg-card); border:1px solid var(--border); border-radius:3px; padding:1px 6px;"></span>
             </div>
-            <div id="uniprotMetaProteinName" style="color:var(--text-primary); font-weight:600; font-size:0.88rem; margin-bottom:3px;"></div>
-            <div id="uniprotMetaOrganism" style="color:var(--text-muted); font-style:italic; font-size:0.72rem; margin-bottom:12px;"></div>
+            <div id="uniprotMetaProteinName"
+              style="color:var(--text-primary); font-weight:600; font-size:0.88rem; margin-bottom:3px;"></div>
+            <div id="uniprotMetaOrganism"
+              style="color:var(--text-muted); font-style:italic; font-size:0.72rem; margin-bottom:12px;"></div>
 
             <div id="uniprotMetaLocBlock" style="display:none; margin-bottom:10px;">
-              <div style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">Subcellular Location</div>
+              <div
+                style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">
+                Subcellular Location</div>
               <div id="uniprotMetaLocTags" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
             </div>
 
             <div id="uniprotMetaPTMBlock" style="display:none; margin-bottom:10px;">
-              <div style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">Post-Translational Modifications</div>
-              <div id="uniprotMetaPTMList" style="color:var(--text-secondary); font-size:0.72rem; line-height:1.65;"></div>
+              <div
+                style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">
+                Post-Translational Modifications</div>
+              <div id="uniprotMetaPTMList" style="color:var(--text-secondary); font-size:0.72rem; line-height:1.65;">
+              </div>
             </div>
 
             <div id="uniprotMetaFeatBlock" style="display:none;">
-              <div style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">Structural Features</div>
+              <div
+                style="color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; font-size:0.63rem; font-weight:700; margin-bottom:5px;">
+                Structural Features</div>
               <div id="uniprotMetaFeatTags" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
             </div>
           </div>
@@ -594,7 +620,8 @@
                 <!-- Skeleton metric rows -->
                 <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
                   <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
-                  <span style="font-size:0.78rem;color:var(--text-secondary);">Molecular Weight (Average / Monoisotopic)</span>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Molecular Weight (Average /
+                    Monoisotopic)</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
                   <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
@@ -602,7 +629,8 @@
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
                   <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
-                  <span style="font-size:0.78rem;color:var(--text-secondary);">Extinction Coefficient ε₂₈₀ (Reduced / Oxidized)</span>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Extinction Coefficient ε₂₈₀ (Reduced /
+                    Oxidized)</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
                   <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
@@ -622,7 +650,8 @@
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; opacity:0.45;">
                   <div style="width:30px;height:8px;border-radius:4px;background:var(--border);"></div>
-                  <span style="font-size:0.78rem;color:var(--text-secondary);">Kyte-Doolittle Hydropathy Plot (window=7)</span>
+                  <span style="font-size:0.78rem;color:var(--text-secondary);">Kyte-Doolittle Hydropathy Plot
+                    (window=7)</span>
                 </div>
               </div>
             </div>
@@ -631,7 +660,8 @@
           <div class="results-content hidden">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
               <div class="results-header" style="margin-bottom:0;">Physicochemical Profile</div>
-              <button id="proteinExportCSVBtn" class="btn-secondary" style="font-size:0.78rem; padding:5px 12px; display:flex; align-items:center; gap:5px;">
+              <button id="proteinExportCSVBtn" class="btn-secondary"
+                style="font-size:0.78rem; padding:5px 12px; display:flex; align-items:center; gap:5px;">
                 <i data-lucide="download" style="width:13px; height:13px;"></i> Export Data
               </button>
             </div>
@@ -664,13 +694,10 @@
                 <label style="font-size:0.72rem; color:var(--text-muted); font-family:var(--mono);">
                   Window size
                 </label>
-                <input
-                  type="range"
-                  id="hydroWindowSize"
-                  min="5" max="21" step="2" value="7"
-                  style="width:120px; accent-color:var(--teal);"
-                />
-                <span id="hydroWindowLabel" style="font-size:0.72rem; color:var(--teal); font-family:var(--mono); min-width:20px;">7</span>
+                <input type="range" id="hydroWindowSize" min="5" max="21" step="2" value="7"
+                  style="width:120px; accent-color:var(--teal);" />
+                <span id="hydroWindowLabel"
+                  style="font-size:0.72rem; color:var(--teal); font-family:var(--mono); min-width:20px;">7</span>
                 <span style="font-size:0.7rem; color:var(--text-muted);">(7 = surface/loop · 19 = transmembrane)</span>
               </div>
               <canvas id="hydroCanvas" width="300" height="150"></canvas>
@@ -690,7 +717,8 @@
         <div class="panel-icon"><i data-lucide="link"></i></div>
         <div>
           <h2>Pairwise Sequence Alignment</h2>
-          <p class="panel-desc">Align two nucleotide or protein sequences using Needleman-Wunsch (global) or Smith-Waterman (local) dynamic programming algorithms.</p>
+          <p class="panel-desc">Align two nucleotide or protein sequences using Needleman-Wunsch (global) or
+            Smith-Waterman (local) dynamic programming algorithms.</p>
         </div>
       </div>
       <div class="two-col-inputs">
@@ -705,7 +733,7 @@
                 <option value="ensembl">Ensembl</option>
                 <option value="kegg">KEGG Database</option>
               </select>
-              <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294"/>
+              <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294" />
               <button class="btn-fetch fetch-btn">Fetch</button>
             </div>
           </div>
@@ -722,7 +750,7 @@
                 <option value="ensembl">Ensembl</option>
                 <option value="kegg">KEGG Database</option>
               </select>
-              <input type="text" class="fetch-id-input" placeholder="e.g. P04637"/>
+              <input type="text" class="fetch-id-input" placeholder="e.g. P04637" />
               <button class="btn-fetch fetch-btn">Fetch</button>
             </div>
           </div>
@@ -733,21 +761,23 @@
         <div class="option-group">
           <label class="input-label">Algorithm</label>
           <div class="radio-group">
-            <label class="radio-label"><input type="radio" name="alignAlgo" value="global" checked/> Global (Needleman-Wunsch)</label>
-            <label class="radio-label"><input type="radio" name="alignAlgo" value="local"/> Local (Smith-Waterman)</label>
+            <label class="radio-label"><input type="radio" name="alignAlgo" value="global" checked /> Global
+              (Needleman-Wunsch)</label>
+            <label class="radio-label"><input type="radio" name="alignAlgo" value="local" /> Local
+              (Smith-Waterman)</label>
           </div>
         </div>
         <div class="option-group">
           <label class="input-label">Match Score</label>
-          <input type="number" class="num-input" id="matchScore" value="2" min="0" max="10"/>
+          <input type="number" class="num-input" id="matchScore" value="2" min="0" max="10" />
         </div>
         <div class="option-group">
           <label class="input-label">Mismatch Penalty</label>
-          <input type="number" class="num-input" id="mismatchScore" value="-1" max="0" min="-20"/>
+          <input type="number" class="num-input" id="mismatchScore" value="-1" max="0" min="-20" />
         </div>
         <div class="option-group">
           <label class="input-label">Gap Penalty</label>
-          <input type="number" class="num-input" id="gapScore" value="-2" max="0" min="-20"/>
+          <input type="number" class="num-input" id="gapScore" value="-2" max="0" min="-20" />
         </div>
       </div>
       <div class="btn-row">
@@ -771,7 +801,8 @@
         <div class="panel-icon"><i data-lucide="file-text"></i></div>
         <div>
           <h2>FASTA File Parser</h2>
-          <p class="panel-desc">Parse single or multi-sequence FASTA files. View per-sequence statistics and export results.</p>
+          <p class="panel-desc">Parse single or multi-sequence FASTA files. View per-sequence statistics and export
+            results.</p>
         </div>
       </div>
       <div class="drop-zone" id="fastaDropZone">
@@ -779,7 +810,7 @@
         <p class="drop-title">Drag & Drop your FASTA file here</p>
         <p class="drop-sub">or</p>
         <label class="btn-primary" for="fastaFileInput" style="cursor:pointer;">Browse File</label>
-        <input type="file" id="fastaFileInput" accept=".fasta,.fa,.fna,.faa,.txt" style="display:none"/>
+        <input type="file" id="fastaFileInput" accept=".fasta,.fa,.fna,.faa,.txt" style="display:none" />
       </div>
       <!-- Fetch widget: FASTA -->
       <div class="fetch-widget" data-target="fastaText">
@@ -791,14 +822,16 @@
             <option value="ensembl">Ensembl</option>
             <option value="kegg">KEGG Database</option>
           </select>
-          <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294  (BRCA1)"/>
+          <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294  (BRCA1)" />
           <button class="btn-fetch fetch-btn">Fetch</button>
         </div>
         <div class="fetch-hint">Fetched sequence will appear in the text box below ↓</div>
       </div>
       <div class="fasta-separator">— or paste FASTA text directly —</div>
       <div class="input-block">
-        <textarea class="seq-input" id="fastaText" placeholder=">Seq1 Example sequence&#10;ATGGCTATCAAGCAGAAGTTTGATGCCATCAAGAAGCTGGAG&#10;>Seq2 Another sequence&#10;MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTK" rows="5"></textarea>
+        <textarea class="seq-input" id="fastaText"
+          placeholder=">Seq1 Example sequence&#10;ATGGCTATCAAGCAGAAGTTTGATGCCATCAAGAAGCTGGAG&#10;>Seq2 Another sequence&#10;MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTK"
+          rows="5"></textarea>
       </div>
       <div class="btn-row">
         <button class="btn-primary" id="fastaParse">Parse FASTA</button>
@@ -821,7 +854,8 @@
         <div class="panel-icon"><i data-lucide="test-tubes"></i></div>
         <div>
           <h2>Primer Design &amp; Analysis</h2>
-          <p class="panel-desc">Evaluate PCR primers — compute melting temperature (Tm), GC content, check for hairpins, self-dimers, and GC clamp.</p>
+          <p class="panel-desc">Evaluate PCR primers — compute melting temperature (Tm), GC content, check for hairpins,
+            self-dimers, and GC clamp.</p>
         </div>
       </div>
       <!-- TEMPLATE & ASSAY SETTINGS (PROMPT 2) -->
@@ -839,15 +873,17 @@
               <label><input type="radio" name="templateSource" value="fetch"> Fetch from DB</label>
             </div>
           </div>
-          
+
           <!-- Paste Area -->
           <div id="pasteTemplateGroup">
-            <textarea class="seq-input" id="primerTemplate" placeholder="Paste genomic or transcript sequence here..." rows="4" style="font-family:var(--mono);"></textarea>
+            <textarea class="seq-input" id="primerTemplate" placeholder="Paste genomic or transcript sequence here..."
+              rows="4" style="font-family:var(--mono);"></textarea>
             <div class="input-meta" id="templateMeta">Length: 0 bp</div>
           </div>
-          
+
           <!-- Fetch Area -->
-          <div id="fetchTemplateGroup" class="fetch-widget hidden" data-target="primerTemplate" data-meta="templateMeta">
+          <div id="fetchTemplateGroup" class="fetch-widget hidden" data-target="primerTemplate"
+            data-meta="templateMeta">
             <div class="fetch-row" style="display:flex; gap:8px; margin-bottom:12px;">
               <select class="fetch-db-select" id="primerTemplateDb" style="width:120px;">
                 <option value="ncbi">NCBI</option>
@@ -897,21 +933,23 @@
       </div>
 
       <!-- ADVANCED CONSTRAINTS (PROMPT 4) -->
-      <div class="collapsible-settings" id="primerConstraintsSettings" style="margin-top: -12px; border-top: none; border-radius: 0 0 var(--radius) var(--radius);">
+      <div class="collapsible-settings" id="primerConstraintsSettings"
+        style="margin-top: -12px; border-top: none; border-radius: 0 0 var(--radius) var(--radius);">
         <div class="collapsible-header" id="constraintsToggle">
           <i data-lucide="chevron-right" class="toggle-icon"></i>
           <span>Advanced Constraints</span>
           <div style="margin-left:auto; display:flex; gap:12px;">
-             <button class="btn-text-sm" id="editConstraintsBtn">[Edit]</button>
-             <button class="btn-text-sm" id="resetConstraintsBtn">[Reset to Preset]</button>
+            <button class="btn-text-sm" id="editConstraintsBtn">[Edit]</button>
+            <button class="btn-text-sm" id="resetConstraintsBtn">[Reset to Preset]</button>
           </div>
         </div>
         <div class="collapsible-content hidden" id="constraintsContent">
           <div id="constraintsDisplay" class="constraints-summary-grid">
             <!-- Populated by JS -->
           </div>
-          
-          <div id="constraintsEditForm" class="hidden" style="margin-top:16px; padding-top:16px; border-top:1px dashed var(--border);">
+
+          <div id="constraintsEditForm" class="hidden"
+            style="margin-top:16px; padding-top:16px; border-top:1px dashed var(--border);">
             <div class="settings-grid">
               <div class="input-block">
                 <label>Min Length</label>
@@ -969,47 +1007,47 @@
       <div class="two-col-inputs" style="margin-top:20px;">
         <div class="input-block">
           <label class="input-label">Forward Primer (5'→3')</label>
-          <input type="text" class="seq-input-line" id="fwdPrimer" placeholder="GCTTAAGCGCTATCAAGCC"/>
+          <input type="text" class="seq-input-line" id="fwdPrimer" placeholder="GCTTAAGCGCTATCAAGCC" />
           <div class="input-meta" id="fwdMeta">Length: 0 nt</div>
         </div>
         <div class="input-block">
           <label class="input-label">Reverse Primer (5'→3')</label>
-          <input type="text" class="seq-input-line" id="revPrimer" placeholder="TTCAGCTTGATGGCATCAAA"/>
+          <input type="text" class="seq-input-line" id="revPrimer" placeholder="TTCAGCTTGATGGCATCAAA" />
           <div class="input-meta" id="revMeta">Length: 0 nt</div>
         </div>
       </div>
 
       <div class="align-options">
-            <div class="settings-grid">
-              <div class="input-block">
-                <label>Na+ (mM)</label>
-                <input type="number" id="saltConc" value="50" min="1" max="1000">
-              </div>
-              <div class="input-block">
-                <label>K+ (mM)</label>
-                <input type="number" id="kConc" value="0" min="0" max="1000">
-              </div>
-              <div class="input-block">
-                <label>Mg2+ (mM)</label>
-                <input type="number" id="mgConc" value="1.5" min="0" max="20" step="0.1">
-              </div>
-              <div class="input-block">
-                <label>dNTPs (mM)</label>
-                <input type="number" id="dntpConc" value="0.8" min="0" max="10" step="0.1">
-              </div>
-              <div class="input-block">
-                <label>Primer (nM)</label>
-                <input type="number" id="primerConc" value="250" min="1" max="2000">
-              </div>
-              <div class="input-block">
-                <label>DMSO (%)</label>
-                <input type="number" id="dmsoConc" value="0" min="0" max="20">
-              </div>
-              <div class="input-block">
-                <label>Formamide (M)</label>
-                <input type="number" id="formamideConc" value="0" min="0" max="6" step="0.1">
-              </div>
-            </div>
+        <div class="settings-grid">
+          <div class="input-block">
+            <label>Na+ (mM)</label>
+            <input type="number" id="saltConc" value="50" min="1" max="1000">
+          </div>
+          <div class="input-block">
+            <label>K+ (mM)</label>
+            <input type="number" id="kConc" value="0" min="0" max="1000">
+          </div>
+          <div class="input-block">
+            <label>Mg2+ (mM)</label>
+            <input type="number" id="mgConc" value="1.5" min="0" max="20" step="0.1">
+          </div>
+          <div class="input-block">
+            <label>dNTPs (mM)</label>
+            <input type="number" id="dntpConc" value="0.8" min="0" max="10" step="0.1">
+          </div>
+          <div class="input-block">
+            <label>Primer (nM)</label>
+            <input type="number" id="primerConc" value="250" min="1" max="2000">
+          </div>
+          <div class="input-block">
+            <label>DMSO (%)</label>
+            <input type="number" id="dmsoConc" value="0" min="0" max="20">
+          </div>
+          <div class="input-block">
+            <label>Formamide (M)</label>
+            <input type="number" id="formamideConc" value="0" min="0" max="6" step="0.1">
+          </div>
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn-primary" id="primerAnalyzeBtn">Analyze Primers</button>
@@ -1018,13 +1056,18 @@
       </div>
 
       <!-- SUGGESTIONS AREA (NEW) -->
-      <div id="primerSuggestionsArea" class="hidden" style="margin-top:30px; border-top:1px solid var(--border-color); padding-top:20px;">
+      <div id="primerSuggestionsArea" class="hidden"
+        style="margin-top:30px; border-top:1px solid var(--border-color); padding-top:20px;">
         <div class="results-header" style="display:flex; align-items:center; gap:8px;">
           <i data-lucide="sparkles" style="width:18px; color:var(--teal);"></i>
           <span>Suggested Primer Pairs</span>
-          <span class="badge-new" style="background:var(--teal); color:white; font-size:0.6rem; padding:2px 6px; border-radius:4px; margin-left:8px;">AI OPTIMIZED</span>
+          <span class="badge-new"
+            style="background:var(--teal); color:white; font-size:0.6rem; padding:2px 6px; border-radius:4px; margin-left:8px;">AI
+            OPTIMIZED</span>
         </div>
-        <div id="suggestionGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px; margin-top:16px;"></div>
+        <div id="suggestionGrid"
+          style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px; margin-top:16px;">
+        </div>
       </div>
       <div class="results-area hidden" id="primerResults">
         <div class="primer-result-grid" id="primerResultGrid"></div>
@@ -1045,7 +1088,8 @@
         <label class="input-label">Enter DNA Sequence</label>
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
           <label class="input-label" style="margin:0; white-space:nowrap;">DNA Topology</label>
-          <select id="reTopologyToggle" style="background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:4px 10px; font-size:0.85rem;">
+          <select id="reTopologyToggle"
+            style="background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:4px 10px; font-size:0.85rem;">
             <option value="linear" selected>Linear</option>
             <option value="circular">Circular (Plasmid)</option>
           </select>
@@ -1087,7 +1131,8 @@
         <div class="panel-icon"><i data-lucide="compass"></i></div>
         <div>
           <h2>Promoter &amp; CDS Analyzer</h2>
-          <p class="panel-desc">Detect all CDS / ORF regions, extract the upstream promoter sequence, and scan for cis-acting regulatory elements such as TATA Box, ABRE, G-Box, and more.</p>
+          <p class="panel-desc">Detect all CDS / ORF regions, extract the upstream promoter sequence, and scan for
+            cis-acting regulatory elements such as TATA Box, ABRE, G-Box, and more.</p>
         </div>
       </div>
 
@@ -1100,7 +1145,7 @@
             <option value="ensembl">Ensembl Genomic</option>
             <option value="kegg">KEGG Genomic</option>
           </select>
-          <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294  (BRCA1)"/>
+          <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294  (BRCA1)" />
           <button class="btn-fetch fetch-btn">Fetch</button>
         </div>
         <div class="fetch-hint">Or paste your sequence below ↓</div>
@@ -1116,11 +1161,13 @@
               <option value="ensembl">Ensembl</option>
               <option value="kegg">KEGG</option>
             </select>
-            <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294 (BRCA1)"/>
+            <input type="text" class="fetch-id-input" placeholder="e.g. NM_007294 (BRCA1)" />
             <button class="btn-fetch fetch-btn">Fetch Genomic</button>
           </div>
         </div>
-        <textarea class="seq-input" id="proInput" placeholder="Paste your DNA sequence here. The largest ORF will be used to anchor the promoter extraction..." rows="5"></textarea>
+        <textarea class="seq-input" id="proInput"
+          placeholder="Paste your DNA sequence here. The largest ORF will be used to anchor the promoter extraction..."
+          rows="5"></textarea>
         <div class="input-meta" id="proInputMeta">Length: 0 bp</div>
       </div>
 
@@ -1136,7 +1183,7 @@
         </div>
         <div class="option-group">
           <label class="input-label">Upstream Region (bp)</label>
-          <input type="number" class="num-input" id="proUpstream" value="1000" min="50" max="5000"/>
+          <input type="number" class="num-input" id="proUpstream" value="1000" min="50" max="5000" />
           <div class="input-meta">Bases upstream of first CDS start to extract as promoter</div>
         </div>
       </div>
@@ -1203,23 +1250,46 @@
       <div class="panel-header">
         <div class="panel-icon"><i data-lucide="search"></i></div>
         <div>
-          <h2>Sequence Search (BLAST-like)</h2>
-          <p class="panel-desc">Align your query sequence locally against our example genome database using the Smith-Waterman algorithm.</p>
+          <h2>Custom SW Search Engine</h2>
+          <p class="panel-desc">Upload your own FASTA database and align your query using the Smith-Waterman algorithm
+            with configurable scoring parameters.</p>
         </div>
       </div>
       <div class="input-block">
         <label class="input-label">Query Sequence (DNA)</label>
-        <textarea class="seq-input" id="blastInput" placeholder="Paste your query sequence... (min 15bp)" rows="4" style="font-family:var(--mono);"></textarea>
+        <textarea class="seq-input" id="blastInput" placeholder="Paste your query sequence... (min 15bp, max 2,000bp)" rows="4"
+          maxlength="2000" style="font-family:var(--mono);"></textarea>
       </div>
-      <div class="btn-row">
-        <button class="btn-primary" id="blastAnalyzeBtn">Search Database</button>
-        <button class="btn-secondary" id="blastSampleBtn">Load E. coli query</button>
+      <div class="btn-row" style="flex-wrap:wrap;gap:12px;align-items:center;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">Match Score</label>
+          <input type="number" id="swMatch" value="2" min="-10" max="10" step="1"
+            style="width:64px;padding:4px 8px;border:1px solid var(--border-color);border-radius:var(--radius);background:var(--bg-input);color:var(--text-primary);font-size:0.9rem;">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">Mismatch Penalty</label>
+          <input type="number" id="swMismatch" value="-1" min="-10" max="0" step="1"
+            style="width:64px;padding:4px 8px;border:1px solid var(--border-color);border-radius:var(--radius);background:var(--bg-input);color:var(--text-primary);font-size:0.9rem;">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">Gap Penalty</label>
+          <input type="number" id="swGap" value="-1" min="-10" max="0" step="1"
+            style="width:64px;padding:4px 8px;border:1px solid var(--border-color);border-radius:var(--radius);background:var(--bg-input);color:var(--text-primary);font-size:0.9rem;">
+        </div>
+      </div>
+      <div class="btn-row" style="align-items:center;gap:12px;flex-wrap:wrap;">
+        <input type="file" id="customDbUpload" accept=".fasta,.fa,.txt" style="display:none;">
+        <label for="customDbUpload" class="btn-secondary" style="cursor:pointer;">Upload Target FASTA</label>
+        <span id="dbLoadStatus" style="font-size:0.85rem;color:var(--text-muted);">0 sequences loaded.</span>
+        <button class="btn-primary" id="blastAnalyzeBtn">Search</button>
         <button class="btn-secondary" id="blastClearBtn">Clear</button>
       </div>
 
       <div class="results-area hidden" id="blastResults">
         <div class="result-stat-row" id="blastStatRow"></div>
-        <h3 style="margin:24px 0 12px;font-size:1.1rem;color:var(--text-primary);border-bottom:1px solid var(--border-color);padding-bottom:8px;">Significant Hits</h3>
+        <h3
+          style="margin:24px 0 12px;font-size:1.1rem;color:var(--text-primary);border-bottom:1px solid var(--border-color);padding-bottom:8px;">
+          Significant Hits</h3>
         <div id="blastTableWrap"></div>
         <div id="blastAlignments"></div>
       </div>
@@ -1236,7 +1306,7 @@
           </div>
         </div>
       </div>
-      
+
       <div class="analysis-toolbar" style="margin-bottom:16px;">
         <div class="toolbar-stats" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
           <div class="zoom-controls" style="display: flex; gap: 5px; align-items: center;">
@@ -1245,33 +1315,46 @@
             <span id="gvZoomLabel" style="min-width: 60px; text-align: center;">100 bp</span>
             <button id="gvZoomIn" class="btn-secondary" style="padding: 2px 10px; font-weight: bold;">+</button>
           </div>
-          <div class="gv-legend" style="display: flex; gap: 15px; margin-left: auto; font-size: 0.85rem;">
-            <span><span style="display:inline-block; width:12px; height:12px; background:#1abc9c; margin-right:4px;"></span> ORF</span>
-            <span><span style="display:inline-block; width:12px; height:12px; background:#f39c12; margin-right:4px;"></span> Promoter</span>
-            <span><span style="display:inline-block; width:12px; height:12px; background:#00bcd4; margin-right:4px;"></span> Cis-Element</span>
+          <!-- Legend matches actual canvas colors for all track types (SCI-03) -->
+          <div class="gv-legend" style="display:flex;gap:8px;margin-left:auto;font-size:0.78rem;flex-wrap:wrap;align-items:center;color:var(--text-muted);">
+            <span style="font-weight:600;white-space:nowrap;">Frames:</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#14b8a6;margin-right:3px;vertical-align:middle;"></span>+1</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#8b5cf6;margin-right:3px;vertical-align:middle;"></span>+2</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ec4899;margin-right:3px;vertical-align:middle;"></span>+3</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0f766e;margin-right:3px;vertical-align:middle;"></span>&#8722;1</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#6d28d9;margin-right:3px;vertical-align:middle;"></span>&#8722;2</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#be185d;margin-right:3px;vertical-align:middle;"></span>&#8722;3</span>
+            <span style="font-weight:600;white-space:nowrap;margin-left:4px;">Promoter:</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f59e0b;margin-right:3px;vertical-align:middle;"></span>Upstream</span>
+            <span style="font-weight:600;white-space:nowrap;margin-left:4px;">Motifs:</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ef4444;margin-right:3px;vertical-align:middle;"></span>TATA</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6;margin-right:3px;vertical-align:middle;"></span>CAAT</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#8b5cf6;margin-right:3px;vertical-align:middle;"></span>GC</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#22c55e;margin-right:3px;vertical-align:middle;"></span>&#8722;35</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f97316;margin-right:3px;vertical-align:middle;"></span>&#8722;10</span>
+            <span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#22d3ee;margin-right:3px;vertical-align:middle;"></span>Other</span>
           </div>
         </div>
         <div class="toolbar-actions">
-           <button class="btn-primary" id="gvLoadDemoBtn" style="padding:6px 12px;font-size:0.85rem;">Load Educational Demo</button>
+          <button class="btn-primary" id="gvLoadDemoBtn" style="padding:6px 12px;font-size:0.85rem;">Load Educational
+            Demo</button>
         </div>
       </div>
 
       <!-- Fix 6: custom sequence input accordion -->
-      <details id="gvCustomSeqAccordion" style="margin-bottom:16px;border:1px solid var(--border-color);border-radius:var(--radius-lg);background:var(--bg-surface);">
-        <summary style="padding:12px 16px;cursor:pointer;font-weight:600;font-size:0.95rem;color:var(--text-primary);user-select:none;list-style:none;display:flex;align-items:center;gap:8px;">
+      <details id="gvCustomSeqAccordion"
+        style="margin-bottom:16px;border:1px solid var(--border-color);border-radius:var(--radius-lg);background:var(--bg-surface);">
+        <summary
+          style="padding:12px 16px;cursor:pointer;font-weight:600;font-size:0.95rem;color:var(--text-primary);user-select:none;list-style:none;display:flex;align-items:center;gap:8px;">
           <i data-lucide="dna" style="width:16px;height:16px;"></i>
           Load Custom Sequence
         </summary>
         <div style="padding:16px;border-top:1px solid var(--border-color);">
           <div style="margin-bottom:12px;">
             <label class="input-label" for="gvSeqTextarea">FASTA or plain DNA sequence (max 50,000 bp)</label>
-            <textarea
-              id="gvSeqTextarea"
-              rows="5"
+            <textarea id="gvSeqTextarea" rows="5"
               style="width:100%;box-sizing:border-box;font-family:var(--mono,'JetBrains Mono',monospace);font-size:0.82rem;resize:vertical;background:var(--bg-base);color:var(--text-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:8px;"
-              placeholder=">MySequence&#10;ATGCGTAAAG..."
-              spellcheck="false"
-            ></textarea>
+              placeholder=">MySequence&#10;ATGCGTAAAG..." spellcheck="false"></textarea>
             <div id="gvSeqCounter" style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">0 bp</div>
           </div>
           <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
@@ -1288,12 +1371,17 @@
       </details>
 
       <!-- Fix 4: .gv-canvas-container class enables ResizeObserver targeting -->
-      <div class="gv-canvas-container" style="width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-base); cursor: grab; position: relative;">
-         <!-- Tooltip container dynamically created by JS, this wrapper binds the canvas -->
-         <canvas id="genomeCanvas" style="display:block;width:100%;"></canvas>
+      <div class="gv-canvas-container"
+        style="width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-base); cursor: grab; position: relative;">
+        <!-- Tooltip container dynamically created by JS, this wrapper binds the canvas -->
+        <canvas id="genomeCanvas"
+                tabindex="0"
+                aria-label="Genome sequence track visualization — drag to pan, scroll or +/- keys to zoom, arrow keys to pan"
+                style="display:block;width:100%;outline:none;"></canvas>
       </div>
       <p style="margin-top:12px;font-size:0.85rem;color:var(--text-muted);text-align:center;">
-         <i data-lucide="info" style="width:14px;height:14px;vertical-align:middle;display:inline-block;"></i> Click and drag to pan horizontally. Click on an ORF or Motif to see details.
+        <i data-lucide="info" style="width:14px;height:14px;vertical-align:middle;display:inline-block;"></i> Click and
+        drag to pan horizontally. Click on an ORF or Motif to see details.
       </p>
     </section>
 
@@ -1303,7 +1391,8 @@
         <div class="panel-icon"><i data-lucide="box"></i></div>
         <div>
           <h2>3D Protein Structure Viewer</h2>
-          <p class="panel-desc">Fetch AlphaFold predicted structures by UniProt accession. Cartoon representation colored by pLDDT confidence score using the official AlphaFold four-tier color scale.</p>
+          <p class="panel-desc">Fetch AlphaFold predicted structures by UniProt accession. Cartoon representation
+            colored by pLDDT confidence score using the official AlphaFold four-tier color scale.</p>
         </div>
       </div>
 
@@ -1311,22 +1400,16 @@
       <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
         <div class="input-block" style="flex:1; min-width:200px; margin-bottom:0;">
           <label class="input-label">UniProt Accession ID</label>
-          <input
-            type="text"
-            id="sv-accession-input"
-            class="seq-input-line"
+          <input type="text" id="sv-accession-input" class="seq-input-line"
             placeholder="e.g. P04637 (TP53), P00533 (EGFR), P68871 (HBB)"
-            style="text-transform:uppercase; font-family:var(--mono);"
-            autocomplete="off"
-            spellcheck="false"
-          />
+            style="text-transform:uppercase; font-family:var(--mono);" autocomplete="off" spellcheck="false" />
         </div>
         <button class="btn-primary" id="sv-fetch-btn">Load Structure</button>
         <button class="btn-secondary" id="sv-sample-btn">Load TP53 Example</button>
         <div class="input-block" style="margin-bottom:0;">
           <label class="input-label">Representation</label>
           <select id="sv-repr-select" class="num-input" style="width:148px;">
-            <option value="cartoon"   selected>Cartoon</option>
+            <option value="cartoon" selected>Cartoon</option>
             <option value="ribbon">Ribbon</option>
             <option value="surface">Surface</option>
             <option value="ball-stick">Ball &amp; Stick</option>
@@ -1381,7 +1464,8 @@
                 <span>&lt; 50 — Very low</span>
               </div>
             </div>
-            <div class="sv-legend-note">Scores are stored in the B-factor column of the AlphaFold PDB / mmCIF file.</div>
+            <div class="sv-legend-note">Scores are stored in the B-factor column of the AlphaFold PDB / mmCIF file.
+            </div>
           </div>
 
           <!-- Structure metadata (hidden until first load) -->
@@ -1392,7 +1476,9 @@
 
           <!-- Mouse controls hint -->
           <div class="sv-hint-card">
-            <div style="font-size:0.65rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; font-family:var(--mono);">Mouse Controls</div>
+            <div
+              style="font-size:0.65rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; font-family:var(--mono);">
+              Mouse Controls</div>
             <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.75; font-family:var(--mono);">
               Left drag &nbsp;— Rotate<br>
               Right drag — Pan<br>
@@ -1410,7 +1496,8 @@
         <div class="panel-icon"><i data-lucide="database"></i></div>
         <div>
           <h2>Batch Sequence Analysis</h2>
-          <p class="panel-desc">Process multi-FASTA files with thousands of sequences using an asynchronous background queue. Upload → queue → monitor progress → download full CSV.</p>
+          <p class="panel-desc">Process multi-FASTA files with thousands of sequences using an asynchronous background
+            queue. Upload → queue → monitor progress → download full CSV.</p>
         </div>
       </div>
 
@@ -1420,19 +1507,16 @@
         <p class="drop-title">Drag &amp; Drop your multi-FASTA file here</p>
         <p class="drop-sub">DNA, RNA, and protein sequences supported · Maximum 5 MB</p>
         <p class="drop-sub">or</p>
-        <label class="btn-primary" for="batchFileInput" style="cursor:pointer; display:inline-block; margin-top:4px;">Browse File</label>
-        <input type="file" id="batchFileInput" accept=".fasta,.fa,.fna,.faa,.txt" style="display:none"/>
+        <label class="btn-primary" for="batchFileInput"
+          style="cursor:pointer; display:inline-block; margin-top:4px;">Browse File</label>
+        <input type="file" id="batchFileInput" accept=".fasta,.fa,.fna,.faa,.txt" style="display:none" />
       </div>
 
       <div class="fasta-separator">— or paste FASTA text directly —</div>
       <div class="input-block">
-        <textarea
-          class="seq-input"
-          id="batchPasteInput"
+        <textarea class="seq-input" id="batchPasteInput"
           placeholder=">Sequence_1 | Description line&#10;ATGGCTATCAAGCAGAAGTTTGATGCC...&#10;>Sequence_2 | Description line&#10;MSKGEELFTGVVPILVELDGDVNGHKF..."
-          rows="6"
-          style="font-family:var(--mono); font-size:0.8rem;"
-        ></textarea>
+          rows="6" style="font-family:var(--mono); font-size:0.8rem;"></textarea>
       </div>
 
       <div class="btn-row">
@@ -1449,7 +1533,8 @@
           <div class="batch-job-header">
             <div style="display:flex; align-items:center; gap:10px;">
               <div class="spinner-sm" id="batchSpinner"></div>
-              <span id="batchJobStatus" style="font-weight:600; font-size:0.88rem; color:var(--text-primary);">Queued</span>
+              <span id="batchJobStatus"
+                style="font-weight:600; font-size:0.88rem; color:var(--text-primary);">Queued</span>
             </div>
             <span id="batchJobId" style="font-family:var(--mono); font-size:0.68rem; color:var(--text-muted);"></span>
           </div>
@@ -1459,8 +1544,10 @@
           </div>
 
           <div style="display:flex; justify-content:space-between; margin-top:8px;">
-            <span id="batchProgressLabel" style="font-size:0.82rem; color:var(--text-secondary);">Waiting for worker…</span>
-            <span id="batchProgressPct" style="font-family:var(--mono); font-size:0.82rem; color:var(--teal); font-weight:600;">0%</span>
+            <span id="batchProgressLabel" style="font-size:0.82rem; color:var(--text-secondary);">Waiting for
+              worker…</span>
+            <span id="batchProgressPct"
+              style="font-family:var(--mono); font-size:0.82rem; color:var(--teal); font-weight:600;">0%</span>
           </div>
         </div>
 
@@ -1475,8 +1562,10 @@
         ">
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
             <div>
-              <div style="font-weight:600; font-size:0.9rem; color:var(--text-primary); margin-bottom:4px;">Analysis Complete</div>
-              <div id="batchCompleteSummary" style="font-size:0.78rem; color:var(--text-muted); font-family:var(--mono);"></div>
+              <div style="font-weight:600; font-size:0.9rem; color:var(--text-primary); margin-bottom:4px;">Analysis
+                Complete</div>
+              <div id="batchCompleteSummary"
+                style="font-size:0.78rem; color:var(--text-muted); font-family:var(--mono);"></div>
             </div>
             <button class="btn-primary" id="batchDownloadBtn" style="display:flex; align-items:center; gap:7px;">
               <i data-lucide="download" style="width:14px; height:14px;"></i> Download CSV Results
@@ -1486,10 +1575,12 @@
 
         <!-- CSV Column Reference -->
         <details style="margin-top:16px;">
-          <summary style="font-size:0.78rem; color:var(--text-muted); cursor:pointer; font-family:var(--mono); user-select:none;">
+          <summary
+            style="font-size:0.78rem; color:var(--text-muted); cursor:pointer; font-family:var(--mono); user-select:none;">
             CSV column reference ▾
           </summary>
-          <div style="margin-top:10px; padding:12px 14px; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-family:var(--mono); font-size:0.72rem; color:var(--text-secondary); line-height:1.85;">
+          <div
+            style="margin-top:10px; padding:12px 14px; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-family:var(--mono); font-size:0.72rem; color:var(--text-secondary); line-height:1.85;">
             <strong>id</strong> — FASTA record identifier<br>
             <strong>description</strong> — Full FASTA header<br>
             <strong>length</strong> — Sequence length (nt or aa)<br>
@@ -1508,20 +1599,33 @@
     </section>
 
     <!-- SCIENTIFIC REFERENCES FOOTER -->
-    <section class="tool-panel" id="panel-references" style="margin-top:24px; border:1px solid var(--border-color); background:rgba(17, 24, 39, 0.6);">
-      <div class="panel-header" style="margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border-color);">
-        <div class="panel-icon" style="background:var(--slate); color:var(--text-primary);"><i data-lucide="book-open"></i></div>
+    <section class="tool-panel" id="panel-references"
+      style="margin-top:24px; border:1px solid var(--border-color); background:rgba(17, 24, 39, 0.6);">
+      <div class="panel-header"
+        style="margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border-color);">
+        <div class="panel-icon" style="background:var(--slate); color:var(--text-primary);"><i
+            data-lucide="book-open"></i></div>
         <div>
           <h2 style="font-size:1.1rem; color:var(--text-primary);">Scientific Methods &amp; References</h2>
-          <p class="panel-desc" style="font-size:0.85rem;">BioKit algorithms are based on peer-reviewed scientific methods.</p>
+          <p class="panel-desc" style="font-size:0.85rem;">BioKit algorithms are based on peer-reviewed scientific
+            methods.</p>
         </div>
       </div>
       <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.6;">
         <ul style="padding-left:1.5rem; margin-bottom:0;">
-          <li style="margin-bottom:8px;"><strong>Accurate Tm (Melting Temperature):</strong> Calculated using the Nearest-Neighbor thermodynamic model with SantaLucia enthalpy/entropy values and Owczarzy salt corrections.<br/><span style="color:var(--text-muted); font-style:italic;">SantaLucia, J. Jr. (1998) "A unified view of polymer, dumbbell, and oligonucleotide DNA nearest-neighbor thermodynamics." PNAS 95, 1460-1465.</span></li>
-          <li style="margin-bottom:8px;"><strong>Protein Hydrophobicity (GRAVY):</strong> Calculated using the Kyte-Doolittle scale via sliding window averaging.<br/><span style="color:var(--text-muted); font-style:italic;">Kyte, J., &amp; Doolittle, R. F. (1982) "A simple method for displaying the hydropathic character of a protein." J Mol Biol, 157(1), 105-132.</span></li>
-          <li style="margin-bottom:8px;"><strong>Codon Translation:</strong> Utilizes the Standard NCBI Genetic Code (Transl_table 1).</li>
-          <li style="margin-bottom:0;"><strong>Molecular Weight:</strong> Calculated using average elemental isotopic residue masses (minus H2O condensation per peptide/phosphodiester bond).</li>
+          <li style="margin-bottom:8px;"><strong>Accurate Tm (Melting Temperature):</strong> Calculated using the
+            Nearest-Neighbor thermodynamic model with SantaLucia enthalpy/entropy values and Owczarzy salt
+            corrections.<br /><span style="color:var(--text-muted); font-style:italic;">SantaLucia, J. Jr. (1998) "A
+              unified view of polymer, dumbbell, and oligonucleotide DNA nearest-neighbor thermodynamics." PNAS 95,
+              1460-1465.</span></li>
+          <li style="margin-bottom:8px;"><strong>Protein Hydrophobicity (GRAVY):</strong> Calculated using the
+            Kyte-Doolittle scale via sliding window averaging.<br /><span
+              style="color:var(--text-muted); font-style:italic;">Kyte, J., &amp; Doolittle, R. F. (1982) "A simple
+              method for displaying the hydropathic character of a protein." J Mol Biol, 157(1), 105-132.</span></li>
+          <li style="margin-bottom:8px;"><strong>Codon Translation:</strong> Utilizes the Standard NCBI Genetic Code
+            (Transl_table 1).</li>
+          <li style="margin-bottom:0;"><strong>Molecular Weight:</strong> Calculated using average elemental isotopic
+            residue masses (minus H2O condensation per peptide/phosphodiester bond).</li>
         </ul>
       </div>
     </section>
@@ -1534,7 +1638,8 @@
     <div class="settings-card">
       <div class="settings-header">
         <h2>Keyboard Shortcuts</h2>
-        <button class="settings-close" onclick="document.getElementById('shortcutModal').classList.add('hidden')">&times;</button>
+        <button class="settings-close"
+          onclick="document.getElementById('shortcutModal').classList.add('hidden')">&times;</button>
       </div>
       <div class="settings-body">
         <div class="shortcut-list">
@@ -1570,58 +1675,58 @@
 
   <!-- LAZY: Dynamic module loader ────────────────────────────── -->
   <script>
-  (function () {
-    'use strict';
+    (function () {
+      'use strict';
 
-    // Map each tool-id to the JS file that drives it.
-    // Add new tools here without touching any other file.
-    const MODULE_MAP = {
-      'dna':             'js/seq-analyzer.js',
-      'protein':         'js/protein.js',
-      'alignment':       'js/alignment.js',
-      'fasta':           'js/fasta.js',
-      'primer':          'js/primer.js',
-      'restriction':     'js/restriction.js',
-      'promoter':        'js/promoter.js',
-      'sequence-search': 'js/sequence-search.js',
-      'genome-viewer':   'js/genome-viewer.js',
-      'example-genomes': 'js/example-genomes.js',
-      'structure':       'js/structure-viewer.js',
-      'batch':           'js/batch.js',
-    };
+      // Map each tool-id to the JS file that drives it.
+      // Add new tools here without touching any other file.
+      const MODULE_MAP = {
+        'dna': 'js/seq-analyzer.js',
+        'protein': 'js/protein.js',
+        'alignment': 'js/alignment.js',
+        'fasta': 'js/fasta.js',
+        'primer': 'js/primer.js',
+        'restriction': 'js/restriction.js',
+        'promoter': 'js/promoter.js',
+        'sequence-search': 'js/sequence-search.js',
+        'genome-viewer': 'js/genome-viewer.js',
+        'example-genomes': 'js/example-genomes.js',
+        'structure': 'js/structure-viewer.js',
+        'batch': 'js/batch.js',
+      };
 
-    // Tracks which modules have already been fetched so we never
-    // double-load a script on repeated navigation to the same tool.
-    const loaded = new Set();
+      // Tracks which modules have already been fetched so we never
+      // double-load a script on repeated navigation to the same tool.
+      const loaded = new Set();
 
-    function loadModule(toolId) {
-      const src = MODULE_MAP[toolId];
-      if (!src || loaded.has(toolId)) return;
-      loaded.add(toolId);
+      function loadModule(toolId) {
+        const src = MODULE_MAP[toolId];
+        if (!src || loaded.has(toolId)) return;
+        loaded.add(toolId);
 
-      const script = document.createElement('script');
-      script.src   = src;
-      script.async = true;
-      script.onerror = () => console.error('[LazyLoader] Failed to load module:', src);
-      document.body.appendChild(script);
-    }
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onerror = () => console.error('[LazyLoader] Failed to load module:', src);
+        document.body.appendChild(script);
+      }
 
-    // Intercept every nav-item click BEFORE ViewManager.navigate fires.
-    // Using capture phase so the module script is injected first.
-    document.addEventListener('click', (e) => {
-      const btn  = e.target.closest('.nav-item');
-      const card = e.target.closest('.tool-card');
-      const toolId = (btn || card)?.dataset?.tool;
-      if (toolId) loadModule(toolId);
-    }, true); // capture = true
+      // Intercept every nav-item click BEFORE ViewManager.navigate fires.
+      // Using capture phase so the module script is injected first.
+      document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.nav-item');
+        const card = e.target.closest('.tool-card');
+        const toolId = (btn || card)?.dataset?.tool;
+        if (toolId) loadModule(toolId);
+      }, true); // capture = true
 
-    // Pre-load the Home panel's linked tools on idle (no network pressure at startup)
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(() => {
-        ['dna', 'protein', 'restriction'].forEach(loadModule);
-      });
-    }
-  })();
+      // Pre-load the Home panel's linked tools on idle (no network pressure at startup)
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => {
+          ['dna', 'protein', 'restriction'].forEach(loadModule);
+        });
+      }
+    })();
   </script>
 
   <footer class="app-footer">
@@ -1633,46 +1738,47 @@
 
   <!-- Mobile Hamburger & Theme Toggle -->
   <script>
-  (function(){
-    // Sidebar toggle logic
-    const hamburger = document.getElementById('hamburgerBtn');
-    const sidebar   = document.getElementById('sidebar');
-    const backdrop  = document.getElementById('sidebarBackdrop');
+    (function () {
+      // Sidebar toggle logic
+      const hamburger = document.getElementById('hamburgerBtn');
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebarBackdrop');
 
-    if (hamburger && sidebar) {
-      hamburger.addEventListener('click', () => {
-        sidebar.classList.toggle('open');
-        backdrop.classList.toggle('visible');
-      });
-      backdrop.addEventListener('click', () => {
-        sidebar.classList.remove('open');
-        backdrop.classList.remove('visible');
-      });
-      sidebar.querySelectorAll('.nav-item').forEach(btn => {
-        btn.addEventListener('click', () => {
-          if (window.innerWidth <= 680) {
-            sidebar.classList.remove('open');
-            backdrop.classList.remove('visible');
-          }
+      if (hamburger && sidebar) {
+        hamburger.addEventListener('click', () => {
+          sidebar.classList.toggle('open');
+          backdrop.classList.toggle('visible');
         });
-      });
-    }
-  })();
+        backdrop.addEventListener('click', () => {
+          sidebar.classList.remove('open');
+          backdrop.classList.remove('visible');
+        });
+        sidebar.querySelectorAll('.nav-item').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (window.innerWidth <= 680) {
+              sidebar.classList.remove('open');
+              backdrop.classList.remove('visible');
+            }
+          });
+        });
+      }
+    })();
   </script>
 
   <!-- Hydropathy window slider label sync -->
   <script>
-  (function () {
-    document.addEventListener('DOMContentLoaded', function () {
-      const slider = document.getElementById('hydroWindowSize');
-      const label  = document.getElementById('hydroWindowLabel');
-      if (slider && label) {
-        slider.addEventListener('input', function () {
-          label.textContent = slider.value;
-        });
-      }
-    });
-  })();
+    (function () {
+      document.addEventListener('DOMContentLoaded', function () {
+        const slider = document.getElementById('hydroWindowSize');
+        const label = document.getElementById('hydroWindowLabel');
+        if (slider && label) {
+          slider.addEventListener('input', function () {
+            label.textContent = slider.value;
+          });
+        }
+      });
+    })();
   </script>
 </body>
+
 </html>

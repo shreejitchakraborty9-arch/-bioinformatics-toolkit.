@@ -110,6 +110,50 @@
       updateZoom();
     }, { passive: false });
 
+    // Keyboard navigation: arrow keys to pan, +/- to zoom, Home/End to jump (UX-01)
+    document.addEventListener('keydown', (e) => {
+      const panel = document.getElementById('panel-genome-viewer');
+      if (!panel || panel.classList.contains('hidden')) return;
+      if (!sequence) return;
+
+      // Ignore when focus is inside an input/textarea/select
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      const bpWidth   = bpEnd - bpStart;
+      const panAmount = Math.max(1, bpWidth * 0.1);
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        bpStart = Math.max(0, bpStart - panAmount);
+        bpEnd   = bpStart + bpWidth;
+        if (bpEnd > sequence.length) { bpEnd = sequence.length; bpStart = Math.max(0, bpEnd - bpWidth); }
+        requestAnimationFrame(render);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        bpEnd   = Math.min(sequence.length, bpEnd + panAmount);
+        bpStart = bpEnd - bpWidth;
+        if (bpStart < 0) { bpStart = 0; bpEnd = Math.min(sequence.length, bpWidth); }
+        requestAnimationFrame(render);
+      } else if (e.key === '+' || e.key === '=') {
+        windowSize = Math.max(50, windowSize / 1.5);
+        updateZoom();
+      } else if (e.key === '-') {
+        windowSize = Math.min(sequence.length || 20000, windowSize * 1.5);
+        updateZoom();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        bpStart = 0;
+        bpEnd   = bpWidth;
+        requestAnimationFrame(render);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        bpEnd   = sequence.length;
+        bpStart = Math.max(0, sequence.length - bpWidth);
+        requestAnimationFrame(render);
+      }
+    });
+
     // Fix 5: re-render when the panel is re-shown after navigation away
     const gvPanel = document.getElementById('panel-genome-viewer');
     if (gvPanel) {
@@ -161,7 +205,7 @@
           const resp = await fetch('/api/analyze/promoter', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sequence: clean, organism })
+            body: JSON.stringify({ sequence: clean, organism_type: organism })
           });
           if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
@@ -170,11 +214,12 @@
           const data = await resp.json();
 
           const cds = (data.orfs || []).map(o => ({
-            start:  o.start - 1,
-            end:    o.end,
-            frame:  o.frame,
-            length: o.length,
-            name:   o.name || `ORF frame ${o.frame}`
+            start:   o.start - 1,
+            end:     o.end,
+            frame:   o.frame,
+            length:  o.length_nt || o.length,
+            name:    o.name || `ORF frame ${o.frame}`,
+            partial: o.partial || false
           }));
           const motifs = (data.motifs || []).map(m => ({
             position: m.position - 1,
@@ -215,10 +260,14 @@
     const rect = parent.getBoundingClientRect();
     const dpr  = window.devicePixelRatio || 1;
 
-    canvas.width  = rect.width * dpr;
-    canvas.height = 400 * dpr;
+    // Compute canvas height from track layout so adding a 5th track
+    // requires no magic-number changes here (CQ-03).
+    const canvasHeight = MARGIN_TOP + HEADER_HEIGHT + TRACKS.length * (TRACK_HEIGHT + TRACK_SPACING);
 
-    canvas.style.height = '400px';
+    canvas.width  = rect.width * dpr;
+    canvas.height = canvasHeight * dpr;
+
+    canvas.style.height = canvasHeight + 'px';
 
     // Reset before scaling to prevent cumulative DPR multiplication.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -226,7 +275,7 @@
 
     // Fill immediately so no black frame reaches the browser before RAF.
     ctx.fillStyle = getThemeColors().bg;
-    ctx.fillRect(0, 0, rect.width, 400);
+    ctx.fillRect(0, 0, rect.width, canvasHeight);
 
     let currentY = MARGIN_TOP + HEADER_HEIGHT;
     for (const t of TRACKS) {
@@ -238,6 +287,13 @@
   }
 
   // ── Data Loading ─────────────────────────────────────────────
+  //
+  // Coordinate contract (canonical, 0-based half-open):
+  //   CDS:   { start: 0-based inclusive, end: 0-based exclusive, frame, length, name }
+  //   Motif: { position: 0-based inclusive, end: 0-based exclusive, matched, name }
+  //
+  // Both paths that call this function MUST convert API 1-based coordinates
+  // before calling (Path A: promoter.js; Path B: analyzeBtn handler above).
   window.loadGenomeData = function (seq, cds, promoterLen, motifs) {
     sequence  = seq || '';
     cdsData   = cds || [];
@@ -281,6 +337,13 @@
     else if (level === '1000bp') windowSize = 25000;
     windowSize = Math.min(windowSize, sequence.length);
     updateZoom();
+  };
+
+  // Namespaced API — preferred over raw window.* globals (CQ-02)
+  window.BioKit = window.BioKit || { utils: {}, core: {}, tools: {}, data: {} };
+  window.BioKit.genomeViewer = {
+    loadData: window.loadGenomeData,
+    setZoom:  window.setZoom
   };
 
   // ── Interaction ──────────────────────────────────────────────
@@ -338,12 +401,14 @@
       for (const cds of cdsData) {
         if (hoverBp >= cds.start && hoverBp <= cds.end) {
           const strand = cds.frame > 0 ? '+' : '−';
-          showHoverTooltip(
+          showTooltip(
             `<strong>${cds.name || 'ORF'}</strong><br>` +
             `Frame: ${strand}${Math.abs(cds.frame)}<br>` +
             `Start: ${cds.start + 1} | End: ${cds.end}<br>` +
-            `Length: ${cds.length} bp`,
-            e.clientX, e.clientY
+            `Length: ${cds.length ?? '—'} bp` +
+            (cds.partial ? '<br><em style="color:#f59e0b">partial (no stop codon)</em>' : ''),
+            e.clientX, e.clientY,
+            { isHTML: true }
           );
           return;
         }
@@ -357,12 +422,13 @@
         const mMatchLen = m.matched?.length || (m.end != null ? m.end - m.position : 6);
         const mEnd      = m.position + mMatchLen;
         if (hoverBp >= m.position && hoverBp <= mEnd) {
-          showHoverTooltip(
+          showTooltip(
             `<strong>${m.name || 'Motif'}</strong><br>` +
             `Start: ${m.position + 1}<br>` +
             `Length: ${mMatchLen} bp<br>` +
-            `Seq: ${m.matched || '—'}`,
-            e.clientX, e.clientY
+            `Seq: <code>${m.matched || '—'}</code>`,
+            e.clientX, e.clientY,
+            { isHTML: true }
           );
           return;
         }
@@ -394,8 +460,9 @@
         if (clickBp >= cds.start && clickBp <= cds.end) {
           const strand       = cds.frame > 0 ? '+' : '−';
           const displayStart = cds.start + 1; // convert to 1-based for display
-          showCanvasTooltip(
-            `CDS Frame ${strand}${Math.abs(cds.frame)}\nPos: ${displayStart}–${cds.end}\nLen: ${cds.length} bp`,
+          showTooltip(
+            `CDS Frame ${strand}${Math.abs(cds.frame)}\nPos: ${displayStart}–${cds.end}\nLen: ${cds.length ?? '—'} bp` +
+            (cds.partial ? '\n(partial)' : ''),
             e.clientX, e.clientY
           );
           return;
@@ -411,7 +478,7 @@
         const mEnd      = m.position + mMatchLen;
         if (clickBp >= m.position && clickBp <= mEnd) {
           const displayPos = m.position + 1; // 1-based for display
-          showCanvasTooltip(
+          showTooltip(
             `Motif: ${m.name}\nPos: ${displayPos}\nSeq: ${m.matched || '—'}`,
             e.clientX, e.clientY
           );
@@ -430,12 +497,14 @@
   }
 
   // ── Tooltip ──────────────────────────────────────────────────
-  function showCanvasTooltip(text, x, y) {
+  // Single entry-point for all tooltip content.
+  // isHTML=true: content is sanitized via DOMPurify before insertion (SEC-01).
+  // Viewport clamping prevents clips at right/bottom screen edges (UX-02).
+  function showTooltip(content, x, y, { isHTML = false } = {}) {
     let tt = document.getElementById('gvTooltip');
     if (!tt) {
       tt = document.createElement('div');
       tt.id = 'gvTooltip';
-      // Use CSS variables that actually exist in style.css
       tt.style.cssText = [
         'position:fixed',
         'background:var(--bg-surface,#1e293b)',
@@ -449,42 +518,26 @@
         'font-family:var(--font,"Inter",system-ui,sans-serif)',
         'font-size:0.85rem',
         'white-space:pre-line',
-        'max-width:260px'
-      ].join(';');
-      document.body.appendChild(tt);
-    }
-    tt.textContent  = text;
-    tt.style.left   = (x + 15) + 'px';
-    tt.style.top    = (y + 15) + 'px';
-    tt.style.display = 'block';
-  }
-
-  function showHoverTooltip(html, clientX, clientY) {
-    let tt = document.getElementById('gvTooltip');
-    if (!tt) {
-      tt = document.createElement('div');
-      tt.id = 'gvTooltip';
-      tt.style.cssText = [
-        'position:fixed',
-        'background:var(--bg-surface,#1e293b)',
-        'color:var(--text-primary,#f8f9fa)',
-        'border:1px solid var(--border,#334155)',
-        'padding:8px 12px',
-        'border-radius:6px',
-        'box-shadow:0 10px 15px -3px rgba(0,0,0,0.5)',
-        'pointer-events:none',
-        'z-index:1000',
-        'font-family:var(--font,"Inter",system-ui,sans-serif)',
-        'font-size:0.85rem',
         'line-height:1.55',
         'max-width:260px'
       ].join(';');
       document.body.appendChild(tt);
     }
-    tt.innerHTML       = html;
-    tt.style.left      = (clientX + 15) + 'px';
-    tt.style.top       = (clientY + 15) + 'px';
-    tt.style.display   = 'block';
+
+    if (isHTML) {
+      tt.innerHTML = (window.DOMPurify ? DOMPurify.sanitize(content) : content);
+    } else {
+      tt.textContent = content;
+    }
+
+    // Clamp to viewport so the tooltip never clips off-screen (UX-02)
+    const TT_W = 280;
+    const TT_H = 110;
+    const left = Math.min(x + 15, window.innerWidth  - TT_W);
+    const top  = Math.min(y + 15, window.innerHeight - TT_H);
+    tt.style.left    = Math.max(0, left) + 'px';
+    tt.style.top     = Math.max(0, top)  + 'px';
+    tt.style.display = 'block';
   }
 
   function hideCanvasTooltip() {
@@ -552,7 +605,10 @@
     if (bpWidth > 5000)  tickInterval = 1000;
     if (bpWidth > 20000) tickInterval = 5000;
 
-    const firstTick = Math.ceil(bpStart / tickInterval) * tickInterval;
+    // Ticks at 0-based positions whose 1-based equivalent (bp+1) is a multiple
+    // of tickInterval — so the ruler reads "10, 20, 30..." not "11, 21, 31..."
+    const firstTick1based = Math.ceil((bpStart + 1) / tickInterval) * tickInterval;
+    const firstTick       = firstTick1based - 1; // back to 0-based
 
     ctx.strokeStyle = colors.border;
     ctx.lineWidth   = 1;
@@ -564,7 +620,6 @@
     }
     ctx.stroke();
 
-    // Display 1-based positions (internal 0-based + 1) for biological convention
     for (let bp = firstTick; bp <= bpEnd; bp += tickInterval) {
       ctx.fillText((bp + 1).toLocaleString(), xForBp(bp, cw), HEADER_HEIGHT / 2);
     }
@@ -687,6 +742,17 @@
       ctx.closePath();
       ctx.fill();
 
+      // Partial (run-off) ORFs: dashed stroke overlay to signal no stop codon found
+      if (cds.partial) {
+        ctx.save();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth   = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
       if (w > 40 && bpWidth < 5000) {
         ctx.save();
         ctx.fillStyle    = '#ffffff';
@@ -707,17 +773,33 @@
 
     if (cdsData.length === 0) return;
 
-    // Anchor to the first forward-strand ORF; fall back to the first ORF overall
-    const fwdOrfs = cdsData.filter(o => o.frame > 0);
-    const anchor  = fwdOrfs.length > 0 ? fwdOrfs[0] : cdsData[0];
+    // Draw one upstream promoter window per ORF on each strand (SCI-01).
+    // Forward ORFs: upstream region is immediately 5' of the ATG (lower coordinates).
+    // Reverse ORFs: upstream region is immediately 5' of the ATG in reverse direction
+    //               (higher coordinates, upstream on the minus strand).
+    const seqLen = sequence.length;
+    const drawn  = new Set();
 
-    const pStart = Math.max(0, anchor.start - storedPromoterLen);
-    const pEnd   = anchor.start;
+    for (const orf of cdsData) {
+      let pStart, pEnd;
+      if (orf.frame > 0) {
+        pStart = Math.max(0, orf.start - storedPromoterLen);
+        pEnd   = orf.start;
+      } else {
+        pStart = orf.end;
+        pEnd   = Math.min(seqLen, orf.end + storedPromoterLen);
+      }
 
-    if (pEnd > bpStart && pStart < bpEnd) {
+      const key = `${pStart}-${pEnd}`;
+      if (drawn.has(key)) continue;
+      drawn.add(key);
+
+      if (pEnd <= bpStart || pStart >= bpEnd) continue;
+
       const x1 = Math.max(0, xForBp(pStart, cw));
-      const x2 = Math.min(cw, xForBp(pEnd,   cw));
+      const x2 = Math.min(cw, xForBp(pEnd, cw));
       const w  = x2 - x1;
+      if (w <= 0) continue;
 
       ctx.fillStyle = 'rgba(245, 158, 11, 0.2)';
       ctx.fillRect(x1, t.y + 10, w, 20);

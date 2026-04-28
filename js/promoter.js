@@ -357,11 +357,12 @@
       document.querySelectorAll('.pro-seq-meta').forEach(el => { el.textContent = '—'; });
     }
 
-    // Feed genome viewer
-    if (window.loadGenomeData) {
-      const cdsData   = orfs.map(o => ({ start: o.start - 1, end: o.end, frame: o.frame, length: o.length }));
-      const motifData = motifs.map(m => ({ position: m.position - 1, end: m.end, matched: m.matched, name: m.name }));
-      window.loadGenomeData(seq, cdsData, upstreamLen, motifData);
+    // Feed genome viewer (prefer namespaced API; fall back to legacy global)
+    const _gvLoad = window.BioKit?.genomeViewer?.loadData || window.loadGenomeData;
+    if (_gvLoad) {
+      const cdsData   = orfs.map(o => ({ start: o.start - 1, end: o.end, frame: o.frame, length: o.length_nt || o.length, partial: o.partial || false }));
+      const motifData = motifs.map(m => ({ position: m.position - 1, end: m.end - 1, matched: m.matched, name: m.name }));
+      _gvLoad(seq, cdsData, upstreamLen, motifData);
     }
   }
 
