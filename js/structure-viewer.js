@@ -126,7 +126,7 @@
 
         await viewerInstance.render(container, {
           customData: {
-            url:    'https://alphafold.ebi.ac.uk/files/AF-' + accession.toUpperCase() + '-F1-model_v6.cif',
+            url:    entry.cifUrl,
             format: 'cif',
           },
           alphafoldView: true,

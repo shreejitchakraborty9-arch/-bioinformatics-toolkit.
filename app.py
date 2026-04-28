@@ -95,9 +95,11 @@ with app.app_context():
     except Exception as e:
         app.logger.warning("Database initialization deferred: {}".format(e))
 
-# 1. CORS Enforcement (Restrict to exact frontend domain)
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5000")
-CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGIN}})
+# 1. CORS Enforcement
+_raw_origin = os.environ.get("ALLOWED_ORIGIN", "")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origin.split(",") if o.strip()] if _raw_origin else \
+    ["http://localhost:5000", "http://127.0.0.1:5000"]
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
 
 # 2. Payload size Limit (5MB) - Prevents OOM and large sequence abuse
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
@@ -274,11 +276,15 @@ def fetch_external():
                     cache.set(cache_key, {"json": result}, timeout=86400)
                     return jsonify(result)
                 except Exception as e:
-                    logger.warning("Biopython parsing failed, falling back to raw GenBank text: %s", e)
-            
-            # Fallback: return raw GenBank text
-            cache.set(cache_key, {"text": raw_data}, timeout=86400)
-            return Response(raw_data, mimetype="text/plain")
+                    logger.warning("Biopython parsing failed, re-fetching as FASTA: %s", e)
+
+            # Fallback: re-fetch as FASTA so the frontend can always parse it
+            fasta_params = dict(params)
+            fasta_params["rettype"] = "fasta"
+            fasta_resp = http_session.get("{}/efetch.fcgi".format(NCBI_BASE), params=fasta_params, timeout=15)
+            fasta_resp.raise_for_status()
+            cache.set(cache_key, {"text": fasta_resp.text}, timeout=86400)
+            return Response(fasta_resp.text, mimetype="text/plain")
         
         elif db_type == "ncbiprotein":
             params = {
@@ -309,17 +315,20 @@ def fetch_external():
             )
             if resp.status_code == 200:
                 data = resp.json()
-                result = {
-                    "sequence": data.get("seq"),
-                    "metadata": {
-                        "strand": "+" if data.get("strand", 1) >= 0 else "-",
-                        "tss": 2001,
-                        "exon_list": [],
-                        "description": data.get("desc", "Ensembl Sequence")
+                seq = data.get("seq")
+                if seq:
+                    result = {
+                        "sequence": seq,
+                        "metadata": {
+                            "strand": "+" if data.get("strand", 1) >= 0 else "-",
+                            "tss": 2001,
+                            "exon_list": [],
+                            "description": data.get("desc", "Ensembl Sequence")
+                        }
                     }
-                }
-                cache.set(cache_key, {"json": result}, timeout=86400)
-                return jsonify(result)
+                    cache.set(cache_key, {"json": result}, timeout=86400)
+                    return jsonify(result)
+                # seq is None — fall through to FASTA fallback
             # Fallback: plain FASTA
             fasta_headers = {"Accept": "text/x-fasta"}
             resp = http_session.get("{}/sequence/id/{}".format(ENSEMBL_BASE, acc_id), headers=fasta_headers, timeout=15)
