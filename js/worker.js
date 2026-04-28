@@ -233,17 +233,15 @@ async function runSmithWaterman(data, taskId) {
 
 // ── Sequence Search Tool ────────────────────────────────────
 async function runSequenceSearch(data, taskId) {
-  const { query, database, params } = data;
-  const { match, mismatch, gap } = params;
+  const { query, customDatabase, matchScore, mismatchScore, gapScore } = data;
   const results = [];
-  const total = database.length;
+  const total = customDatabase.length;
 
   for (let idx = 0; idx < total; idx++) {
-    const entry = database[idx];
-    
-    // Seed match (heuristic)
+    const entry = customDatabase[idx];
+
     if (hasSeedMatch(query, entry.sequence, 7)) {
-      const aln = alignSW_Internal(query, entry.sequence, match, mismatch, gap);
+      const aln = alignSW_Internal(query, entry.sequence, matchScore, mismatchScore, gapScore);
       if (aln.score > 20) {
         results.push({ target: entry, aln });
       }
@@ -302,24 +300,18 @@ function alignSW_Internal(query, subject, matchScore, mismatchScore, gapScore) {
     }
   }
 
-  const dbSize = 30000000; // Simulated database size (30MB)
-  const effS = Math.max(1, sLen); 
-  const effQ = Math.max(1, qLen);
-  
-  // Approximate Karlin-Altschul parameters for matched/mismatched scores
-  // Real values require evaluating the Gumbel extreme value distribution
-  const lambda = Math.log(mismatchScore / (matchScore + mismatchScore)) / -matchScore || 0.317;
-  const K = 0.13; // Typical for DNA alignment space
-
-  const expectedAligns = K * effS * effQ * Math.exp(-lambda * maxScore);
-  const bitScore = (lambda * maxScore - Math.log(K)) / Math.LN2;
-  const eValue = expectedAligns * (dbSize / effS);
-
   return {
-    score: maxScore, eValue: eValue < 1e-180 ? 0 : eValue, bitScore: bitScore, matches, alnLen,
-    identity: alnLen > 0 ? ((matches / alnLen) * 100).toFixed(1) : "0.0",
-    queryAln: alignQ, midAln: matchStr, subjAln: alignS,
-    qStart: i + 1, qEnd: maxI, sStart: j + 1, sEnd: maxJ
+    score: maxScore,
+    identity: alnLen > 0 ? parseFloat(((matches / alnLen) * 100).toFixed(1)) : 0,
+    matches,
+    alnLen,
+    queryAln: alignQ,
+    midAln: matchStr,
+    subjAln: alignS,
+    qStart: i + 1,
+    qEnd: maxI,
+    sStart: j + 1,
+    sEnd: maxJ
   };
 }
 
