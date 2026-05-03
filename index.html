@@ -1519,11 +1519,29 @@
           rows="6" style="font-family:var(--mono); font-size:0.8rem;"></textarea>
       </div>
 
+      <!-- Analysis mode selector (Phase 4) -->
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
+        <label style="font-size:0.8rem; color:var(--text-secondary); white-space:nowrap;">Analysis mode:</label>
+        <select id="batchModeSelect"
+          style="background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border);
+                 border-radius:var(--radius-sm); padding:5px 10px; font-size:0.8rem; cursor:pointer;">
+          <option value="all">All Metrics (DNA + Protein)</option>
+          <option value="nucleotide">Nucleotide Only</option>
+          <option value="protein">Protein Only</option>
+          <option value="quick">Quick Scan (ID / Length / Type)</option>
+        </select>
+        <span id="batchSeqCount"
+          style="font-size:0.76rem; font-family:var(--mono); color:var(--teal); display:none;">
+        </span>
+      </div>
+
       <div class="btn-row">
         <button class="btn-primary" id="batchSubmitBtn">
           <i data-lucide="zap"></i> Submit Batch Job
         </button>
-        <button class="btn-secondary" id="batchSampleBtn">Load 3-Sequence Example</button>
+        <button class="btn-secondary" id="batchSampleBtn">Proteins (TP53, EGFR, HBB)</button>
+        <button class="btn-secondary" id="batchSampleDnaBtn">DNA with IUPAC codes</button>
+        <button class="btn-secondary" id="batchSampleRnaBtn">mRNA sequences</button>
         <button class="btn-secondary" id="batchClearBtn">Clear</button>
       </div>
 
@@ -1551,10 +1569,10 @@
           </div>
         </div>
 
-        <!-- Download panel — hidden until job complete -->
+        <!-- Completion bar + export controls — hidden until job complete -->
         <div id="batchDownloadArea" class="hidden" style="
           margin-top:16px;
-          padding:16px 20px;
+          padding:14px 18px;
           background:var(--bg-surface);
           border:1px solid var(--border);
           border-left:3px solid var(--teal);
@@ -1562,37 +1580,159 @@
         ">
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
             <div>
-              <div style="font-weight:600; font-size:0.9rem; color:var(--text-primary); margin-bottom:4px;">Analysis
-                Complete</div>
+              <div style="font-weight:600; font-size:0.9rem; color:var(--text-primary); margin-bottom:4px;">
+                Analysis Complete
+              </div>
               <div id="batchCompleteSummary"
                 style="font-size:0.78rem; color:var(--text-muted); font-family:var(--mono);"></div>
             </div>
-            <button class="btn-primary" id="batchDownloadBtn" style="display:flex; align-items:center; gap:7px;">
-              <i data-lucide="download" style="width:14px; height:14px;"></i> Download CSV Results
-            </button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <!-- Column picker trigger -->
+              <button class="btn-secondary" id="batchColPickerBtn"
+                style="display:flex; align-items:center; gap:6px; font-size:0.8rem;">
+                <i data-lucide="columns" style="width:13px;height:13px;"></i> Columns
+              </button>
+              <button class="btn-secondary" id="batchDownloadTsvBtn"
+                style="display:flex; align-items:center; gap:6px; font-size:0.8rem;">
+                <i data-lucide="file-text" style="width:13px;height:13px;"></i> TSV
+              </button>
+              <button class="btn-primary" id="batchDownloadBtn"
+                style="display:flex; align-items:center; gap:7px; font-size:0.8rem;">
+                <i data-lucide="download" style="width:13px;height:13px;"></i> CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- Column picker panel — hidden until button clicked -->
+          <div id="batchColPickerPanel" class="hidden" style="
+            margin-top:12px; padding:12px 14px;
+            background:var(--bg-card); border:1px solid var(--border);
+            border-radius:var(--radius-sm);
+          ">
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:8px;">
+              Select columns to include in the table and exports:
+            </div>
+            <div id="batchColPickerGrid" style="
+              display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+              gap:4px 16px; font-size:0.75rem;
+            "></div>
+            <div style="margin-top:10px; display:flex; gap:8px;">
+              <button class="btn-secondary" id="batchColSelectAll"
+                style="font-size:0.72rem; padding:3px 10px;">All</button>
+              <button class="btn-secondary" id="batchColSelectNone"
+                style="font-size:0.72rem; padding:3px 10px;">None</button>
+            </div>
           </div>
         </div>
 
-        <!-- CSV Column Reference -->
-        <details style="margin-top:16px;">
+        <!-- In-app results table (Phase 2) — hidden until job complete -->
+        <div id="batchResultsArea" class="hidden" style="margin-top:20px;">
+
+          <!-- Filter + search bar -->
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; align-items:center;">
+            <input id="batchFilterInput" type="text" placeholder="Filter by ID or description…"
+              style="flex:1; min-width:180px; padding:5px 10px; font-size:0.8rem;
+                     background:var(--bg-surface); color:var(--text-primary);
+                     border:1px solid var(--border); border-radius:var(--radius-sm);
+                     font-family:var(--mono);" />
+            <select id="batchFilterType"
+              style="background:var(--bg-surface); color:var(--text-primary);
+                     border:1px solid var(--border); border-radius:var(--radius-sm);
+                     padding:5px 10px; font-size:0.8rem;">
+              <option value="">All types</option>
+              <option value="DNA">DNA</option>
+              <option value="RNA">RNA</option>
+              <option value="PROTEIN">Protein</option>
+              <option value="UNKNOWN">Unknown</option>
+            </select>
+            <label style="display:flex; align-items:center; gap:6px; font-size:0.78rem; color:var(--text-secondary); cursor:pointer;">
+              <input type="checkbox" id="batchFilterErrors" style="accent-color:var(--teal);" />
+              Errors only
+            </label>
+            <span id="batchFilterCount"
+              style="font-size:0.75rem; font-family:var(--mono); color:var(--text-muted); white-space:nowrap;">
+            </span>
+          </div>
+
+          <!-- Scrollable table wrapper -->
+          <div style="overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius-sm);">
+            <table id="batchResultsTable" class="batch-results-table">
+              <thead id="batchResultsThead"></thead>
+              <tbody id="batchResultsTbody"></tbody>
+            </table>
+          </div>
+
+          <!-- Pagination controls -->
+          <div style="display:flex; align-items:center; justify-content:space-between;
+                      margin-top:10px; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; gap:6px; align-items:center;">
+              <button class="btn-secondary" id="batchPagePrev"
+                style="padding:4px 12px; font-size:0.78rem;">&#8592; Prev</button>
+              <span id="batchPageInfo"
+                style="font-size:0.78rem; font-family:var(--mono); color:var(--text-secondary);
+                       white-space:nowrap;"></span>
+              <button class="btn-secondary" id="batchPageNext"
+                style="padding:4px 12px; font-size:0.78rem;">Next &#8594;</button>
+            </div>
+            <select id="batchPageSize"
+              style="background:var(--bg-surface); color:var(--text-primary);
+                     border:1px solid var(--border); border-radius:var(--radius-sm);
+                     padding:4px 8px; font-size:0.78rem;">
+              <option value="25">25 / page</option>
+              <option value="50" selected>50 / page</option>
+              <option value="100">100 / page</option>
+              <option value="250">250 / page</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Job history panel (Phase 7) -->
+        <details id="batchHistoryDetails" style="margin-top:20px;" class="hidden">
           <summary
-            style="font-size:0.78rem; color:var(--text-muted); cursor:pointer; font-family:var(--mono); user-select:none;">
-            CSV column reference ▾
+            style="font-size:0.78rem; color:var(--text-muted); cursor:pointer;
+                   font-family:var(--mono); user-select:none;">
+            Recent jobs ▾
+          </summary>
+          <div id="batchHistoryList"
+            style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
+        </details>
+
+        <!-- Column reference (updated for all new fields) -->
+        <details style="margin-top:14px;">
+          <summary
+            style="font-size:0.78rem; color:var(--text-muted); cursor:pointer;
+                   font-family:var(--mono); user-select:none;">
+            Column reference ▾
           </summary>
           <div
-            style="margin-top:10px; padding:12px 14px; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-family:var(--mono); font-size:0.72rem; color:var(--text-secondary); line-height:1.85;">
+            style="margin-top:10px; padding:12px 14px; background:var(--bg-surface);
+                   border:1px solid var(--border); border-radius:var(--radius-sm);
+                   font-family:var(--mono); font-size:0.72rem; color:var(--text-secondary);
+                   line-height:1.9;">
             <strong>id</strong> — FASTA record identifier<br>
-            <strong>description</strong> — Full FASTA header<br>
+            <strong>description</strong> — Full FASTA header line<br>
             <strong>length</strong> — Sequence length (nt or aa)<br>
             <strong>type</strong> — Auto-detected: DNA / RNA / PROTEIN<br>
-            <strong>gc_percent</strong> — GC content % (DNA / RNA only)<br>
-            <strong>at_percent</strong> — AT content % (DNA / RNA only)<br>
-            <strong>molecular_weight_kda</strong> — MW in kDa (BioPython)<br>
-            <strong>isoelectric_point</strong> — pI (protein only)<br>
-            <strong>gravy</strong> — GRAVY hydrophobicity index (protein only)<br>
-            <strong>instability_index</strong> — Guruprasad instability (protein only)<br>
-            <strong>instability_label</strong> — Stable / Unstable threshold &lt; 40<br>
-            <strong>error</strong> — Per-record error message, if any
+            <em style="color:var(--teal);">── Nucleotide metrics (DNA/RNA only) ──</em><br>
+            <strong>gc_percent</strong> — G+C content % (canonical bases only)<br>
+            <strong>at_percent</strong> — A+T/U content %<br>
+            <strong>a_percent / t_percent / g_percent / c_percent</strong> — Per-base %<br>
+            <strong>cpg_obs_exp</strong> — CpG O/E ratio (Gardiner-Garden 1987); ≥ 0.60 = CpG island<br>
+            <strong>melting_temp_c</strong> — Tm_Wallace (4·GC + 2·AT); estimate only for &gt; 50 nt<br>
+            <strong>shannon_entropy</strong> — Normalized sequence complexity (0–1); &lt; 0.70 = low complexity<br>
+            <strong>molecular_weight_kda</strong> — Molecular weight in kDa (BioPython)<br>
+            <em style="color:var(--teal);">── Protein metrics (protein only) ──</em><br>
+            <strong>isoelectric_point</strong> — pI (BioPython ProtParam)<br>
+            <strong>gravy</strong> — Grand average of hydropathicity (Kyte-Doolittle)<br>
+            <strong>instability_index</strong> — Guruprasad 1990; &lt; 40 = stable in vitro<br>
+            <strong>instability_label</strong> — Stable / Unstable<br>
+            <strong>aromaticity</strong> — Fraction of aromatic residues (F + W + Y)<br>
+            <strong>aliphatic_index</strong> — Ikai 1980; thermal stability surrogate<br>
+            <strong>net_charge_ph74</strong> — Net charge at physiological pH 7.4<br>
+            <strong>extinction_coeff_reduced / oxidized</strong> — M⁻¹cm⁻¹ at 280 nm (BioPython)<br>
+            <em style="color:var(--teal);">── QC columns ──</em><br>
+            <strong>warning</strong> — Non-fatal analysis notes (duplicate IDs, Tm caveats, etc.)<br>
+            <strong>error</strong> — Per-record exception message, if the record failed
           </div>
         </details>
       </div>

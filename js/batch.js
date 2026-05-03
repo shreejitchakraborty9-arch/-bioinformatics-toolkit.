@@ -1,20 +1,69 @@
 /* ============================================================
  batch.js — High-Throughput Omics Batch Queue
  File upload → async Celery job → short-poll /api/status →
- progress bar → CSV bulk download
+ progress bar → in-app results table → CSV / TSV download
  ============================================================ */
 
 (function () {
   'use strict';
 
-  const POLL_INTERVAL_MS = 2000; // 2-second short-poll cadence
+  const POLL_INTERVAL_MS  = 2000;
+  const HISTORY_KEY       = 'bioToolkit_batchHistory';
+  const HISTORY_MAX       = 20;
 
-  let currentJobId = null;
-  let pollTimer = null;
-  let uploadedContent = null; // raw FASTA string from file or paste
+  let currentJobId    = null;
+  let pollTimer       = null;
+  let uploadedContent = null;  // raw FASTA string from file or paste
 
-  // ── File / Drop-Zone Wiring ───────────────────────────────
-  const dropZone = document.getElementById('batchDropZone');
+  // Full dataset fetched from /api/batch/<id>/results after completion
+  let _allRows        = [];
+  let _columns        = [];
+  let _visibleCols    = new Set();
+  let _filteredRows   = [];
+
+  // Table state
+  let _sortCol        = null;
+  let _sortDir        = 'asc';   // 'asc' | 'desc'
+  let _currentPage    = 1;
+  let _pageSize       = 50;
+
+  // ── Column metadata (tooltips, Phase 6) ─────────────────────
+  const COL_META = {
+    id:                       { label: 'ID',            tip: 'FASTA record identifier' },
+    description:              { label: 'Description',   tip: 'Full FASTA header line' },
+    length:                   { label: 'Length',        tip: 'Sequence length in nt (nucleotide) or aa (protein)' },
+    type:                     { label: 'Type',          tip: 'Auto-detected sequence type: DNA / RNA / PROTEIN' },
+    gc_percent:               { label: 'GC %',          tip: 'G+C content (%) — canonical bases only\nDegenerate IUPAC codes are excluded' },
+    at_percent:               { label: 'AT %',          tip: 'A+T/U content (%) — canonical bases only' },
+    a_percent:                { label: 'A %',           tip: 'Adenine fraction (%)' },
+    t_percent:                { label: 'T/U %',         tip: 'Thymine (DNA) or Uracil (RNA) fraction (%)' },
+    g_percent:                { label: 'G %',           tip: 'Guanine fraction (%)' },
+    c_percent:                { label: 'C %',           tip: 'Cytosine fraction (%)' },
+    cpg_obs_exp:              { label: 'CpG O/E',       tip: 'CpG observed/expected ratio\n(Gardiner-Garden & Frommer, 1987)\n≥ 0.60 indicates a CpG island (promoter-associated)' },
+    melting_temp_c:           { label: 'Tm (°C)',       tip: 'Melting temperature — Tm_Wallace formula:\n4·(G+C) + 2·(A+T)\nCalibrated for oligonucleotides; estimate only for > 50 nt' },
+    shannon_entropy:          { label: 'Entropy',       tip: 'Normalized Shannon entropy (0–1)\nMeasures sequence complexity\n< 0.70 = low complexity (DUST/SEG region)' },
+    molecular_weight_kda:     { label: 'MW (kDa)',      tip: 'Molecular weight in kDa\n(BioPython molecular_weight)' },
+    isoelectric_point:        { label: 'pI',            tip: 'Isoelectric point\n(BioPython ProtParam)' },
+    gravy:                    { label: 'GRAVY',         tip: 'Grand average of hydropathicity\n(Kyte & Doolittle, 1982)\n> 0 = hydrophobic; < 0 = hydrophilic' },
+    instability_index:        { label: 'Instability',   tip: 'Instability index (Guruprasad, 1990)\n< 40 = stable in vitro; ≥ 40 = unstable' },
+    instability_label:        { label: 'Stability',     tip: 'Stable (< 40) or Unstable (≥ 40)' },
+    aromaticity:              { label: 'Aromaticity',   tip: 'Fraction of aromatic residues (F + W + Y)\n(BioPython ProtParam)' },
+    aliphatic_index:          { label: 'Aliphatic',     tip: 'Aliphatic index (Ikai, 1980)\nSurrogate for thermal stability\n(relative volume of aliphatic side chains)' },
+    net_charge_ph74:          { label: 'Charge pH7.4',  tip: 'Net charge at physiological pH 7.4\n(BioPython charge_at_pH)' },
+    extinction_coeff_reduced: { label: 'ε red',         tip: 'Extinction coefficient (M⁻¹cm⁻¹) at 280 nm\nAll cysteines free (reduced)' },
+    extinction_coeff_oxidized:{ label: 'ε ox',          tip: 'Extinction coefficient (M⁻¹cm⁻¹) at 280 nm\nAll cysteines disulfide-bridged (oxidized)' },
+    warning:                  { label: 'Warning',       tip: 'Non-fatal analysis notes (duplicate IDs, Tm caveats, removed residues…)' },
+    error:                    { label: 'Error',         tip: 'Per-record exception — record failed to compute one or more metrics' },
+  };
+
+  // Default column visibility: hide verbose / narrow-use columns on first load
+  const COLS_HIDDEN_DEFAULT = new Set([
+    'description', 'at_percent', 'a_percent', 't_percent', 'g_percent', 'c_percent',
+    'extinction_coeff_reduced', 'extinction_coeff_oxidized',
+  ]);
+
+  // ── File / Drop-Zone Wiring ──────────────────────────────────
+  const dropZone  = document.getElementById('batchDropZone');
   const fileInput = document.getElementById('batchFileInput');
 
   if (dropZone) {
@@ -38,7 +87,7 @@
   function handleFileSelect(file) {
     const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
     if (file.size > MAX_BYTES) {
-      window.showToast?.('File too large. Maximum size is 5 MB.');
+      window.showToast?.('File too large. Maximum is 5 MB.');
       return;
     }
     const reader = new FileReader();
@@ -46,56 +95,81 @@
       uploadedContent = e.target.result;
       const pasteArea = document.getElementById('batchPasteInput');
       if (pasteArea) pasteArea.value = uploadedContent;
+      updateSeqCount(uploadedContent);
       window.showToast?.(`Loaded: ${file.name}`);
     };
     reader.readAsText(file);
   }
 
-  // ── Submit Button ─────────────────────────────────────────
+  // Live count as the user types in the paste area (Phase 1 client-side count)
+  document.getElementById('batchPasteInput')?.addEventListener('input', (e) => {
+    uploadedContent = e.target.value;
+    updateSeqCount(uploadedContent);
+  });
+
+  function updateSeqCount(text) {
+    const count = text ? text.split('\n').filter(l => l.trimStart().startsWith('>')).length : 0;
+    const el    = document.getElementById('batchSeqCount');
+    if (!el) return;
+    if (count > 0) {
+      el.textContent = `${count.toLocaleString()} sequence${count === 1 ? '' : 's'} detected`;
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  // ── Submit ───────────────────────────────────────────────────
   document.getElementById('batchSubmitBtn')?.addEventListener('click', submitBatch);
 
   async function submitBatch() {
     const pasteArea = document.getElementById('batchPasteInput');
-    const content = (uploadedContent || pasteArea?.value || '').trim();
+    const content   = (uploadedContent || pasteArea?.value || '').trim();
 
     if (!content) {
       window.showToast?.('Upload a FASTA file or paste sequences first.');
       return;
     }
 
-    // Stop any prior poll
+    // Client-side pre-flight: require at least one column-0 header line
+    const headerLines = content.split('\n').filter(l => l.startsWith('>'));
+    if (headerLines.length === 0) {
+      window.showToast?.('No FASTA headers found (lines starting with >). Check your input.');
+      return;
+    }
+
     stopPolling();
     resetJobUI();
-
     setBatchStatus('Submitting job…', false);
+
+    const mode = document.getElementById('batchModeSelect')?.value || 'all';
 
     try {
       const formData = new FormData();
-      const blob = new Blob([content], { type: 'text/plain' });
+      const blob     = new Blob([content], { type: 'text/plain' });
       formData.append('file', blob, 'batch.fasta');
+      formData.append('mode', mode);
 
-      const res = await fetch('/api/analyze/batch', {
-        method: 'POST',
-        body: formData,
-      });
+      const res = await fetch('/api/analyze/batch', { method: 'POST', body: formData });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         throw new Error(err.error || `Server error ${res.status}`);
       }
 
-      const data = await res.json();
-      currentJobId = data.job_id;
+      const data    = await res.json();
+      currentJobId  = data.job_id;
 
+      saveJobToHistory(currentJobId, { mode, seqs: headerLines.length, status: 'running' });
       showJobArea(currentJobId);
       startPolling(currentJobId);
     } catch (err) {
       setBatchStatus('Submission failed: ' + err.message, true);
-      window.showToast?.('⚠ ' + err.message);
+      window.showToast?.('Submission failed: ' + err.message);
     }
   }
 
-  // ── Polling ───────────────────────────────────────────────
+  // ── Polling ──────────────────────────────────────────────────
   function startPolling(jobId) {
     pollTimer = setInterval(() => pollStatus(jobId), POLL_INTERVAL_MS);
     pollStatus(jobId); // immediate first check
@@ -108,7 +182,7 @@
   async function pollStatus(jobId) {
     try {
       const res = await fetch(`/api/status/${encodeURIComponent(jobId)}`);
-      if (!res.ok) return; // transient HTTP error — try again next tick
+      if (!res.ok) return; // transient HTTP error — retry next tick
       const data = await res.json();
       updateProgress(data);
 
@@ -124,19 +198,20 @@
     }
   }
 
-  // ── UI Updates ────────────────────────────────────────────
+  // ── Progress UI ──────────────────────────────────────────────
   function showJobArea(jobId) {
-    const area = document.getElementById('batchJobArea');
-    if (area) area.classList.remove('hidden');
+    document.getElementById('batchJobArea')?.classList.remove('hidden');
     const idEl = document.getElementById('batchJobId');
     if (idEl) idEl.textContent = `JOB: ${jobId.slice(0, 8).toUpperCase()}…`;
     document.getElementById('batchDownloadArea')?.classList.add('hidden');
+    document.getElementById('batchResultsArea')?.classList.add('hidden');
     setProgressBar(0);
   }
 
   function resetJobUI() {
     document.getElementById('batchJobArea')?.classList.add('hidden');
     document.getElementById('batchDownloadArea')?.classList.add('hidden');
+    document.getElementById('batchResultsArea')?.classList.add('hidden');
     setProgressBar(0);
   }
 
@@ -151,34 +226,34 @@
     const pct = Math.min(Math.round(data.progress || 0), 100);
     setProgressBar(pct);
 
-    const statusMap = { pending: 'Queued — waiting for worker…', running: null, complete: 'Complete', failed: 'Failed', failure: 'Failed' };
-    const statusText = statusMap[data.status] ?? data.status;
-
-    if (data.status === 'running') {
-      const processed = data.processed || 0;
-      const total = data.total || 0;
-      setBatchStatus(
-        total > 0
-          ? `Processing ${processed.toLocaleString()} / ${total.toLocaleString()} sequences…`
-          : 'Processing…',
-        false
-      );
-    } else if (statusText) {
-      setBatchStatus(statusText, data.status === 'failed' || data.status === 'failure');
-    }
-
     const pctEl = document.getElementById('batchProgressPct');
     if (pctEl) pctEl.textContent = `${pct}%`;
 
     const labelEl = document.getElementById('batchProgressLabel');
-    if (labelEl && data.total > 0 && data.status === 'running') {
-      labelEl.textContent = `${data.processed.toLocaleString()} of ${data.total.toLocaleString()} sequences processed`;
+
+    if (data.status === 'running') {
+      const processed = data.processed || 0;
+      const total     = data.total     || 0;
+      const msg       = total > 0
+        ? `Processing ${processed.toLocaleString()} / ${total.toLocaleString()} sequences…`
+        : 'Processing…';
+      setBatchStatus(msg, false);
+      if (labelEl && total > 0) {
+        labelEl.textContent = `${processed.toLocaleString()} of ${total.toLocaleString()} sequences processed`;
+      }
+    } else if (data.status === 'pending') {
+      setBatchStatus('Queued — waiting for worker…', false);
+    } else if (data.status === 'complete') {
+      setBatchStatus('Complete', false);
+      if (labelEl) labelEl.textContent = '';
+    } else if (data.status === 'failed' || data.status === 'failure') {
+      setBatchStatus('Failed', true);
     }
 
-    // Show/hide spinner
     const spinner = document.getElementById('batchSpinner');
     if (spinner) {
-      spinner.style.display = (data.status === 'running' || data.status === 'pending') ? '' : 'none';
+      spinner.style.display =
+        (data.status === 'running' || data.status === 'pending') ? '' : 'none';
     }
   }
 
@@ -187,75 +262,507 @@
     if (bar) bar.style.width = `${pct}%`;
   }
 
-  function onJobComplete(jobId, data) {
+  // ── Job Complete ─────────────────────────────────────────────
+  async function onJobComplete(jobId, data) {
     setProgressBar(100);
     setBatchStatus('Complete', false);
-    const spinner = document.getElementById('batchSpinner');
-    if (spinner) spinner.style.display = 'none';
+    document.getElementById('batchSpinner') && (document.getElementById('batchSpinner').style.display = 'none');
+
+    const total  = data.total  || 0;
+    const failed = data.failed || 0;
+    const mode   = data.mode   || 'all';
 
     const summary = document.getElementById('batchCompleteSummary');
     if (summary) {
-      const total = data.total || 0;
-      const failed = data.failed || 0;
-      summary.textContent = `${total.toLocaleString()} sequences processed${failed > 0 ? `, ${failed} failed` : ''}.`;
+      summary.textContent =
+        `${total.toLocaleString()} sequences · mode: ${mode}` +
+        (failed > 0 ? ` · ${failed} failed` : '');
     }
 
-    const downloadArea = document.getElementById('batchDownloadArea');
-    if (downloadArea) downloadArea.classList.remove('hidden');
+    document.getElementById('batchDownloadArea')?.classList.remove('hidden');
 
-    // Wire download button for this job
-    const btn = document.getElementById('batchDownloadBtn');
-    if (btn) {
-      btn.onclick = () => triggerDownload(jobId);
+    // Update history entry with final status
+    updateJobInHistory(jobId, { status: 'complete', total, failed, mode });
+
+    // Wire download buttons for this job
+    const csvBtn = document.getElementById('batchDownloadBtn');
+    if (csvBtn) csvBtn.onclick = () => triggerDownload(jobId, 'csv');
+
+    const tsvBtn = document.getElementById('batchDownloadTsvBtn');
+    if (tsvBtn) tsvBtn.onclick = () => triggerDownload(jobId, 'tsv');
+
+    // Fetch and render the in-app results table
+    try {
+      await fetchAndRenderResults(jobId);
+    } catch (err) {
+      window.showToast?.('Could not load inline results table: ' + err.message);
     }
 
-    window.showToast?.('Batch analysis complete — ready to download.');
+    window.showToast?.('Batch analysis complete — results ready.');
   }
 
   function onJobFailed(errMsg) {
     setBatchStatus('Job failed: ' + errMsg, true);
     const spinner = document.getElementById('batchSpinner');
     if (spinner) spinner.style.display = 'none';
-    window.showToast?.('⚠ Batch job failed: ' + errMsg);
+    window.showToast?.('Batch job failed: ' + errMsg);
   }
 
-  // ── CSV Download ──────────────────────────────────────────
-  function triggerDownload(jobId) {
-    window.location.href = `/api/batch/${encodeURIComponent(jobId)}/download`;
+  // ── Download ─────────────────────────────────────────────────
+  function triggerDownload(jobId, fmt) {
+    const url = `/api/batch/${encodeURIComponent(jobId)}/download?format=${fmt}&summary=1`;
+    window.location.href = url;
   }
 
-  // ── Sample Data ───────────────────────────────────────────
+  // ── Results Table (Phase 2) ───────────────────────────────────
+  async function fetchAndRenderResults(jobId) {
+    const res = await fetch(`/api/batch/${encodeURIComponent(jobId)}/results`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    _allRows  = data.rows    || [];
+    _columns  = data.columns || [];
+
+    // Set default column visibility
+    _visibleCols = new Set(_columns.filter(c => !COLS_HIDDEN_DEFAULT.has(c)));
+
+    buildColPickerGrid();
+    applyFiltersAndRender();
+
+    document.getElementById('batchResultsArea')?.classList.remove('hidden');
+  }
+
+  // ── Column Picker (Phase 5) ───────────────────────────────────
+  function buildColPickerGrid() {
+    const grid = document.getElementById('batchColPickerGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    _columns.forEach(col => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex; align-items:center; gap:5px; cursor:pointer; color:var(--text-secondary);';
+      const cb = document.createElement('input');
+      cb.type    = 'checkbox';
+      cb.value   = col;
+      cb.checked = _visibleCols.has(col);
+      cb.style.accentColor = 'var(--teal)';
+      cb.addEventListener('change', () => {
+        cb.checked ? _visibleCols.add(col) : _visibleCols.delete(col);
+        applyFiltersAndRender();
+      });
+      const meta = COL_META[col] || {};
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(meta.label || col));
+      grid.appendChild(label);
+    });
+  }
+
+  document.getElementById('batchColPickerBtn')?.addEventListener('click', () => {
+    document.getElementById('batchColPickerPanel')?.classList.toggle('hidden');
+  });
+
+  document.getElementById('batchColSelectAll')?.addEventListener('click', () => {
+    _visibleCols = new Set(_columns);
+    buildColPickerGrid();
+    applyFiltersAndRender();
+  });
+
+  document.getElementById('batchColSelectNone')?.addEventListener('click', () => {
+    _visibleCols = new Set(['id', 'length', 'type']); // always keep identity
+    buildColPickerGrid();
+    applyFiltersAndRender();
+  });
+
+  // ── Filters ──────────────────────────────────────────────────
+  document.getElementById('batchFilterInput')?.addEventListener('input',  () => { _currentPage = 1; applyFiltersAndRender(); });
+  document.getElementById('batchFilterType')?.addEventListener('change',  () => { _currentPage = 1; applyFiltersAndRender(); });
+  document.getElementById('batchFilterErrors')?.addEventListener('change',() => { _currentPage = 1; applyFiltersAndRender(); });
+  document.getElementById('batchPageSize')?.addEventListener('change', (e) => {
+    _pageSize    = parseInt(e.target.value, 10);
+    _currentPage = 1;
+    renderTable();
+  });
+
+  function applyFiltersAndRender() {
+    const text      = (document.getElementById('batchFilterInput')?.value  || '').toLowerCase();
+    const typeFilter= (document.getElementById('batchFilterType')?.value   || '').toUpperCase();
+    const errOnly   =  document.getElementById('batchFilterErrors')?.checked || false;
+
+    _filteredRows = _allRows.filter(row => {
+      if (typeFilter && (row.type || '').toUpperCase() !== typeFilter) return false;
+      if (errOnly   && !row.error) return false;
+      if (text) {
+        const haystack = ((row.id || '') + ' ' + (row.description || '')).toLowerCase();
+        if (!haystack.includes(text)) return false;
+      }
+      return true;
+    });
+
+    // Re-apply sort on filtered set
+    if (_sortCol) {
+      _filteredRows = sortRows(_filteredRows, _sortCol, _sortDir);
+    }
+
+    const countEl = document.getElementById('batchFilterCount');
+    if (countEl) {
+      countEl.textContent = `${_filteredRows.length.toLocaleString()} of ${_allRows.length.toLocaleString()} sequences`;
+    }
+
+    _currentPage = 1;
+    renderTable();
+  }
+
+  function sortRows(rows, col, dir) {
+    return [...rows].sort((a, b) => {
+      const av = a[col] ?? '';
+      const bv = b[col] ?? '';
+      // Numeric sort if both parse as float
+      const an = parseFloat(av);
+      const bn = parseFloat(bv);
+      const cmp = (!isNaN(an) && !isNaN(bn))
+        ? an - bn
+        : String(av).localeCompare(String(bv), undefined, { numeric: true });
+      return dir === 'asc' ? cmp : -cmp;
+    });
+  }
+
+  // ── Table Render ─────────────────────────────────────────────
+  function renderTable() {
+    const thead = document.getElementById('batchResultsThead');
+    const tbody = document.getElementById('batchResultsTbody');
+    if (!thead || !tbody) return;
+
+    const visibleCols = _columns.filter(c => _visibleCols.has(c));
+
+    // ── Header ──
+    thead.innerHTML = '';
+    const tr = document.createElement('tr');
+    visibleCols.forEach(col => {
+      const th   = document.createElement('th');
+      const meta = COL_META[col] || {};
+      th.textContent = meta.label || col;
+      if (meta.tip) th.setAttribute('data-tooltip', meta.tip);
+      if (col === _sortCol) th.classList.add(_sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      th.addEventListener('click', () => {
+        if (_sortCol === col) {
+          _sortDir = _sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          _sortCol = col;
+          _sortDir = 'asc';
+        }
+        _filteredRows = sortRows(_filteredRows, _sortCol, _sortDir);
+        renderTable();
+      });
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+
+    // ── Body ──
+    const total    = _filteredRows.length;
+    const totalPgs = Math.max(1, Math.ceil(total / _pageSize));
+    _currentPage   = Math.min(_currentPage, totalPgs);
+
+    const start = (_currentPage - 1) * _pageSize;
+    const end   = Math.min(start + _pageSize, total);
+    const page  = _filteredRows.slice(start, end);
+
+    tbody.innerHTML = '';
+    page.forEach(row => {
+      const tr = document.createElement('tr');
+      if (row.error)   tr.classList.add('row-error');
+      else if (row.warning) tr.classList.add('row-warning');
+
+      visibleCols.forEach(col => {
+        const td  = document.createElement('td');
+        const val = row[col] ?? '';
+
+        if (col === 'instability_label' && val) {
+          const span    = document.createElement('span');
+          span.textContent = val;
+          span.className   = val === 'Stable' ? 'instability-stable' : 'instability-unstable';
+          td.appendChild(span);
+        } else if (col === 'error' && val) {
+          const badge       = document.createElement('span');
+          badge.className   = 'badge-error';
+          badge.textContent = 'ERR';
+          badge.title       = val;
+          td.appendChild(badge);
+          td.appendChild(document.createTextNode(' ' + val.slice(0, 60) + (val.length > 60 ? '…' : '')));
+        } else if (col === 'warning' && val) {
+          const badge       = document.createElement('span');
+          badge.className   = 'badge-warning';
+          badge.textContent = 'WARN';
+          badge.title       = val;
+          td.appendChild(badge);
+        } else {
+          td.textContent = val;
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    // ── Pagination controls ──
+    const pageInfo = document.getElementById('batchPageInfo');
+    if (pageInfo) {
+      pageInfo.textContent = total > 0
+        ? `Page ${_currentPage} of ${totalPgs} (${start + 1}–${end} of ${total.toLocaleString()})`
+        : 'No results';
+    }
+    const prevBtn = document.getElementById('batchPagePrev');
+    const nextBtn = document.getElementById('batchPageNext');
+    if (prevBtn) prevBtn.disabled = _currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = _currentPage >= totalPgs;
+  }
+
+  document.getElementById('batchPagePrev')?.addEventListener('click', () => {
+    if (_currentPage > 1) { _currentPage--; renderTable(); }
+  });
+  document.getElementById('batchPageNext')?.addEventListener('click', () => {
+    const totalPgs = Math.ceil(_filteredRows.length / _pageSize);
+    if (_currentPage < totalPgs) { _currentPage++; renderTable(); }
+  });
+
+  // ── Client-side TSV export (with column picker, Phase 5) ─────
+  // The TSV button in the toolbar calls triggerDownload() which hits the server.
+  // This secondary function is available for column-filtered client-side export.
+  function exportFilteredTsv() {
+    if (!_filteredRows.length) return;
+    const visibleCols = _columns.filter(c => _visibleCols.has(c));
+    const lines = [];
+
+    // Summary header block
+    lines.push(`# BioToolkit Batch Analysis Results`);
+    lines.push(`# Exported: ${new Date().toISOString()}`);
+    lines.push(`# Showing ${_filteredRows.length} of ${_allRows.length} sequences (filtered)`);
+    lines.push(`# Columns: ${visibleCols.join(', ')}`);
+    lines.push('#');
+
+    lines.push(visibleCols.join('\t'));
+    _filteredRows.forEach(row => {
+      lines.push(visibleCols.map(c => String(row[c] ?? '').replace(/\t/g, ' ')).join('\t'));
+    });
+
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/tab-separated-values' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'batch_filtered.tsv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Override TSV button to export filtered + column-picked rows client-side
+  // (triggered after results are loaded; initial wiring uses server download)
+  function rewireTsvBtn() {
+    const tsvBtn = document.getElementById('batchDownloadTsvBtn');
+    if (tsvBtn) tsvBtn.onclick = exportFilteredTsv;
+  }
+
+  // ── Sample Data (Phase 6 — 3 curated datasets) ───────────────
   document.getElementById('batchSampleBtn')?.addEventListener('click', () => {
     const sample = [
       '>P04637|TP53_HUMAN Cellular tumor antigen p53 [Homo sapiens]',
-      'MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGPDEAPRMPE',
-      'AAPPVAPAPAAPTPAAPAPAPSWPLSSSVPSQKTYPQGLNGTVNLFRNLNQTSFQNLSDLQPPPSSQS',
+      'MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDP',
+      'GPDEAPRMPEAAPPVAPAPAAPTPAAPAPAPSWPLSSSVPSQKTYPQGLNGTVNLFRNL',
+      'NQTSFQNLSDLQPPPSSQS',
       '>P00533|EGFR_HUMAN Epidermal growth factor receptor [Homo sapiens]',
-      'MRPSGTAGAALLALLAALCPASRALEEKKVCQGTSNKLTQLGTFEDHFLSLQRMFNNCEVVLGNLEITYVQRNYDLSFLKTIQEVAGYVLIALNTVERIPLENLQIIRGNMYYENSYALAVLSNYDANKTGLKELPMRNLQEILHGAVRFSNNPALCNVESIQWRDIVSSDFLSNMSMDFQNHLGSCQKCDPSCPNGSCWGAGEENCQKLTKIICAQQCSGRCRGKSPSDCCHNQCAAGCTGPRESDCLVCRKFRDEATCKDTCPPLMLYNPTTYQMDVNPEGKYSFGATCVKKCPRNYVVTDHGSCVRACGADSYEMEEDGVRKCKKCEGPCRKVCNGIGIGEFKDSLSINATNIKHFKNCTSISGDLHILPVAFRGDSFTHTPPLDPQELDILKTVKEITGFLLIQAWPENRTDLHAFENLEIIRGRTKQHGQFSLAVVSLNITSLGLRSLKEISDGDVIISGNKNLCYANTINWKKLFGTSGQKTKIISNRGENSCKATGQVCHALCSPEGCWGPEPRDCVSCRNVSRGRECVDKCNLLEGEPREFVENSECIQCHPECLPQAMNITCTGRGPDNCIQCAHYIDGPHCVKTCPAGVMGENNTLVWKYADAGHVCHLCHPNCTYGCTGPGLEGCPTNGPKIPSIATGMVGALLLLLVVALGIGLFMRRRHIVRKRTLRRLLQERELVEPLTPSGEAPNQALLRILKETEFKKIKVLGSGAFGTVYKGLWIPEGEKVKIPVAIKELREATSPKANKEILDEAYVMASVDNPHVCRLLGICLTSTVQLITQLMPFGCLLDYVREHKDNIGSQYLLNWCVQIAKGMNYLEDRRLVHRDLAARNVLVKTPQHVKITDFGLAKLLGAEEKEYHAEGGKVPIKWMALESILHRIYTHQSDVWSYGVTVWELMTFGSKPYDGIPASEISSILEKGERLPQPPICTIDVYMIMVKCWMIDADSRPKFRELIIEFSKMARDPQRYLVIQGDERMHLPSPTDSNFYRALMDEEDMDDVVDADEYLIPQQGFFSSPSTSRTPLLSSLSATSNNSTVACIDRNGLQSCPIKEDSFLQRYSSDPTGALTEDSIDDTFLPVPEYINQSVPKRPAGSVQNPVYHNQPLNPAPSRDPHYQDPHSTAVGNPEYLNTVQPTCVNSTFDSPAHWAQKGSHQISLDNPDYQQDFFPKEAKPNGIFKGSTAENAEYLRVAPQSSEFIGA',
+      'MRPSGTAGAALLALLAALCPASRALEEKKVCQGTSNKLTQLGTFEDHFLSLQRMFNNCE',
+      'VVLGNLEITYVQRNYDLSFLKTIQEVAGYVLIALNTVERIPLENLQIIRGNMYYENSYA',
+      'LAVLSNYDANKTGLKELPMRNLQEILHGAVRFSNNPALCNVESIQWRDIVSSDFLSNMS',
       '>P68871|HBB_HUMAN Hemoglobin subunit beta [Homo sapiens]',
-      'MVHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQRFFESFGDLSTPDAVMGNPKVKAHGKKVLGAFSDGLAHLDNLKGTFATLSELHCDKLHVDPENFRLLGNVLVCVLAHHFGKEFTPPVQAAYQKVVAGVANALAHKYH',
+      'MVHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQRFFESFGDLSTPDAVMGNP',
+      'KVKAHGKKVLGAFSDGLAHLDNLKGTFATLSELHCDKLHVDPENFRLLGNVLVCVLAHH',
+      'FGKEFTPPVQAAYQKVVAGVANALAHKYH',
     ].join('\n');
-
-    const pasteArea = document.getElementById('batchPasteInput');
-    if (pasteArea) {
-      pasteArea.value = sample;
-      uploadedContent = sample;
-    }
-    window.showToast?.('Example loaded — 3 human proteins (TP53, EGFR, HBB)');
+    _loadSample(sample, 'Example: 3 human proteins (TP53, EGFR, HBB)');
   });
 
-  // ── Clear ─────────────────────────────────────────────────
+  document.getElementById('batchSampleDnaBtn')?.addEventListener('click', () => {
+    // Curated set with IUPAC degenerate codes — tests the IUPAC classification fix
+    const sample = [
+      '>SEQ1_BRCA1_promoter BRCA1 promoter region — contains IUPAC degenerate codes from primer consensus',
+      'ATGCRYSWKMBDHVNATGCATGCRYSWKMBDHVNATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGC',
+      '>SEQ2_p53_response_element p53 response element with degenerate codes (R=A|G, Y=C|T)',
+      'GGACATGCCCGGGCATGTCCGGACATGCCCGGGCATGTCCRRYYRRYYRR',
+      '>SEQ3_CpG_island CpG island in MLH1 promoter region',
+      'CGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCG',
+      '>SEQ4_primer_consensus PCR primer consensus with multiple degenerate positions',
+      'ATGCRYSWKMBDHVNATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGC',
+    ].join('\n');
+    _loadSample(sample, 'Example: DNA sequences with IUPAC degenerate codes');
+    document.getElementById('batchModeSelect') && (document.getElementById('batchModeSelect').value = 'nucleotide');
+  });
+
+  document.getElementById('batchSampleRnaBtn')?.addEventListener('click', () => {
+    // mRNA sequences with U instead of T
+    const sample = [
+      '>NM_000546.6|TP53_mRNA_fragment Human TP53 mRNA CDS fragment [Homo sapiens]',
+      'AUGGAGGAGCCGCAGUCAGAUCCUAGCGUUAGUGCCCCAACUGGAGGCCAGAACUUUUUCUGGAGCAGUCAAAAGGUGGAGUUUGAGGUCAGU',
+      '>NM_005228.5|EGFR_mRNA_fragment Human EGFR mRNA CDS fragment [Homo sapiens]',
+      'AUGCGACCCUCGGGGACGGCCGGGGCAGCGCUCUUCUUCUCCUUGCAGUGCAGCUGUCGGGGAGCGGAGACGCUGAGGAAAAAGGUGGUGCAG',
+      '>NM_000518.5|HBB_mRNA_fragment Human HBB mRNA CDS [Homo sapiens]',
+      'AUGUGCACUGACUCUGAGGAGAAGUCUGCCGUUACUGCCCUGUGGGGCAAGGUGAACGUGGAUGUGUUGCUGAGUCUCCUAGGGAUGGCGAUGU',
+    ].join('\n');
+    _loadSample(sample, 'Example: 3 human mRNA fragments (TP53, EGFR, HBB)');
+    document.getElementById('batchModeSelect') && (document.getElementById('batchModeSelect').value = 'nucleotide');
+  });
+
+  function _loadSample(text, toast) {
+    const pasteArea = document.getElementById('batchPasteInput');
+    if (pasteArea) pasteArea.value = text;
+    uploadedContent = text;
+    updateSeqCount(text);
+    window.showToast?.(toast);
+  }
+
+  // ── Clear ────────────────────────────────────────────────────
   document.getElementById('batchClearBtn')?.addEventListener('click', () => {
     stopPolling();
     uploadedContent = null;
-    currentJobId = null;
+    currentJobId    = null;
+    _allRows        = [];
+    _columns        = [];
+    _filteredRows   = [];
     const pasteArea = document.getElementById('batchPasteInput');
-    if (pasteArea) pasteArea.value = '';
-    if (fileInput) fileInput.value = '';
+    if (pasteArea)   pasteArea.value = '';
+    if (fileInput)   fileInput.value = '';
+    document.getElementById('batchSeqCount') && (document.getElementById('batchSeqCount').style.display = 'none');
     resetJobUI();
   });
 
-  // ── ViewManager Cleanup ───────────────────────────────────
+  // ── localStorage Job History (Phase 7) ───────────────────────
+  function saveJobToHistory(jobId, meta) {
+    const history = getJobHistory();
+    // Avoid duplicates
+    const existing = history.findIndex(e => e.jobId === jobId);
+    const entry    = { jobId, ...meta, timestamp: Date.now() };
+    if (existing >= 0) {
+      history[existing] = entry;
+    } else {
+      history.unshift(entry);
+    }
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, HISTORY_MAX)));
+    } catch (_) { /* storage quota — silently skip */ }
+    renderJobHistory();
+  }
+
+  function updateJobInHistory(jobId, updates) {
+    const history = getJobHistory();
+    const idx     = history.findIndex(e => e.jobId === jobId);
+    if (idx >= 0) {
+      Object.assign(history[idx], updates);
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch (_) {}
+    }
+    renderJobHistory();
+  }
+
+  function getJobHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+    catch (_) { return []; }
+  }
+
+  function renderJobHistory() {
+    const history    = getJobHistory();
+    const details    = document.getElementById('batchHistoryDetails');
+    const listEl     = document.getElementById('batchHistoryList');
+    if (!details || !listEl) return;
+
+    if (history.length === 0) {
+      details.classList.add('hidden');
+      return;
+    }
+    details.classList.remove('hidden');
+    listEl.innerHTML = '';
+
+    history.forEach(entry => {
+      const item = document.createElement('div');
+      item.className = 'batch-history-item';
+
+      const ago = _relativeTime(entry.timestamp);
+      const seqInfo = entry.total
+        ? `${entry.total.toLocaleString()} seqs${entry.failed ? `, ${entry.failed} failed` : ''}`
+        : `${(entry.seqs || '?').toLocaleString()} seqs submitted`;
+
+      item.innerHTML = `
+        <span class="hist-id">${entry.jobId.slice(0, 8).toUpperCase()}…</span>
+        <span class="hist-meta">${seqInfo} · mode: ${entry.mode || 'all'}</span>
+        <span class="hist-ts">${ago}</span>
+      `;
+
+      item.addEventListener('click', () => restoreJob(entry.jobId, entry));
+      listEl.appendChild(item);
+    });
+  }
+
+  async function restoreJob(jobId, entry) {
+    stopPolling();
+    currentJobId = jobId;
+    resetJobUI();
+
+    try {
+      const res  = await fetch(`/api/status/${encodeURIComponent(jobId)}`);
+      const data = await res.json();
+
+      if (data.status === 'complete') {
+        showJobArea(jobId);
+        setProgressBar(100);
+        setBatchStatus('Complete (restored)', false);
+        document.getElementById('batchSpinner') && (document.getElementById('batchSpinner').style.display = 'none');
+
+        const summaryEl = document.getElementById('batchCompleteSummary');
+        if (summaryEl) {
+          summaryEl.textContent =
+            `${(data.total || entry.total || 0).toLocaleString()} sequences · mode: ${data.mode || entry.mode || 'all'}` +
+            (data.failed > 0 ? ` · ${data.failed} failed` : '');
+        }
+
+        document.getElementById('batchDownloadArea')?.classList.remove('hidden');
+        const csvBtn = document.getElementById('batchDownloadBtn');
+        if (csvBtn) csvBtn.onclick = () => triggerDownload(jobId, 'csv');
+        const tsvBtn = document.getElementById('batchDownloadTsvBtn');
+        if (tsvBtn) tsvBtn.onclick = () => triggerDownload(jobId, 'tsv');
+
+        await fetchAndRenderResults(jobId);
+        rewireTsvBtn();
+        window.showToast?.('Restored job results.');
+
+      } else if (data.status === 'running' || data.status === 'pending') {
+        showJobArea(jobId);
+        startPolling(jobId);
+        window.showToast?.('Job still running — reconnected.');
+      } else {
+        window.showToast?.(`Job ${jobId.slice(0, 8)} status: ${data.status}`);
+      }
+    } catch (err) {
+      window.showToast?.('Could not restore job: ' + err.message);
+    }
+  }
+
+  function _relativeTime(ts) {
+    const diffSec = Math.round((Date.now() - ts) / 1000);
+    if (diffSec < 60)   return `${diffSec}s ago`;
+    if (diffSec < 3600) return `${Math.round(diffSec / 60)}m ago`;
+    if (diffSec < 86400)return `${Math.round(diffSec / 3600)}h ago`;
+    return `${Math.round(diffSec / 86400)}d ago`;
+  }
+
+  // ── Auto-reconnect on load (Phase 7) ────────────────────────
+  (function autoReconnect() {
+    renderJobHistory();
+    const history = getJobHistory();
+    if (!history.length) return;
+    const last = history[0];
+    // Only auto-reconnect if the last job was queued/running recently (< 12 h)
+    const age  = (Date.now() - (last.timestamp || 0)) / 1000;
+    if (last.status === 'running' && age < 43200) {
+      restoreJob(last.jobId, last);
+    }
+  })();
+
+  // ── ViewManager Cleanup ───────────────────────────────────────
   if (window.ViewManager) {
     window.ViewManager.registerUnmount('batch', () => {
       stopPolling();

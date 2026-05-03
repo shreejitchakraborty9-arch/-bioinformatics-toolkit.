@@ -739,13 +739,32 @@ def analyze_batch():
     if not content:
         return jsonify({"error": "Uploaded file is empty."}), 400
 
-    # Lightweight FASTA sanity check — must contain at least one header line
-    if ">" not in content:
+    # Proper FASTA pre-flight: require ≥1 header at column-0 and ≥1 sequence line.
+    # Checking '">" in content' accepts any text file containing a ">" anywhere,
+    # including HTML, Markdown, and shell redirect notation.
+    _fasta_lines  = content.splitlines()
+    _header_lines = [l for l in _fasta_lines if l.startswith(">")]
+    _seq_lines    = [l.strip() for l in _fasta_lines if l.strip() and not l.startswith(">")]
+    if not _header_lines:
         return jsonify({
-            "error": "File does not appear to be in FASTA format (no '>' header lines found)."
+            "error": (
+                "No FASTA headers found. Each record must begin with a '>' "
+                "character at the very start of a line, not embedded in text."
+            )
+        }), 422
+    if not _seq_lines:
+        return jsonify({
+            "error": (
+                "FASTA headers were found but no sequence data follows them. "
+                "Ensure at least one non-empty sequence line exists after each '>' header."
+            )
         }), 422
 
-    task = process_batch_task.apply_async(args=[content])
+    mode = request.form.get("mode", "all").lower()
+    if mode not in ("all", "nucleotide", "protein", "quick"):
+        mode = "all"
+
+    task = process_batch_task.apply_async(args=[content, mode])
     logger.info("Batch job queued: %s", task.id)
 
     return jsonify({"job_id": task.id, "status": "queued"}), 202
@@ -791,6 +810,7 @@ def batch_job_status(job_id):
             "status":   "complete",
             "total":    res.get("total", 0),
             "failed":   res.get("failed", 0),
+            "mode":     res.get("mode", "all"),
             "progress": 100,
         })
 
@@ -804,8 +824,12 @@ def batch_job_status(job_id):
 @app.route("/api/batch/<job_id>/download", methods=["GET"])
 def download_batch_results(job_id):
     """
-    Return completed batch results as a CSV file attachment.
-    The CSV is read from the Celery result stored in Redis.
+    Return completed batch results as a CSV or TSV file attachment.
+
+    Query parameters
+    ----------------
+    format  : 'csv' (default) or 'tsv'
+    summary : '1' to prepend a #-prefixed summary stats header block
     """
     if not _CELERY_AVAILABLE:
         return jsonify({"error": "Celery not available"}), 503
@@ -820,21 +844,99 @@ def download_batch_results(job_id):
         }), 400
 
     res = result.result or {}
+    if res.get("status") == "error":
+        return jsonify({"error": res.get("message", "Worker error")}), 400
+
     csv_data = res.get("csv", "")
     if not csv_data:
-        return jsonify({"error": "No CSV data found for this job."}), 404
+        return jsonify({"error": "No result data found for this job."}), 404
+
+    fmt      = request.args.get("format", "csv").lower()
+    want_tsv = fmt == "tsv"
 
     short_id = job_id.replace("-", "")[:8].upper()
-    filename = "batch_results_{}.csv".format(short_id)
+    ext      = "tsv" if want_tsv else "csv"
+    filename = "batch_results_{}.{}".format(short_id, ext)
 
+    if want_tsv:
+        import csv as _csv_mod
+        reader  = _csv_mod.reader(io.StringIO(csv_data))
+        tsv_buf = io.StringIO()
+        for row_vals in reader:
+            tsv_buf.write("\t".join(row_vals) + "\r\n")
+        output = tsv_buf.getvalue()
+    else:
+        output = csv_data
+
+    # Optional #-prefixed summary stats block (useful for lab notebook import)
+    if request.args.get("summary", "0") == "1":
+        import datetime
+        summary_lines = [
+            "# BioToolkit Batch Analysis Results",
+            "# Generated (UTC): {}".format(
+                datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            ),
+            "# Job ID: {}".format(job_id),
+            "# Total sequences: {}".format(res.get("total", 0)),
+            "# Failed records: {}".format(res.get("failed", 0)),
+            "# Analysis mode: {}".format(res.get("mode", "all")),
+            "#",
+        ]
+        output = "\r\n".join(summary_lines) + "\r\n" + output
+
+    mime = "text/tab-separated-values" if want_tsv else "text/csv"
     return Response(
-        csv_data,
-        mimetype="text/csv",
+        output,
+        mimetype=mime,
         headers={
             "Content-Disposition": 'attachment; filename="{}"'.format(filename),
-            "Content-Type":        "text/csv; charset=utf-8",
+            "Content-Type":        "{}; charset=utf-8".format(mime),
         },
     )
+
+
+@app.route("/api/batch/<job_id>/results", methods=["GET"])
+def batch_job_results(job_id):
+    """
+    Return completed batch results as JSON for in-app table rendering.
+
+    All rows are returned in a single response; the frontend handles
+    pagination/sort/filter client-side on the already-fetched dataset.
+    This avoids a stateful server-side cursor and is correct for the
+    batch sizes supported by the 5 MB upload ceiling.
+    """
+    if not _CELERY_AVAILABLE:
+        return jsonify({"error": "Celery not available"}), 503
+
+    if not re.match(r'^[a-f0-9\-]{8,64}$', job_id, re.IGNORECASE):
+        return jsonify({"error": "Invalid job ID format"}), 400
+
+    result = AsyncResult(job_id, app=_celery_app)
+    if result.state != "SUCCESS":
+        return jsonify({
+            "error": "Job is not complete (state: {}).".format(result.state)
+        }), 400
+
+    res = result.result or {}
+    if res.get("status") == "error":
+        return jsonify({"error": res.get("message", "Worker error")}), 400
+
+    csv_data = res.get("csv", "")
+    if not csv_data:
+        return jsonify({"error": "No result data found for this job."}), 404
+
+    import csv as _csv_mod
+    reader  = _csv_mod.DictReader(io.StringIO(csv_data))
+    rows    = list(reader)
+    columns = list(reader.fieldnames) if reader.fieldnames else []
+
+    return jsonify({
+        "total":   len(rows),
+        "failed":  res.get("failed", 0),
+        "mode":    res.get("mode", "all"),
+        "columns": columns,
+        "rows":    rows,
+    })
 
 
 # ─────────────────────────────────────────────────────────────

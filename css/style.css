@@ -2421,3 +2421,143 @@ canvas {
   width: 100% !important;
   background-color: transparent !important;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Batch Results Table (Phase 2)
+   ═══════════════════════════════════════════════════════════ */
+
+.batch-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+  font-family: var(--mono);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  white-space: nowrap;
+}
+
+.batch-results-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.batch-results-table thead th:hover {
+  color: var(--teal);
+}
+
+.batch-results-table thead th.sort-asc::after  { content: " ↑"; color: var(--teal); }
+.batch-results-table thead th.sort-desc::after { content: " ↓"; color: var(--teal); }
+
+.batch-results-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s;
+}
+
+.batch-results-table tbody tr:hover {
+  background: rgba(20, 184, 166, 0.05);
+}
+
+.batch-results-table tbody tr.row-error {
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.batch-results-table tbody tr.row-warning {
+  background: rgba(251, 191, 36, 0.05);
+}
+
+.batch-results-table td {
+  padding: 6px 12px;
+  vertical-align: middle;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Instability badge coloring (Phase 3) */
+.instability-stable   { color: #4ade80; font-weight: 600; }
+.instability-unstable { color: #f87171; font-weight: 600; }
+
+/* Inline error / warning badges */
+.badge-error   { display:inline-block; padding:1px 7px; border-radius:3px;
+                 background:rgba(248,113,113,0.18); color:#f87171;
+                 font-size:0.68rem; font-weight:700; }
+.badge-warning { display:inline-block; padding:1px 7px; border-radius:3px;
+                 background:rgba(251,191,36,0.15); color:#fbbf24;
+                 font-size:0.68rem; font-weight:700; }
+
+/* ═══════════════════════════════════════════════════════════
+   Pure-CSS Tooltips (Phase 6)
+   Usage: <th data-tooltip="Explanation text">Header</th>
+   ═══════════════════════════════════════════════════════════ */
+
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 0.71rem;
+  font-family: var(--mono);
+  font-weight: 400;
+  white-space: pre-wrap;
+  max-width: 300px;
+  text-align: left;
+  z-index: 200;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Job History Panel (Phase 7)
+   ═══════════════════════════════════════════════════════════ */
+
+.batch-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.batch-history-item:hover {
+  border-color: var(--teal);
+  cursor: pointer;
+}
+
+.batch-history-item .hist-id   { color: var(--text-muted); font-size: 0.68rem; }
+.batch-history-item .hist-meta { color: var(--text-secondary); }
+.batch-history-item .hist-ts   { color: var(--text-muted); font-size: 0.68rem; margin-left:auto; }
