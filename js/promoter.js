@@ -49,7 +49,7 @@
         length:        o.length_nt,
         protein:       o.protein,
         proteinLength: o.length_aa,
-        partial:       false   // backend only emits stop-codon-terminated ORFs
+        partial:       o.partial || false
       }))
       .sort((a, b) => b.length - a.length);
   }

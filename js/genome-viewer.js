@@ -676,16 +676,61 @@
         ctx.fillText(char, x, t.y + TRACK_HEIGHT / 2);
       }
     } else {
-      // Zoomed-out: show a labelled placeholder until GC-density histogram is approved
-      const colors = getThemeColors();
-      ctx.fillStyle = colors.border;
-      ctx.fillRect(0, t.y + 10, cw, TRACK_HEIGHT - 20);
+      // GC-density histogram (IGV coverage track style)
+      const colors   = getThemeColors();
+      const trackY   = t.y;
+      const barAreaH = TRACK_HEIGHT - 6;
 
+      // 50% threshold guide line
+      const threshY = trackY + 3 + barAreaH * 0.5;
+      ctx.save();
+      ctx.strokeStyle = colors.border;
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0,  threshY);
+      ctx.lineTo(cw, threshY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      ctx.save();
       ctx.fillStyle    = colors.muted;
-      ctx.font         = '11px "Inter", system-ui, sans-serif';
-      ctx.textAlign    = 'center';
+      ctx.font         = '9px "Inter", system-ui, sans-serif';
+      ctx.textAlign    = 'right';
       ctx.textBaseline = 'middle';
-      ctx.fillText('Zoom in below 150 bp to see individual bases', cw / 2, t.y + TRACK_HEIGHT / 2);
+      ctx.fillText('50%', cw - 2, threshY);
+      ctx.restore();
+
+      // Bin size: target ~200 bins across the viewport, minimum 1 bp
+      const bpWidth  = bpEnd - bpStart;
+      const BIN_SIZE = Math.max(1, Math.ceil(bpWidth / 200));
+      const seqS     = Math.max(0, Math.floor(bpStart));
+      const seqE     = Math.min(sequence.length, Math.ceil(bpEnd));
+
+      for (let binS = seqS; binS < seqE; binS += BIN_SIZE) {
+        const binE = Math.min(seqE, binS + BIN_SIZE);
+        let gc = 0;
+        for (let i = binS; i < binE; i++) {
+          const b = sequence[i].toUpperCase();
+          if (b === 'G' || b === 'C') gc++;
+        }
+        const gcPct = (binE > binS) ? gc / (binE - binS) : 0;
+
+        const x1 = xForBp(binS, cw);
+        const x2 = xForBp(binE, cw);
+        const w  = Math.max(1, x2 - x1);
+
+        const barH = gcPct * barAreaH;
+        const barY = trackY + 3 + (barAreaH - barH);
+
+        // Linear interpolation blue (#3b82f6) → teal/green (#14b8a6) by GC fraction
+        const r = Math.round(59  + (20  - 59)  * gcPct);
+        const g = Math.round(130 + (184 - 130) * gcPct);
+        const b = Math.round(246 + (166 - 246) * gcPct);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(x1, barY, w, barH);
+      }
     }
   }
 

@@ -152,6 +152,11 @@
 
       const res = await fetch('/api/analyze/batch', { method: 'POST', body: formData });
 
+      if (res.status === 503) {
+        showBatchDegradedPanel(content, headerLines.length);
+        return;
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         throw new Error(err.error || `Server error ${res.status}`);
@@ -167,6 +172,163 @@
       setBatchStatus('Submission failed: ' + err.message, true);
       window.showToast?.('Submission failed: ' + err.message);
     }
+  }
+
+  // ── Batch 503 Degraded-Mode Panel ───────────────────────────
+  const INLINE_THRESHOLD = 20; // max sequences for the inline fallback
+
+  function showBatchDegradedPanel(fastaContent, seqCount) {
+    resetJobUI();
+    setBatchStatus('Batch worker unavailable', true);
+
+    let panel = document.getElementById('batchDegradedPanel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'batchDegradedPanel';
+      panel.style.cssText = [
+        'margin-top:16px',
+        'padding:16px 20px',
+        'border:1px solid var(--warning-border,#f59e0b)',
+        'border-radius:8px',
+        'background:var(--warning-bg,rgba(245,158,11,0.08))',
+        'color:var(--text-primary)',
+        'font-size:0.9rem',
+        'line-height:1.6',
+      ].join(';');
+
+      const jobArea = document.getElementById('batchJobArea');
+      if (jobArea && jobArea.parentNode) {
+        jobArea.parentNode.insertBefore(panel, jobArea.nextSibling);
+      }
+    }
+
+    const canRunInline = seqCount > 0 && seqCount <= INLINE_THRESHOLD;
+
+    panel.innerHTML = window.BioKit.utils.sanitizeHTML(`
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <span style="font-size:1.4rem;line-height:1;flex-shrink:0;">⚠</span>
+        <div style="flex:1;">
+          <strong style="font-size:1rem;">Batch Processing Requires Background Infrastructure</strong>
+          <p style="margin:8px 0 0;">The batch queue runs on <strong>Celery</strong> (task worker) + <strong>Redis</strong> (message broker).
+          These services are not currently running on this server.</p>
+          <details style="margin-top:10px;">
+            <summary style="cursor:pointer;font-weight:600;color:var(--teal);">Setup Instructions</summary>
+            <div style="margin-top:8px;padding:10px 12px;background:var(--bg-surface,#1e293b);border-radius:6px;font-family:var(--mono);font-size:0.82rem;line-height:1.8;">
+              <div><span style="color:var(--text-muted)"># 1. Install dependencies</span></div>
+              <div>pip install celery redis</div>
+              <div style="margin-top:6px;"><span style="color:var(--text-muted)"># 2. Start Redis (Docker)</span></div>
+              <div>docker run -d -p 6379:6379 redis:7-alpine</div>
+              <div style="margin-top:6px;"><span style="color:var(--text-muted)"># 3. Start the Celery worker</span></div>
+              <div>celery -A worker worker --loglevel=info</div>
+              <div style="margin-top:6px;"><span style="color:var(--text-muted)"># 4. Restart the Flask app</span></div>
+              <div>python app.py</div>
+            </div>
+          </details>
+          ${canRunInline ? `
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-muted,#334155);">
+            <strong>Inline Fallback Available</strong>
+            <p style="margin:4px 0 8px;color:var(--text-secondary);">
+              Your input has ${seqCount} sequence${seqCount !== 1 ? 's' : ''} (≤ ${INLINE_THRESHOLD}).
+              Basic metrics (length, GC%) can be computed inline without the worker.
+            </p>
+            <button id="batchRunInlineBtn" class="btn-primary" style="font-size:0.85rem;padding:6px 16px;">
+              Run Inline (basic metrics)
+            </button>
+          </div>` : `
+          <p style="margin-top:10px;color:var(--text-muted);">
+            Your input has ${seqCount} sequence${seqCount !== 1 ? 's' : ''}.
+            Inline fallback is available for ≤ ${INLINE_THRESHOLD} sequences.
+          </p>`}
+        </div>
+      </div>
+    `);
+
+    panel.style.display = '';
+
+    if (canRunInline) {
+      document.getElementById('batchRunInlineBtn')?.addEventListener('click', () => {
+        runInlineFallback(fastaContent, panel);
+      });
+    }
+  }
+
+  function _parseFasta(text) {
+    const records = [];
+    let id = null, desc = '', lines = [];
+    text.split('\n').forEach(raw => {
+      const line = raw.trim();
+      if (line.startsWith('>')) {
+        if (id !== null) records.push({ id, desc, seq: lines.join('') });
+        const header = line.slice(1);
+        const space  = header.indexOf(' ');
+        id    = space >= 0 ? header.slice(0, space) : header;
+        desc  = space >= 0 ? header.slice(space + 1) : '';
+        lines = [];
+      } else if (line) {
+        lines.push(line);
+      }
+    });
+    if (id !== null) records.push({ id, desc, seq: lines.join('') });
+    return records;
+  }
+
+  async function runInlineFallback(fastaContent, panel) {
+    const btn = document.getElementById('batchRunInlineBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+
+    const records = _parseFasta(fastaContent);
+    const results = [];
+
+    for (const rec of records) {
+      try {
+        const res = await fetch('/api/analyze/basic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sequence: rec.seq.toUpperCase() })
+        });
+        const data = await res.json().catch(() => ({}));
+        results.push({
+          id:         rec.id,
+          length:     data.length     ?? rec.seq.length,
+          gc_percent: data.gc_content != null ? data.gc_content.toFixed(1) : '—',
+          error:      data.error || null
+        });
+      } catch (err) {
+        results.push({ id: rec.id, length: rec.seq.length, gc_percent: '—', error: err.message });
+      }
+    }
+
+    // Render inline results table
+    let tableHtml = `
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-muted,#334155);">
+        <strong>Inline Results (${results.length} sequence${results.length !== 1 ? 's' : ''})</strong>
+        <div style="overflow-x:auto;margin-top:8px;">
+          <table class="data-table" style="font-size:0.85rem;">
+            <thead><tr>
+              <th>ID</th><th>Length (nt/aa)</th><th>GC %</th><th>Note</th>
+            </tr></thead>
+            <tbody>`;
+    results.forEach(r => {
+      const noteStyle = r.error ? 'color:#f87171;' : 'color:var(--text-muted);';
+      tableHtml += `<tr>
+        <td style="font-family:var(--mono);">${window.escapeHTML(r.id)}</td>
+        <td>${window.escapeHTML(String(r.length))}</td>
+        <td>${window.escapeHTML(String(r.gc_percent))}</td>
+        <td style="${noteStyle}">${r.error ? window.escapeHTML(r.error) : '✓'}</td>
+      </tr>`;
+    });
+    tableHtml += '</tbody></table></div></div>';
+
+    const existing = panel.querySelector('#batchInlineResults');
+    if (existing) existing.remove();
+
+    const div = document.createElement('div');
+    div.id = 'batchInlineResults';
+    div.innerHTML = window.BioKit.utils.sanitizeHTML(tableHtml);
+    panel.appendChild(div);
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Done'; }
+    window.showToast?.('Inline analysis complete.');
   }
 
   // ── Polling ──────────────────────────────────────────────────
@@ -212,6 +374,8 @@
     document.getElementById('batchJobArea')?.classList.add('hidden');
     document.getElementById('batchDownloadArea')?.classList.add('hidden');
     document.getElementById('batchResultsArea')?.classList.add('hidden');
+    const degraded = document.getElementById('batchDegradedPanel');
+    if (degraded) degraded.style.display = 'none';
     setProgressBar(0);
   }
 

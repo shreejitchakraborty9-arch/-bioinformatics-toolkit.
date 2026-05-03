@@ -166,7 +166,7 @@
                       <span class="orf-meta">${orf.strand}${orf.frame} | ${orf.length} nt | ${orf.translation.length} aa</span>
                       <span class="kozak-badge ${orf.kozak.toLowerCase()}">Kozak: ${orf.kozak}</span>
                     </div>
-                    <div class="seq-display orf-seq">$${orf.translation}$</div>
+                    <div class="seq-display orf-seq" style="font-family:var(--mono);word-break:break-all;">${window.escapeHTML(orf.translation)}</div>
                     <div class="orf-indices">Coordinates: ${orf.start + 1} ... ${orf.end}</div>
                   </div>`;
             });

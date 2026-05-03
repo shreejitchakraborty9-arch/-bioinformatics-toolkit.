@@ -32,12 +32,12 @@
 
       const link    = document.createElement('link');
       link.rel      = 'stylesheet';
-      link.href     = 'https://cdn.jsdelivr.net/npm/pdbe-molstar@latest/build/pdbe-molstar-light.css';
+      link.href     = 'https://cdn.jsdelivr.net/npm/pdbe-molstar@3.12.0/build/pdbe-molstar-light.min.css';
       link.crossOrigin = 'anonymous';
       document.head.appendChild(link);
 
       const s         = document.createElement('script');
-      s.src           = 'https://cdn.jsdelivr.net/npm/pdbe-molstar@latest/build/pdbe-molstar-plugin.js';
+      s.src           = 'https://cdn.jsdelivr.net/npm/pdbe-molstar@3.12.0/build/pdbe-molstar-plugin.min.js';
       s.crossOrigin   = 'anonymous';
       s.onload        = () => resolve();
       s.onerror       = () => reject(new Error('Failed to load Mol* library from CDN. Check your internet connection.'));

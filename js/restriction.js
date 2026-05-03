@@ -77,7 +77,7 @@
         `);
       }
 
-      this.renderSequenceMap(seq);
+      this.renderSequenceMap(seq, results);
 
       if (topology === 'circular') {
         let plasmidContainer = document.getElementById('rePlasmidMap');
@@ -293,12 +293,130 @@
       }
     },
 
-    renderSequenceMap: function (seq) {
+    renderSequenceMap: function (seq, results) {
       const mapEl = document.getElementById('reSeqMap');
       if (!mapEl) return;
-      mapEl.innerHTML = window.BioKit.utils.sanitizeHTML(
-        `<div class="re-map-track"><pre style="font-family:var(--mono); font-size:12px; line-height:1.2; letter-spacing:1px; color:var(--text-secondary);">${seq}</pre></div>`
-      );
+
+      if (!results || results.length === 0) {
+        mapEl.innerHTML = window.BioKit.utils.sanitizeHTML(
+          `<div class="re-map-track"><pre style="font-family:var(--mono);font-size:12px;line-height:1.6;letter-spacing:1px;color:var(--text-secondary);">${window.escapeHTML(seq)}</pre></div>`
+        );
+        return;
+      }
+
+      // Enzyme → color assignment
+      const PALETTE = ['#14b8a6','#ec4899','#f97316','#8b5cf6','#3b82f6','#22c55e','#ef4444','#eab308'];
+      const enzymeColor = {};
+      results.forEach((r, i) => { enzymeColor[r.enzyme] = PALETTE[i % PALETTE.length]; });
+
+      // Flatten all cut sites, sorted by position (1-based: cut falls after this base)
+      const allCuts = results
+        .flatMap(r => r.cuts.map(pos => ({ pos: parseInt(pos, 10), enzyme: r.enzyme })))
+        .sort((a, b) => a.pos - b.pos);
+
+      // Fragment color map: each base gets the color of the enzyme whose cut opened that fragment
+      const baseColor = new Array(seq.length).fill('var(--text-secondary)');
+      if (allCuts.length > 0) {
+        let fragColor = '#94a3b8';
+        let prev = 0;
+        allCuts.forEach(cut => {
+          const cutIdx = Math.min(cut.pos, seq.length); // cut.pos is 1-based end of fragment
+          for (let i = prev; i < cutIdx; i++) baseColor[i] = fragColor;
+          fragColor = enzymeColor[cut.enzyme];
+          prev = cutIdx;
+        });
+        for (let i = prev; i < seq.length; i++) baseColor[i] = fragColor;
+      }
+
+      const ROW_WIDTH = 60;
+      const PAD = 7; // digits for position label
+
+      let html = '<div style="font-family:var(--mono);font-size:12px;line-height:1.5;overflow-x:auto;padding:12px 4px;">';
+
+      // Legend
+      html += '<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:10px;">';
+      results.forEach(r => {
+        const c = enzymeColor[r.enzyme];
+        html += `<span style="display:inline-flex;align-items:center;gap:5px;">` +
+          `<span style="width:9px;height:9px;border-radius:50%;background:${c};flex-shrink:0;display:inline-block;"></span>` +
+          `<span style="color:${c};font-weight:700;">${window.escapeHTML(r.enzyme)}</span>` +
+          `<span style="color:var(--text-muted);font-size:0.85em;">${r.cuts.length} cut${r.cuts.length !== 1 ? 's' : ''}</span>` +
+          `</span>`;
+      });
+      html += '</div>';
+
+      for (let rowStart = 0; rowStart < seq.length; rowStart += ROW_WIDTH) {
+        const rowEnd  = Math.min(rowStart + ROW_WIDTH, seq.length);
+        const rowLen  = rowEnd - rowStart;
+
+        // Cuts whose marker column falls within this row (0-indexed column = pos-1-rowStart)
+        const rowCuts = allCuts.filter(c => {
+          const col = c.pos - 1 - rowStart;
+          return col >= 0 && col < rowLen;
+        });
+
+        if (rowCuts.length > 0) {
+          // Enzyme name line — place enzyme name starting at cut column; truncate on collision
+          const nameRow   = new Array(rowLen).fill(' ');
+          const nameClr   = new Array(rowLen).fill(null);
+          // Process right-to-left to let later (rightmost) cuts claim columns first
+          [...rowCuts].reverse().forEach(cut => {
+            const col  = cut.pos - 1 - rowStart;
+            const name = cut.enzyme;
+            for (let k = 0; k < name.length && (col + k) < rowLen; k++) {
+              if (nameRow[col + k] === ' ') {
+                nameRow[col + k]  = name[k];
+                nameClr[col + k]  = enzymeColor[cut.enzyme];
+              }
+            }
+          });
+
+          // Arrow line
+          const arrowRow  = new Array(rowLen).fill(' ');
+          const arrowClr  = new Array(rowLen).fill(null);
+          rowCuts.forEach(cut => {
+            const col = cut.pos - 1 - rowStart;
+            arrowRow[col] = '↓'; // ↓
+            arrowClr[col] = enzymeColor[cut.enzyme];
+          });
+
+          const posLabel = ' '.repeat(PAD + 2);
+
+          // Render name line
+          html += `<div style="white-space:pre;">${posLabel}`;
+          for (let i = 0; i < rowLen; i++) {
+            const ch = window.escapeHTML(nameRow[i]);
+            html += nameClr[i]
+              ? `<span style="color:${nameClr[i]};font-weight:700;">${ch}</span>`
+              : ch;
+          }
+          html += '</div>';
+
+          // Render arrow line
+          html += `<div style="white-space:pre;">${posLabel}`;
+          for (let i = 0; i < rowLen; i++) {
+            const ch = window.escapeHTML(arrowRow[i]);
+            html += arrowClr[i]
+              ? `<span style="color:${arrowClr[i]};font-weight:700;">${ch}</span>`
+              : ch;
+          }
+          html += '</div>';
+        }
+
+        // Sequence line with fragment colors
+        const posLabel = String(rowStart + 1).padStart(PAD, ' ');
+        html += `<div style="white-space:pre;"><span style="color:var(--text-muted);user-select:none;">${window.escapeHTML(posLabel)}  </span>`;
+        for (let i = 0; i < rowLen; i++) {
+          const base = window.escapeHTML(seq[rowStart + i]);
+          html += `<span style="color:${baseColor[rowStart + i]};">${base}</span>`;
+        }
+        html += '</div>';
+
+        html += '<div style="height:6px;"></div>';
+      }
+
+      html += '</div>';
+      mapEl.innerHTML = window.BioKit.utils.sanitizeHTML(html);
     },
 
     renderTable: function (results) {
