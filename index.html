@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&family=PT+Serif:ital,wght@0,400;0,700;1,400;1,700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap"
     rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="css/style.css" />
@@ -83,7 +83,7 @@
         <span class="nav-label">Protein Analyzer</span>
       </button>
       <button class="nav-item" data-tool="alignment" id="nav-alignment">
-        <span class="nav-icon"><i data-lucide="link"></i></span>
+        <span class="nav-icon"><i data-lucide="git-compare"></i></span>
         <span class="nav-label">Sequence Alignment</span>
       </button>
       <button class="nav-item" data-tool="fasta" id="nav-fasta">
@@ -111,7 +111,7 @@
         <span class="nav-label">Genome Viewer</span>
       </button>
       <button class="nav-item" data-tool="structure" id="nav-structure">
-        <span class="nav-icon"><i data-lucide="box"></i></span>
+        <span class="nav-icon"><i data-lucide="atom"></i></span>
         <span class="nav-label">Structure Viewer</span>
       </button>
       <button class="nav-item" data-tool="batch" id="nav-batch">
@@ -123,8 +123,7 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div class="coord" style="margin-bottom: 4px;">COORD: 00//SIDE</div>
-      <span>Research Edition</span>
+      <span>BioToolkit · Research Edition</span>
     </div>
   </aside>
 
@@ -135,9 +134,8 @@
     <header class="app-header">
       <div class="header-left">
         <button id="sidebarToggleBtn" class="header-action" aria-label="Toggle Sidebar">☰</button>
-        <span class="coord">REF_ID: 101-00-B</span>
-        <div class="session-name" contenteditable="true">[RSH] Untitled Analysis</div>
-        <span class="save-indicator">STABLE_INSTANCE</span>
+        <div class="session-name" contenteditable="true">Research Session</div>
+        <span class="save-indicator">Ready</span>
       </div>
       <div class="header-right">
         <button class="header-action" id="themeToggleBtn" title="Toggle Theme" aria-label="Toggle Dark/Light Mode">
@@ -148,8 +146,8 @@
         </button>
         <div class="divider-v"></div>
         <div class="user-profile">
-          <div class="avatar">JD</div>
-          <span>Lab PI</span>
+          <div class="avatar">SC</div>
+          <span>Researcher</span>
         </div>
       </div>
     </header>
@@ -157,11 +155,29 @@
     <!-- HOME PANEL -->
     <section class="tool-panel active" id="panel-home">
       <div class="hero-section">
-        <h1 class="hero-title">Scientific Sequence Analysis Platform</h1>
+        <h1 class="hero-title">Scientific Sequence<br>Analysis Platform</h1>
         <p class="hero-subtitle">
           Professional-grade bioinformatics modules for genomics, transcription analysis, and protein informatics.
           Designed for laboratory accuracy and robust scientific workflows.
         </p>
+        <div class="hero-stats">
+          <div class="hero-stat-item">
+            <span class="hero-stat-val">12</span>
+            <span class="hero-stat-label">Analysis Modules</span>
+          </div>
+          <div class="hero-stat-item">
+            <span class="hero-stat-val">30+</span>
+            <span class="hero-stat-label">Restriction Enzymes</span>
+          </div>
+          <div class="hero-stat-item">
+            <span class="hero-stat-val">4</span>
+            <span class="hero-stat-label">Live Databases</span>
+          </div>
+          <div class="hero-stat-item">
+            <span class="hero-stat-val">AlphaFold</span>
+            <span class="hero-stat-label">Structure Integration</span>
+          </div>
+        </div>
       </div>
 
       <div class="category-header">
@@ -186,7 +202,7 @@
           <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
         <div class="tool-card" data-tool="alignment">
-          <div class="tool-card-icon"><i data-lucide="link"></i></div>
+          <div class="tool-card-icon"><i data-lucide="git-compare"></i></div>
           <div class="tool-card-category">Sequence Comparison</div>
           <h3>Pairwise Alignment</h3>
           <p>Execute dynamic programming alignments using Needleman-Wunsch (global) and Smith-Waterman (local).</p>
@@ -260,7 +276,7 @@
       </div>
       <div class="tool-grid">
         <div class="tool-card" data-tool="structure">
-          <div class="tool-card-icon"><i data-lucide="box"></i></div>
+          <div class="tool-card-icon"><i data-lucide="atom"></i></div>
           <div class="tool-card-category">Structural Biology</div>
           <h3>3D Structure Viewer</h3>
           <p>Fetch AlphaFold predicted structures by UniProt accession. Render in Cartoon, Surface, or Spacefill with
@@ -280,16 +296,32 @@
       </div>
 
       <div class="category-header" style="margin-top: 48px;">
-        <h2 class="category-title" style="color: var(--text-muted);">Planned Modules</h2>
+        <h2 class="category-title">Platform Roadmap</h2>
       </div>
-      <div class="tool-grid" style="opacity: 0.6;">
-        <div class="tool-card" style="box-shadow: none; border-style: dashed; cursor: default;">
-          <div class="tool-card-icon" style="background: transparent;"><i data-lucide="network"></i></div>
-          <div class="tool-card-category">Systems Biology</div>
-          <h3 style="color: var(--text-muted);">Metabolic Pathway Modeling</h3>
-          <p>Simulate flux balance analysis across reconstructed metabolic networks.</p>
-          <div class="tool-card-tags"><span style="background: transparent; border-color: transparent;">Coming
-              soon</span></div>
+      <div class="roadmap-strip">
+        <div class="roadmap-item">
+          <div class="roadmap-icon"><i data-lucide="network"></i></div>
+          <div class="roadmap-body">
+            <div class="roadmap-title">Metabolic Pathway Modeling</div>
+            <div class="roadmap-desc">Flux balance analysis across reconstructed metabolic networks</div>
+          </div>
+          <span class="roadmap-badge">Q3 2025</span>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-icon"><i data-lucide="activity"></i></div>
+          <div class="roadmap-body">
+            <div class="roadmap-title">RNA-seq Expression Analysis</div>
+            <div class="roadmap-desc">Differential expression, volcano plots, and pathway enrichment</div>
+          </div>
+          <span class="roadmap-badge">Q4 2025</span>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-icon"><i data-lucide="git-branch"></i></div>
+          <div class="roadmap-body">
+            <div class="roadmap-title">Phylogenetic Tree Builder</div>
+            <div class="roadmap-desc">Maximum-likelihood and Bayesian inference from multiple sequence alignments</div>
+          </div>
+          <span class="roadmap-badge">Q1 2026</span>
         </div>
       </div>
 
@@ -714,7 +746,7 @@
     <!-- ALIGNMENT PANEL -->
     <section class="tool-panel" id="panel-alignment">
       <div class="panel-header">
-        <div class="panel-icon"><i data-lucide="link"></i></div>
+        <div class="panel-icon"><i data-lucide="git-compare"></i></div>
         <div>
           <h2>Pairwise Sequence Alignment</h2>
           <p class="panel-desc">Align two nucleotide or protein sequences using Needleman-Wunsch (global) or
@@ -1388,7 +1420,7 @@
     <!-- STRUCTURE VIEWER PANEL -->
     <section class="tool-panel" id="panel-structure">
       <div class="panel-header">
-        <div class="panel-icon"><i data-lucide="box"></i></div>
+        <div class="panel-icon"><i data-lucide="atom"></i></div>
         <div>
           <h2>3D Protein Structure Viewer</h2>
           <p class="panel-desc">Fetch AlphaFold predicted structures by UniProt accession. Cartoon representation

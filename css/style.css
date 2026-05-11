@@ -369,23 +369,58 @@ body.sidebar-collapsed .main-content {
 }
 
 /* ── HOME ───────────────────────────────────────────────── */
-.hero-section { text-align: left; padding: 40px 0; max-width: 800px; }
+.hero-section { text-align: left; padding: 48px 0 40px; max-width: 860px; }
 .hero-badge { display: none; }
 .hero-title {
   font-family: var(--font-serif);
-  font-size: 2.85rem;
-  font-weight: 300; line-height: 1.1;
+  font-size: 3.1rem;
+  font-weight: 700; line-height: 1.08;
   color: var(--text-primary);
-  margin-bottom: 16px;
-  letter-spacing: -0.04em;
+  margin-bottom: 20px;
+  letter-spacing: -0.03em;
   font-style: italic;
 }
 .hero-subtitle {
   font-size: 1.05rem; color: var(--text-secondary);
-  line-height: 1.7; margin-bottom: 48px;
-  max-width: 580px;
-  border-left: 1px solid var(--teal);
+  line-height: 1.7; margin-bottom: 36px;
+  max-width: 600px;
+  border-left: 2px solid var(--teal);
   padding-left: 24px;
+}
+.hero-stats {
+  display: flex;
+  gap: 0;
+  flex-wrap: wrap;
+  margin-bottom: 48px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  max-width: 680px;
+}
+.hero-stat-item {
+  flex: 1;
+  min-width: 140px;
+  padding: 16px 20px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.hero-stat-item:last-child { border-right: none; }
+.hero-stat-val {
+  font-family: var(--mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--teal);
+  display: block;
+  line-height: 1.2;
+}
+.hero-stat-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: block;
+  font-weight: 600;
 }
 
 .category-header {
@@ -405,6 +440,57 @@ body.sidebar-collapsed .main-content {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
   gap: 18px;
+}
+
+/* ── Roadmap Strip ──────────────────────────────────────── */
+.roadmap-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 48px;
+}
+.roadmap-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  transition: var(--transition);
+}
+.roadmap-item:last-child { border-bottom: none; }
+.roadmap-item:hover { background: var(--bg-card); }
+.roadmap-icon {
+  width: 34px; height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.roadmap-body { flex: 1; min-width: 0; }
+.roadmap-title {
+  font-size: 0.88rem; font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.roadmap-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.roadmap-badge {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tool-card {
   background: var(--bg-card);
@@ -532,11 +618,11 @@ body.sidebar-collapsed .main-content {
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; align-items: center; }
 
 .btn-primary {
-  padding: 6px 14px;
-  border: 1px solid var(--border);
+  padding: 8px 16px;
+  border: 1px solid var(--teal);
   border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--text-primary);
+  background: var(--teal);
+  color: #ffffff;
   font-family: var(--font); font-size: 0.78rem; font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
@@ -544,8 +630,8 @@ body.sidebar-collapsed .main-content {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.btn-primary:hover { border-color: var(--teal); background: var(--bg-surface); color: var(--teal); }
-.btn-primary:active { transform: none; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
+.btn-primary:hover { background: transparent; color: var(--teal); }
+.btn-primary:active { transform: none; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
 
 .btn-secondary {
   padding: 11px 20px;
