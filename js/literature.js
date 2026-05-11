@@ -265,7 +265,8 @@
   }
 
   // ── Event Wiring ──────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', () => {
+  // ── Event Wiring ──────────────────────────────────────────
+  function wireEvents() {
     el('litSearchBtn')?.addEventListener('click', window.debounce ? window.debounce(() => runSearch(false), 300) : () => runSearch(false));
 
     el('litSearchInput')?.addEventListener('keydown', (e) => {
@@ -288,6 +289,12 @@
       _currentQuery = "";
       _totalHits = 0;
     });
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wireEvents);
+  } else {
+    wireEvents();
+  }
 
 })();
