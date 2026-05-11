@@ -118,6 +118,10 @@
         <span class="nav-icon"><i data-lucide="database"></i></span>
         <span class="nav-label">Batch Analysis</span>
       </button>
+      <button class="nav-item" data-tool="literature" id="nav-literature">
+        <span class="nav-icon"><i data-lucide="book-open"></i></span>
+        <span class="nav-label">Literature Search</span>
+      </button>
 
       <div class="sidebar-divider"></div>
     </nav>
@@ -162,7 +166,7 @@
         </p>
         <div class="hero-stats">
           <div class="hero-stat-item">
-            <span class="hero-stat-val">11</span>
+            <span class="hero-stat-val">12</span>
             <span class="hero-stat-label">Analysis Modules</span>
           </div>
           <div class="hero-stat-item">
@@ -291,6 +295,20 @@
           <p>Upload multi-FASTA files with thousands of sequences. Async Celery queue processes each record; download a
             full CSV of metrics when complete.</p>
           <div class="tool-card-tags"><span>Multi-FASTA</span><span>Async</span><span>CSV Export</span></div>
+          <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
+        </div>
+      </div>
+
+      <div class="category-header" style="margin-top: 48px;">
+        <h2 class="category-title">Literature &amp; References</h2>
+      </div>
+      <div class="tool-grid">
+        <div class="tool-card" data-tool="literature">
+          <div class="tool-card-icon"><i data-lucide="book-open"></i></div>
+          <div class="tool-card-category">Knowledge Base</div>
+          <h3>Literature Search</h3>
+          <p>Search PubMed for peer-reviewed publications. Retrieve article metadata, generate APA citations, and link directly to full-text sources.</p>
+          <div class="tool-card-tags"><span>PubMed</span><span>Citations</span><span>DOI</span></div>
           <button class="btn-primary" style="margin-top: 16px; width: 100%;">Open Module</button>
         </div>
       </div>
@@ -1744,35 +1762,52 @@
       </div>
     </section>
 
-    <!-- SCIENTIFIC REFERENCES FOOTER -->
-    <section class="tool-panel" id="panel-references"
-      style="margin-top:24px; border:1px solid var(--border-color); background:rgba(17, 24, 39, 0.6);">
-      <div class="panel-header"
-        style="margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border-color);">
-        <div class="panel-icon" style="background:var(--slate); color:var(--text-primary);"><i
-            data-lucide="book-open"></i></div>
+    <!-- LITERATURE SEARCH PANEL -->
+    <section class="tool-panel" id="panel-literature">
+      <div class="panel-header">
+        <div class="panel-icon"><i data-lucide="book-open"></i></div>
         <div>
-          <h2 style="font-size:1.1rem; color:var(--text-primary);">Scientific Methods &amp; References</h2>
-          <p class="panel-desc" style="font-size:0.85rem;">BioKit algorithms are based on peer-reviewed scientific
-            methods.</p>
+          <h2>PubMed Literature Search</h2>
+          <p class="panel-desc">Search the NCBI PubMed database for peer-reviewed biomedical literature.</p>
         </div>
       </div>
-      <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.6;">
-        <ul style="padding-left:1.5rem; margin-bottom:0;">
-          <li style="margin-bottom:8px;"><strong>Accurate Tm (Melting Temperature):</strong> Calculated using the
-            Nearest-Neighbor thermodynamic model with SantaLucia enthalpy/entropy values and Owczarzy salt
-            corrections.<br /><span style="color:var(--text-muted); font-style:italic;">SantaLucia, J. Jr. (1998) "A
-              unified view of polymer, dumbbell, and oligonucleotide DNA nearest-neighbor thermodynamics." PNAS 95,
-              1460-1465.</span></li>
-          <li style="margin-bottom:8px;"><strong>Protein Hydrophobicity (GRAVY):</strong> Calculated using the
-            Kyte-Doolittle scale via sliding window averaging.<br /><span
-              style="color:var(--text-muted); font-style:italic;">Kyte, J., &amp; Doolittle, R. F. (1982) "A simple
-              method for displaying the hydropathic character of a protein." J Mol Biol, 157(1), 105-132.</span></li>
-          <li style="margin-bottom:8px;"><strong>Codon Translation:</strong> Utilizes the Standard NCBI Genetic Code
-            (Transl_table 1).</li>
-          <li style="margin-bottom:0;"><strong>Molecular Weight:</strong> Calculated using average elemental isotopic
-            residue masses (minus H2O condensation per peptide/phosphodiester bond).</li>
-        </ul>
+
+      <!-- Search Input -->
+      <div class="input-block" style="margin-top:16px;">
+        <label class="input-label">Search Query</label>
+        <div style="display:flex;gap:8px;align-items:stretch;">
+          <input type="text" id="litSearchInput" class="bio-input" style="flex:1;"
+            placeholder="e.g. BRCA1 methylation, CRISPR Cas9 delivery, p53 apoptosis" />
+          <button class="btn-primary" id="litSearchBtn" style="white-space:nowrap;">Search PubMed</button>
+          <button class="btn-secondary" id="litClearBtn" style="white-space:nowrap;">Clear</button>
+        </div>
+        <div id="litStatus" style="font-size:0.82rem;color:var(--text-muted);margin-top:8px;"></div>
+      </div>
+
+      <!-- Results -->
+      <div id="litResults" style="margin-top:16px;"></div>
+
+      <!-- Preserved: Scientific Methods & References -->
+      <div style="margin-top:32px; border-top:1px solid var(--border-color); padding-top:20px;">
+        <h3 style="font-size:1rem; color:var(--text-primary); margin-bottom:12px;">Scientific Methods &amp; References</h3>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:12px;">BioKit algorithms are based on peer-reviewed scientific methods.</p>
+        <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.6;">
+          <ul style="padding-left:1.5rem; margin-bottom:0;">
+            <li style="margin-bottom:8px;"><strong>Accurate Tm (Melting Temperature):</strong> Calculated using the
+              Nearest-Neighbor thermodynamic model with SantaLucia enthalpy/entropy values and Owczarzy salt
+              corrections.<br /><span style="color:var(--text-muted); font-style:italic;">SantaLucia, J. Jr. (1998) "A
+                unified view of polymer, dumbbell, and oligonucleotide DNA nearest-neighbor thermodynamics." PNAS 95,
+                1460-1465.</span></li>
+            <li style="margin-bottom:8px;"><strong>Protein Hydrophobicity (GRAVY):</strong> Calculated using the
+              Kyte-Doolittle scale via sliding window averaging.<br /><span
+                style="color:var(--text-muted); font-style:italic;">Kyte, J., &amp; Doolittle, R. F. (1982) "A simple
+                method for displaying the hydropathic character of a protein." J Mol Biol, 157(1), 105-132.</span></li>
+            <li style="margin-bottom:8px;"><strong>Codon Translation:</strong> Utilizes the Standard NCBI Genetic Code
+              (Transl_table 1).</li>
+            <li style="margin-bottom:0;"><strong>Molecular Weight:</strong> Calculated using average elemental isotopic
+              residue masses (minus H2O condensation per peptide/phosphodiester bond).</li>
+          </ul>
+        </div>
       </div>
     </section>
 
@@ -1839,6 +1874,7 @@
         'example-genomes': 'js/example-genomes.js',
         'structure': 'js/structure-viewer.js',
         'batch': 'js/batch.js',
+        'literature': 'js/literature.js',
       };
 
       // Tracks which modules have already been fetched so we never

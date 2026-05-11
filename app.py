@@ -68,6 +68,8 @@ if not _secret_key:
             "Set FLASK_DEBUG=1 only for local development."
         )
     _secret_key = "dev-secret-key-insecure"
+if not _is_dev and _secret_key == "dev-secret-key-insecure":
+    raise RuntimeError("Refusing to start: SECRET_KEY is set to the insecure development default. Set a real SECRET_KEY environment variable.")
 app.config['SECRET_KEY'] = _secret_key
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///biotoolkit.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -170,14 +172,6 @@ def send_css(path):
 def fetch_external():
     """Proxy for external bioinformatics databases."""
     # Cache stores serializable dicts: {"json": {...}} or {"text": "..."}
-    cache_key = "proxy_cache_{}".format(request.full_path)
-    cached_val = cache.get(cache_key)
-    if cached_val:
-        if isinstance(cached_val, dict) and "json" in cached_val:
-            return jsonify(cached_val["json"])
-        if isinstance(cached_val, dict) and "text" in cached_val:
-            return Response(cached_val["text"], mimetype="text/plain")
-
     if request.method == "POST":
         data = request.get_json() or {}
         db_type = data.get("db", "ncbi")
@@ -185,9 +179,18 @@ def fetch_external():
     else:
         db_type = request.args.get("db")
         acc_id = request.args.get("id")
-    
+
     if not db_type or not acc_id:
         return jsonify({"error": "Missing db or id/accession parameter"}), 400
+
+    _ck_type = request.args.get("type", "") or ""
+    cache_key = "fetch:{}:{}:{}".format(db_type, acc_id, _ck_type)
+    cached_val = cache.get(cache_key)
+    if cached_val:
+        if isinstance(cached_val, dict) and "json" in cached_val:
+            return jsonify(cached_val["json"])
+        if isinstance(cached_val, dict) and "text" in cached_val:
+            return Response(cached_val["text"], mimetype="text/plain")
 
     try:
         if db_type == "ncbi":
@@ -260,6 +263,8 @@ def fetch_external():
                                     parts = feat.location.parts if hasattr(feat.location, 'parts') else [feat.location]
                                     transcripts[tid]["cds_regions"] = [[int(p.start) + 1, int(p.end)] for p in parts]
 
+                    for tid in transcripts:
+                        transcripts[tid]["exon_list"].sort(key=lambda x: x[0])
                     tx_list = list(transcripts.values())
                     if not tx_list:
                         tx_list = [{"exon_list": [], "cds_regions": [], "gene_range": [1, len(record.seq)], "strand": "+"}]
@@ -349,7 +354,8 @@ def fetch_external():
                 return jsonify({"error": "KEGG returned HTTP {}.".format(resp.status_code)}), resp.status_code
 
         elif db_type == "ncbisymbol":
-            species = request.args.get("species", "Homo sapiens")
+            species = re.sub(r'[^A-Za-z0-9 .\-]', '', request.args.get("species", "Homo sapiens"))
+            acc_id = re.sub(r'[^A-Za-z0-9 .\-]', '', acc_id)
             user_key = request.headers.get("X-NCBI-API-Key", "").strip()
             effective_key = user_key or NCBI_API_KEY
 
@@ -437,7 +443,9 @@ def fetch_external():
 @app.route("/api/search", methods=["POST"])
 def search_ncbi():
     """Proxy for NCBI ESearch."""
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body must be valid JSON with Content-Type: application/json"}), 400
     query = data.get("query")
     db_name = data.get("db", "nucleotide")
     
@@ -458,6 +466,119 @@ def search_ncbi():
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
+
+# ─────────────────────────────────────────────────────────────
+# PubMed Literature Search (Phase 2 — 12th Analysis Module)
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/pubmed/search", methods=["POST"])
+def pubmed_search():
+    """
+    Search PubMed via NCBI ESearch + ESummary.
+    Returns structured article metadata (title, authors, journal, date, DOI).
+    No API key required but recommended for higher rate limits.
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body must be valid JSON"}), 400
+
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "Search query is required"}), 400
+    if len(query) > 500:
+        return jsonify({"error": "Query too long (max 500 characters)"}), 400
+
+    retmax = min(int(data.get("retmax", 20)), 50)  # cap at 50
+
+    try:
+        # Step 1: ESearch — find matching PubMed IDs
+        search_params = {
+            "db": "pubmed",
+            "term": query,
+            "retmax": retmax,
+            "retmode": "json",
+            "sort": "relevance",
+            "tool": "BioToolkit",
+            "email": "admin@biotoolkit.dev"
+        }
+        if NCBI_API_KEY and str(NCBI_API_KEY).strip():
+            search_params["api_key"] = NCBI_API_KEY
+
+        s_resp = http_session.get(
+            "{}/esearch.fcgi".format(NCBI_BASE),
+            params=search_params, timeout=15
+        )
+        s_resp.raise_for_status()
+        s_data = s_resp.json()
+
+        id_list = s_data.get("esearchresult", {}).get("idlist", [])
+        total_count = int(s_data.get("esearchresult", {}).get("count", 0))
+
+        if not id_list:
+            return jsonify({"articles": [], "total": 0, "query": query})
+
+        # Step 2: ESummary — fetch article metadata for each PMID
+        summary_params = {
+            "db": "pubmed",
+            "id": ",".join(id_list),
+            "retmode": "json",
+            "tool": "BioToolkit",
+            "email": "admin@biotoolkit.dev"
+        }
+        if NCBI_API_KEY and str(NCBI_API_KEY).strip():
+            summary_params["api_key"] = NCBI_API_KEY
+
+        sum_resp = http_session.get(
+            "{}/esummary.fcgi".format(NCBI_BASE),
+            params=summary_params, timeout=15
+        )
+        sum_resp.raise_for_status()
+        sum_data = sum_resp.json()
+
+        result_block = sum_data.get("result", {})
+        uid_order = result_block.get("uids", id_list)
+
+        articles = []
+        for uid in uid_order:
+            entry = result_block.get(uid)
+            if not entry or not isinstance(entry, dict):
+                continue
+
+            # Extract authors list
+            authors_raw = entry.get("authors", [])
+            authors = [a.get("name", "") for a in authors_raw if isinstance(a, dict)]
+
+            # Extract DOI from articleids
+            doi = ""
+            for aid in entry.get("articleids", []):
+                if isinstance(aid, dict) and aid.get("idtype") == "doi":
+                    doi = aid.get("value", "")
+                    break
+
+            articles.append({
+                "pmid": uid,
+                "title": entry.get("title", ""),
+                "authors": authors,
+                "journal": entry.get("fulljournalname", entry.get("source", "")),
+                "pubdate": entry.get("pubdate", ""),
+                "volume": entry.get("volume", ""),
+                "issue": entry.get("issue", ""),
+                "pages": entry.get("pages", ""),
+                "doi": doi,
+                "pubtype": entry.get("pubtype", []),
+            })
+
+        return jsonify({
+            "articles": articles,
+            "total": total_count,
+            "returned": len(articles),
+            "query": query
+        })
+
+    except requests.exceptions.RequestException as e:
+        logger.error("PubMed search error: %s", str(e))
+        return jsonify({"error": "Failed to query PubMed: {}".format(str(e))}), 502
+
 # ─────────────────────────────────────────────────────────────
 # BioKit Local (Non-Worker) Processing
 # ─────────────────────────────────────────────────────────────
@@ -473,10 +594,15 @@ def analyze_basic():
         return jsonify({"error": "No sequence"}), 400
 
     try:
-        bio_seq = BioSeq(seq_str)
+        seq_for_bio = seq_str.replace('U', 'T').replace('u', 't')
+        bio_seq = BioSeq(seq_for_bio)
         # Handle nucleotide vs protein
-        is_protein = any(aa in seq_str for aa in "EFILPQZ")
-        
+        _DNA_ONLY = set('ACGTN')
+        _PROTEIN_MARKERS = set('EFILPQZ')
+        upper_seq = seq_str.upper()
+        seq_chars = set(upper_seq)
+        is_protein = bool(seq_chars & _PROTEIN_MARKERS) and not seq_chars.issubset(_DNA_ONLY | set('RYSWKMBDHVN'))
+
         results = {"length": len(seq_str)}
         if not is_protein:
             results["gc_content"] = (seq_str.count("G") + seq_str.count("C")) / len(seq_str) * 100
@@ -736,6 +862,9 @@ def analyze_batch():
     except Exception as e:
         return jsonify({"error": "Could not read uploaded file: {}".format(str(e))}), 400
 
+    if '\x00' in content:
+        return jsonify({"error": "Uploaded file appears to be binary, not FASTA text."}), 422
+
     if not content:
         return jsonify({"error": "Uploaded file is empty."}), 400
 
@@ -759,6 +888,11 @@ def analyze_batch():
                 "Ensure at least one non-empty sequence line exists after each '>' header."
             )
         }), 422
+
+    # Reject if no valid sequence characters found
+    seq_lines = [l for l in content.splitlines() if l and not l.startswith('>')]
+    if seq_lines and re.search(r'[^A-Za-z\-\*\s]', ''.join(seq_lines[:5])):
+        return jsonify({"error": "File contains invalid sequence characters. Only IUPAC nucleotide/protein codes are accepted."}), 422
 
     mode = request.form.get("mode", "all").lower()
     if mode not in ("all", "nucleotide", "protein", "quick"):
@@ -805,7 +939,7 @@ def batch_job_status(job_id):
         res = result.result or {}
         # If the worker itself returned an error dict
         if res.get("status") == "error":
-            return jsonify({"status": "failed", "error": res.get("message", "Worker error")}), 200
+            return jsonify({"status": "failed", "error": res.get("message", "Worker error")}), 500
         return jsonify({
             "status":   "complete",
             "total":    res.get("total", 0),

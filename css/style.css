@@ -2696,3 +2696,118 @@ canvas {
   opacity: 0.9;
   vertical-align: middle;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Literature Search — PubMed Results
+   ═══════════════════════════════════════════════════════════ */
+
+.lit-article-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lit-article {
+  display: flex;
+  gap: 14px;
+  padding: 16px 18px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s ease;
+}
+
+.lit-article:hover {
+  border-color: var(--teal);
+}
+
+.lit-article-num {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 184, 166, 0.1);
+  color: var(--teal);
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 6px;
+  margin-top: 2px;
+}
+
+.lit-article-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.lit-article-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.45;
+  margin-bottom: 6px;
+}
+
+.lit-article-authors {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.lit-article-journal {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.lit-article-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lit-pmid,
+.lit-doi {
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  color: var(--teal);
+  text-decoration: none;
+  padding: 2px 8px;
+  border: 1px solid rgba(20, 184, 166, 0.25);
+  border-radius: 4px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.lit-pmid:hover,
+.lit-doi:hover {
+  background: rgba(20, 184, 166, 0.08);
+  border-color: var(--teal);
+}
+
+.lit-cite-btn {
+  font-size: 0.75rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  padding: 2px 10px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.lit-cite-btn:hover {
+  color: var(--teal);
+  border-color: var(--teal);
+}
+
+@media (max-width: 600px) {
+  .lit-article {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .lit-article-num {
+    align-self: flex-start;
+  }
+}
