@@ -220,7 +220,10 @@
     const s = window.cleanSeq(fwdInput.value);
     const na = parseFloat(document.getElementById('saltConc').value) || 50;
     const k = parseFloat(document.getElementById('kConc').value) || 0;
-    const options = { naConc_mM: na + k, oligoConc_nM: 250 };
+    const mg   = parseFloat(document.getElementById('mgConc').value)    || 1.5;
+    const dntp = parseFloat(document.getElementById('dntpConc').value)  || 0.8;
+    const conc = parseFloat(document.getElementById('primerConc').value) || 250;
+    const options = { naConc_mM: na + k, mgConc_mM: mg, dntpConc_mM: dntp, oligoConc_nM: conc };
     const tmRes = calcTm(s, options);
     const validation = window.validateSequence(s, 'dna');
     const gc = window.BioKit.core.BioMath.calculateGC(s);
@@ -237,7 +240,10 @@
     const s = window.cleanSeq(revInput.value);
     const na = parseFloat(document.getElementById('saltConc').value) || 50;
     const k = parseFloat(document.getElementById('kConc').value) || 0;
-    const options = { naConc_mM: na + k, oligoConc_nM: 250 };
+    const mg   = parseFloat(document.getElementById('mgConc').value)    || 1.5;
+    const dntp = parseFloat(document.getElementById('dntpConc').value)  || 0.8;
+    const conc = parseFloat(document.getElementById('primerConc').value) || 250;
+    const options = { naConc_mM: na + k, mgConc_mM: mg, dntpConc_mM: dntp, oligoConc_nM: conc };
     const tmRes = calcTm(s, options);
     const validation = window.validateSequence(s, 'dna');
     const gc = window.BioKit.core.BioMath.calculateGC(s);

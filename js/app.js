@@ -406,7 +406,7 @@
   // ── Worker Manager (Web Worker + Server-side Backend) ─────
   window.WorkerManager = {
     worker: null,
-    currentTask: null,
+    _tasks: new Map(),   // taskId → { resolve, reject, onProgress }
 
     init() {
       if (!window.Worker) {
@@ -443,7 +443,7 @@
       if (!this.init()) return Promise.reject('No Worker Support');
       const taskId = Math.random().toString(36).substr(2, 9);
       return new Promise((resolve, reject) => {
-        this.currentTask = { taskId, resolve, reject, onProgress };
+        this._tasks.set(taskId, { resolve, reject, onProgress });
         this.worker.postMessage({ type, payload, taskId });
       });
     },
@@ -468,6 +468,8 @@
         
         // 2. Poll for status
         return new Promise((resolve, reject) => {
+          const MAX_POLL_MS = 5 * 60 * 1000; // 5-minute hard timeout
+          const pollStart   = Date.now();
           const pollInterval = setInterval(async () => {
             try {
               const statusRes = await fetch(`/api/jobs/status/${serverTaskId}`);
@@ -482,6 +484,11 @@
               } else if (onProgress && statusData.progress) {
                 onProgress(statusData.progress);
               }
+
+              if (Date.now() - pollStart > MAX_POLL_MS) {
+                clearInterval(pollInterval);
+                reject(new Error('Backend task timed out after 5 minutes. The server worker may be unavailable.'));
+              }
             } catch (err) {
               clearInterval(pollInterval);
               reject(err);
@@ -494,22 +501,24 @@
     },
 
     handleMessage(data) {
-      if (!this.currentTask || data.taskId !== this.currentTask.taskId) return;
+      const task = this._tasks.get(data.taskId);
+      if (!task) return;
       if (data.type === 'PROGRESS') {
-        if (this.currentTask.onProgress) this.currentTask.onProgress(data.progress);
+        if (task.onProgress) task.onProgress(data.progress);
       } else if (data.type === 'RESULT') {
-        this.currentTask.resolve(data.result);
-        this.currentTask = null;
+        task.resolve(data.result);
+        this._tasks.delete(data.taskId);
       } else if (data.type === 'ERROR') {
-        this.currentTask.reject(new Error(data.message));
-        this.currentTask = null;
+        task.reject(new Error(data.message));
+        this._tasks.delete(data.taskId);
       }
     },
 
     terminate() {
       if (this.worker) this.worker.terminate();
       this.worker = null;
-      this.currentTask = null;
+      this._tasks.forEach(t => t.reject(new Error('Worker terminated.')));
+      this._tasks.clear();
     }
   };
   window.BioKit.core.WorkerManager = window.WorkerManager;
@@ -775,7 +784,7 @@
 
   // ── App Boot ───────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
-    if (!window.Worker || !window.Int32Array) {
+    if (!window.Worker || !window.SharedArrayBuffer) {
       const banner = document.getElementById('browserWarning');
       if (banner) banner.classList.remove('hidden');
     }

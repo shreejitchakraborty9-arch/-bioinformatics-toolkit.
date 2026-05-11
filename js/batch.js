@@ -139,6 +139,10 @@
     }
 
     stopPolling();
+    _allRows      = [];
+    _columns      = [];
+    _filteredRows = [];
+    _visibleCols  = new Set();
     resetJobUI();
     setBatchStatus('Submitting job…', false);
 
@@ -204,7 +208,7 @@
 
     const canRunInline = seqCount > 0 && seqCount <= INLINE_THRESHOLD;
 
-    panel.innerHTML = window.BioKit.utils.sanitizeHTML(`
+    panel.innerHTML = (window.sanitizeHTML || (s => s))(`
       <div style="display:flex;align-items:flex-start;gap:12px;">
         <span style="font-size:1.4rem;line-height:1;flex-shrink:0;">⚠</span>
         <div style="flex:1;">
@@ -324,7 +328,7 @@
 
     const div = document.createElement('div');
     div.id = 'batchInlineResults';
-    div.innerHTML = window.BioKit.utils.sanitizeHTML(tableHtml);
+    div.innerHTML = (window.sanitizeHTML || (s => s))(tableHtml);
     panel.appendChild(div);
 
     if (btn) { btn.disabled = true; btn.textContent = 'Done'; }

@@ -52,6 +52,8 @@ for enz_class in rst.CommOnly:
             "name": name,
             "site": site,
             "cut": fst5,
+            "cut_sense": fst5,
+            "cut_antisense": fst3,
             "type": cType,
             "overhang_type": overhang_type,
             "is_common": name in common_names,
@@ -98,6 +100,8 @@ for name in common_names:
             "name": name,
             "site": site,
             "cut": fst5,
+            "cut_sense": fst5,
+            "cut_antisense": fst3,
             "type": cType,
             "overhang_type": overhang_type,
             "is_common": True,
@@ -112,12 +116,12 @@ for name in common_names:
 
 output_path = "js/restriction-enzyme-db.js"
 with open(output_path, "w") as f:
-    f.write("/* Auto-generated Restriction Enzyme Database */\n")
+    f.write("/* Auto-generated Restriction Enzyme Database */\r\n")
+    f.write("window.BioKit = window.BioKit || { utils: {}, core: {}, tools: {}, data: {} };\r\n")
     f.write("window.RESTRICTION_ENZYMES = ")
     json.dump(enzymes, f, indent=2)
     f.write(";\n")
-    f.write("\nwindow.BioKit = window.BioKit || {};\n")
-    f.write("window.BioKit.data = window.BioKit.data || {};\n")
+    f.write("\nwindow.BioKit.data = window.BioKit.data || {};\n")
     f.write("window.BioKit.data.RESTRICTION_ENZYMES = window.RESTRICTION_ENZYMES;\n")
 
 print("Generated " + str(len(enzymes)) + " enzymes")

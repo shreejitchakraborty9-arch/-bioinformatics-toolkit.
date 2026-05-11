@@ -65,7 +65,8 @@ const BLOSUM62 = {
 function getScore(a, b, match, mismatch, isProtein) {
   if (!isProtein) return a === b ? match : mismatch;
   const row = BLOSUM62[a] || BLOSUM62['X'];
-  return row[b] || row['X'] || mismatch;
+  if (!row) return mismatch;
+  return (row[b] !== undefined) ? row[b] : ((row['X'] !== undefined) ? row['X'] : mismatch);
 }
 
 // ── Needleman-Wunsch Global Alignment (Gotoh Affine Gaps) ─────────
@@ -126,7 +127,7 @@ async function runNeedlemanWunsch(data, taskId) {
     if (state === 'H') {
       const current = H[i * (n + 1) + j];
       const matchScore = getScore(a[i - 1], b[j - 1], match, mismatch, isProtein);
-      if (i > 0 && j > 0 && Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + matchScore)) < 1e-4) {
+      if (i > 0 && j > 0 && Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + matchScore)) <= 1e-9 * (1 + Math.abs(current) + Math.abs(H[(i - 1) * (n + 1) + (j - 1)] + matchScore))) {
         alnA = a[i - 1] + alnA; alnB = b[j - 1] + alnB;
         mid = (a[i - 1] === b[j - 1] ? '|' : '·') + mid;
         i--; j--;
@@ -137,14 +138,14 @@ async function runNeedlemanWunsch(data, taskId) {
       }
     } else if (state === 'E') {
       alnA = '-' + alnA; alnB = b[j - 1] + alnB; mid = ' ' + mid;
-      if (j > 1 && Math.abs(E[i * (n + 1) + j] - (E[i * (n + 1) + (j - 1)] + gapExt)) < 1e-4) {
+      if (j > 1 && Math.abs(E[i * (n + 1) + j] - (E[i * (n + 1) + (j - 1)] + gapExt)) <= 1e-9 * (1 + Math.abs(E[i * (n + 1) + j]) + Math.abs(E[i * (n + 1) + (j - 1)] + gapExt))) {
         j--;
       } else {
         j--; state = 'H';
       }
     } else if (state === 'F') {
       alnA = a[i - 1] + alnA; alnB = '-' + alnB; mid = ' ' + mid;
-      if (i > 1 && Math.abs(F[i * (n + 1) + j] - (F[(i - 1) * (n + 1) + j] + gapExt)) < 1e-4) {
+      if (i > 1 && Math.abs(F[i * (n + 1) + j] - (F[(i - 1) * (n + 1) + j] + gapExt)) <= 1e-9 * (1 + Math.abs(F[i * (n + 1) + j]) + Math.abs(F[(i - 1) * (n + 1) + j] + gapExt))) {
         i--;
       } else {
         i--; state = 'H';
@@ -202,7 +203,8 @@ async function runSmithWaterman(data, taskId) {
     if (state === 'H') {
       const current = H[i * (n + 1) + j];
       const matchScore = getScore(a[i - 1], b[j - 1], match, mismatch, isProtein);
-      if (Math.abs(current - (H[(i - 1) * (n + 1) + (j - 1)] + matchScore)) < 1e-4) {
+      const diagScore = H[(i - 1) * (n + 1) + (j - 1)] + matchScore;
+      if (Math.abs(current - diagScore) <= 1e-9 * (1 + Math.abs(current) + Math.abs(diagScore))) {
         alnA = a[i - 1] + alnA; alnB = b[j - 1] + alnB;
         mid = (a[i - 1] === b[j - 1] ? '|' : '·') + mid;
         i--; j--;
@@ -213,14 +215,14 @@ async function runSmithWaterman(data, taskId) {
       }
     } else if (state === 'E') {
       alnA = '-' + alnA; alnB = b[j - 1] + alnB; mid = ' ' + mid;
-      if (j > 1 && Math.abs(E[i * (n + 1) + j] - (E[i * (n + 1) + (j - 1)] + gapExt)) < 1e-4) {
+      if (j > 1 && Math.abs(E[i * (n + 1) + j] - (E[i * (n + 1) + (j - 1)] + gapExt)) <= 1e-9 * (1 + Math.abs(E[i * (n + 1) + j]) + Math.abs(E[i * (n + 1) + (j - 1)] + gapExt))) {
         j--;
       } else {
         j--; state = 'H';
       }
     } else if (state === 'F') {
       alnA = a[i - 1] + alnA; alnB = '-' + alnB; mid = ' ' + mid;
-      if (i > 1 && Math.abs(F[i * (n + 1) + j] - (F[(i - 1) * (n + 1) + j] + gapExt)) < 1e-4) {
+      if (i > 1 && Math.abs(F[i * (n + 1) + j] - (F[(i - 1) * (n + 1) + j] + gapExt)) <= 1e-9 * (1 + Math.abs(F[i * (n + 1) + j]) + Math.abs(F[(i - 1) * (n + 1) + j] + gapExt))) {
         i--;
       } else {
         i--; state = 'H';
@@ -259,9 +261,13 @@ async function runSequenceSearch(data, taskId) {
 
 // Internal SW for search (TypedArrays)
 function alignSW_Internal(query, subject, matchScore, mismatchScore, gapScore) {
+  const matchScore_ = Number.isFinite(matchScore) ? matchScore : 2;
+  const mismatchScore_ = Number.isFinite(mismatchScore) ? mismatchScore : -1;
+  const gapScore_ = Number.isFinite(gapScore) ? gapScore : -2;
+  matchScore = matchScore_; mismatchScore = mismatchScore_; gapScore = gapScore_;
   const qLen = query.length;
   const sLen = subject.length;
-  const H = new Int32Array((qLen + 1) * (sLen + 1));
+  const H = new Float64Array((qLen + 1) * (sLen + 1));
   const ptr = new Int8Array((qLen + 1) * (sLen + 1)); 
 
   let maxScore = 0, maxI = 0, maxJ = 0;
@@ -394,7 +400,12 @@ async function runRestrictionSearch(data, taskId) {
   const seqLen = seq.length;
 
   // Pre-calculate Reverse Complement once for bottom-strand scanning
-  const comp = { 'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'U': 'A', 'N': 'N' };
+  const comp = {
+    'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'U': 'A', 'N': 'N',
+    'R': 'Y', 'Y': 'R', 'S': 'S', 'W': 'W',
+    'K': 'M', 'M': 'K', 'B': 'V', 'V': 'B',
+    'D': 'H', 'H': 'D'
+  };
   const rcSeq = seq.split('').reverse().map(b => comp[b] || b).join('');
 
   // IUPAC MAP PATCH: ambiguous bases in the *target* DNA (N, R, Y…) must also match.
@@ -460,8 +471,8 @@ async function runRestrictionSearch(data, taskId) {
       const fwdIndex = seqLen - match.index - enz.site.length;
       const siteStart0 = ((fwdIndex % seqLen) + seqLen) % seqLen;  // 0-based, always positive
       const siteEnd0   = siteStart0 + enz.site.length;
-      const fwdCut5    = (seqLen - (match.index + cut_sense))    % seqLen;
-      const fwdCut3    = (seqLen - (match.index + cut_antisense)) % seqLen;
+      const fwdCut5    = ((seqLen - (match.index + cut_sense))    % seqLen + seqLen) % seqLen;
+      const fwdCut3    = ((seqLen - (match.index + cut_antisense)) % seqLen + seqLen) % seqLen;
 
       const methResult = checkMethylationOverlap(siteStart0, siteEnd0, enz, methSites);
 
@@ -536,7 +547,7 @@ function runFastaParse(data, taskId) {
   }
 
   const records = [];
-  const lines   = rawText.split('\n');
+  const lines   = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '').split('\n');
   let current   = null;
 
   // Exact same logic as original parseFASTA in fasta.js — no changes
