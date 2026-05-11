@@ -2647,3 +2647,27 @@ canvas {
 .batch-history-item .hist-id   { color: var(--text-muted); font-size: 0.68rem; }
 .batch-history-item .hist-meta { color: var(--text-secondary); }
 .batch-history-item .hist-ts   { color: var(--text-muted); font-size: 0.68rem; margin-left:auto; }
+
+/* Custom Logo Styling */
+.custom-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(20, 184, 166, 0.2));
+  transition: transform 0.3s ease;
+}
+
+.custom-logo:hover {
+  transform: scale(1.05);
+}
+
+.brand-by {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--teal);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 4px;
+  opacity: 0.9;
+  vertical-align: middle;
+}
