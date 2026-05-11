@@ -474,9 +474,8 @@ def search_ncbi():
 @app.route("/api/pubmed/search", methods=["POST"])
 def pubmed_search():
     """
-    Search PubMed via NCBI ESearch + ESummary.
-    Returns structured article metadata (title, authors, journal, date, DOI).
-    No API key required but recommended for higher rate limits.
+    Search PubMed via NCBI ESearch + ESummary + EFetch (for abstracts).
+    Returns structured article metadata.
     """
     data = request.get_json(silent=True)
     if not data:
@@ -489,12 +488,14 @@ def pubmed_search():
         return jsonify({"error": "Query too long (max 500 characters)"}), 400
 
     retmax = min(int(data.get("retmax", 20)), 50)  # cap at 50
+    retstart = int(data.get("retstart", 0))
 
     try:
         # Step 1: ESearch — find matching PubMed IDs
         search_params = {
             "db": "pubmed",
             "term": query,
+            "retstart": retstart,
             "retmax": retmax,
             "retmode": "json",
             "sort": "relevance",
@@ -515,7 +516,7 @@ def pubmed_search():
         total_count = int(s_data.get("esearchresult", {}).get("count", 0))
 
         if not id_list:
-            return jsonify({"articles": [], "total": 0, "query": query})
+            return jsonify({"articles": [], "total": 0, "query": query, "retstart": retstart})
 
         # Step 2: ESummary — fetch article metadata for each PMID
         summary_params = {
@@ -544,11 +545,9 @@ def pubmed_search():
             if not entry or not isinstance(entry, dict):
                 continue
 
-            # Extract authors list
             authors_raw = entry.get("authors", [])
             authors = [a.get("name", "") for a in authors_raw if isinstance(a, dict)]
 
-            # Extract DOI from articleids
             doi = ""
             for aid in entry.get("articleids", []):
                 if isinstance(aid, dict) and aid.get("idtype") == "doi":
@@ -566,12 +565,55 @@ def pubmed_search():
                 "pages": entry.get("pages", ""),
                 "doi": doi,
                 "pubtype": entry.get("pubtype", []),
+                "abstract": "" # Placeholder for Step 3
             })
+
+        # Step 3: EFetch — fetch abstracts via XML
+        import xml.etree.ElementTree as ET
+        fetch_params = {
+            "db": "pubmed",
+            "id": ",".join(id_list),
+            "retmode": "xml",
+            "tool": "BioToolkit",
+            "email": "admin@biotoolkit.dev"
+        }
+        if NCBI_API_KEY and str(NCBI_API_KEY).strip():
+            fetch_params["api_key"] = NCBI_API_KEY
+
+        fetch_resp = http_session.get(
+            "{}/efetch.fcgi".format(NCBI_BASE),
+            params=fetch_params, timeout=15
+        )
+        
+        if fetch_resp.status_code == 200:
+            try:
+                root = ET.fromstring(fetch_resp.content)
+                abstract_map = {}
+                for article in root.findall('.//PubmedArticle'):
+                    pmid = article.findtext('.//PMID')
+                    abs_texts = article.findall('.//AbstractText')
+                    if abs_texts:
+                        abs_parts = []
+                        for node in abs_texts:
+                            label = node.get('Label', '')
+                            text = node.text or ''
+                            if label and text:
+                                abs_parts.append(text)
+                            elif text:
+                                abs_parts.append(text)
+                        abstract_map[str(pmid)] = "\n\n".join(abs_parts)
+                
+                for art in articles:
+                    if str(art["pmid"]) in abstract_map:
+                        art["abstract"] = abstract_map[str(art["pmid"])]
+            except Exception as e:
+                logger.warning("Failed to parse PubMed abstracts XML: %s", str(e))
 
         return jsonify({
             "articles": articles,
             "total": total_count,
             "returned": len(articles),
+            "retstart": retstart,
             "query": query
         })
 

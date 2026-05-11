@@ -1775,11 +1775,25 @@
       <!-- Search Input -->
       <div class="input-block" style="margin-top:16px;">
         <label class="input-label">Search Query</label>
-        <div style="display:flex;gap:8px;align-items:stretch;">
+        <div style="display:flex;gap:8px;align-items:stretch;margin-bottom:8px;">
           <input type="text" id="litSearchInput" class="bio-input" style="flex:1;"
             placeholder="e.g. BRCA1 methylation, CRISPR Cas9 delivery, p53 apoptosis" />
           <button class="btn-primary" id="litSearchBtn" style="white-space:nowrap;">Search PubMed</button>
           <button class="btn-secondary" id="litClearBtn" style="white-space:nowrap;">Clear</button>
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:8px;">
+          <select id="litFilterDate" class="bio-input" style="width:160px;font-size:0.8rem;padding:4px 8px;">
+            <option value="">Any Date</option>
+            <option value="1">Last 1 Year</option>
+            <option value="5">Last 5 Years</option>
+            <option value="10">Last 10 Years</option>
+          </select>
+          <select id="litFilterType" class="bio-input" style="width:160px;font-size:0.8rem;padding:4px 8px;">
+            <option value="">Any Article Type</option>
+            <option value="Review">Review</option>
+            <option value="Clinical Trial">Clinical Trial</option>
+            <option value="Journal Article">Journal Article</option>
+          </select>
         </div>
         <div id="litStatus" style="font-size:0.82rem;color:var(--text-muted);margin-top:8px;"></div>
       </div>
