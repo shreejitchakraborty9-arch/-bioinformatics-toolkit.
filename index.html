@@ -1454,6 +1454,9 @@
         <button class="btn-secondary" id="sv-screenshot-btn" title="Save 2× high-resolution PNG">
           <i data-lucide="camera" style="width:13px; height:13px;"></i>&nbsp;Screenshot
         </button>
+        <button class="btn-secondary" id="sv-fullscreen-btn" title="Enter full screen">
+          <i data-lucide="maximize" style="width:13px; height:13px;"></i>&nbsp;<span id="sv-fs-label">Full Screen</span>
+        </button>
       </div>
 
       <!-- Thin status bar -->
@@ -1463,7 +1466,7 @@
       <div class="sv-layout">
 
         <!-- NGL 3D canvas -->
-        <div class="sv-canvas-wrap">
+        <div class="sv-canvas-wrap" id="sv-canvas-wrap">
           <div class="sv-canvas-container" id="ngl-viewer-container"></div>
           <!-- Loading / idle overlay -->
           <div class="sv-overlay" id="sv-overlay">

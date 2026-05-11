@@ -2459,6 +2459,31 @@ canvas {
   }
 }
 
+/* ── Structure Viewer: fullscreen state ──────────────────────
+   When the canvas wrapper enters the browser Fullscreen API,
+   it must fill the entire viewport. The sidebar is outside
+   this element so it is automatically excluded. */
+.sv-canvas-wrap:fullscreen,
+.sv-canvas-wrap:-webkit-full-screen,
+.sv-canvas-wrap:-moz-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  border: none !important;
+  background: #000 !important;
+}
+
+/* Mol* ships its own expand/layout button that splits the view
+   into a half-canvas / half-control-panel layout — we hide it
+   so our own Full Screen button is the only way to expand. */
+#ngl-viewer-container .msp-btn-expand-layout,
+#ngl-viewer-container [title="Toggle expanded layout"],
+#ngl-viewer-container button.msp-layout-expanded {
+  display: none !important;
+}
+
 /* ═══════════════════════════════════════════════════════════
    Batch Analysis — Step 8
    ═══════════════════════════════════════════════════════════ */

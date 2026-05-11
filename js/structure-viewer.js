@@ -283,6 +283,33 @@
       if (!viewerInstance || !viewerInstance.plugin) { console.warn('Viewer not ready'); return; }
       viewerInstance.plugin.helpers?.viewportScreenshot?.download({ filename: 'bionised_structure.png' });
     });
+
+    // ── Fullscreen toggle ────────────────────────────────────
+    document.getElementById('sv-fullscreen-btn')?.addEventListener('click', () => {
+      const wrap = document.getElementById('sv-canvas-wrap');
+      if (!wrap) return;
+      if (!document.fullscreenElement) {
+        (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.mozRequestFullScreen).call(wrap);
+      } else {
+        (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen).call(document);
+      }
+    });
+
+    // Resize Mol* and update button label whenever fullscreen state changes
+    const onFullscreenChange = () => {
+      const inFS = !!document.fullscreenElement;
+      const label = document.getElementById('sv-fs-label');
+      const btn   = document.getElementById('sv-fullscreen-btn');
+      if (label) label.textContent = inFS ? 'Exit Full Screen' : 'Full Screen';
+      if (btn)   btn.title         = inFS ? 'Exit full screen' : 'Enter full screen';
+      // Give the browser one frame to settle the new dimensions, then resize Mol*
+      requestAnimationFrame(() => {
+        viewerInstance?.plugin?.handleResize();
+      });
+    };
+    document.addEventListener('fullscreenchange',       onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    document.addEventListener('mozfullscreenchange',    onFullscreenChange);
   })();
 
   // ── Panel Lifecycle ───────────────────────────────────────
